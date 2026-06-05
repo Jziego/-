@@ -19,6 +19,9 @@
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "dependencies": {
     "@opennextjs/cloudflare": "^1.19.11",
