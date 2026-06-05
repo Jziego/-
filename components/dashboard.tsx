@@ -1,14 +1,8 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
-import {
-  loadStoreDraft,
-  loadStoreDraftStep,
-  saveStoreDraft,
-  saveStoreDraftStep,
-  subscribeStoreDraftStep
-} from "@/lib/draft-storage";
+import { loadStoreDraft, loadStoreDraftStep, saveStoreDraft, saveStoreDraftStep } from "@/lib/draft-storage";
 import { classifyAsset, createUploadIntent } from "@/lib/services/assets";
 import { createMockAvatarProvider, createAvatarProfile, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
 import { createScriptDraft } from "@/lib/services/script-engine";
@@ -133,8 +127,26 @@ function normalizeStoreFormStep(step: number): number {
   return Math.min(Math.max(step, 0), storeFormSteps.length - 1);
 }
 
-function getStoreFormStepSnapshot(): number {
+function getInitialStoreFormStep(): number {
   return normalizeStoreFormStep(loadStoreDraftStep() ?? 0);
+}
+
+function scrollToFirstFieldError(fields: StoreField[]): void {
+  if (typeof window === "undefined") return;
+
+  for (const field of fields) {
+    const errorElement = document.getElementById(`${field.name}-error`);
+    if (errorElement) {
+      errorElement.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
+    const input = document.querySelector<HTMLElement>(`[name="${field.name}"]`);
+    if (input?.getAttribute("aria-invalid") === "true") {
+      input.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+  }
 }
 
 export function Dashboard() {
@@ -145,18 +157,21 @@ export function Dashboard() {
   const [script, setScript] = useState<ScriptDraft | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [message, setMessage] = useState("准备开始：先完成门店建档。");
-  const storeFormStep = useSyncExternalStore(subscribeStoreDraftStep, getStoreFormStepSnapshot, () => 0);
+  const [storeFormStep, setStoreFormStep] = useState(getInitialStoreFormStep);
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const {
     control,
     register,
-    handleSubmit,
+    trigger,
+    getValues,
+    getFieldState,
     reset,
     formState: { errors }
   } = useForm<StoreFormValues>({
-    defaultValues: defaultStoreForm
+    defaultValues: defaultStoreForm,
+    shouldUnregister: false
   });
   const currentDraft = useWatch({ control });
 
@@ -192,19 +207,38 @@ export function Dashboard() {
 
   function goToStoreFormStep(step: number) {
     const nextStep = normalizeStoreFormStep(step);
+    setStoreFormStep(nextStep);
     saveStoreDraftStep(nextStep);
   }
 
-  const onSubmitStore = handleSubmit(async (values) => {
+  async function submitCurrentStoreStep() {
+    if (pendingAction) return;
+
+    const isLastStep = storeFormStep >= storeFormSteps.length - 1;
+    const fieldsToValidate = (isLastStep
+      ? storeFormSteps.flatMap((step) => step.fields)
+      : selectedStoreStep.fields) as StoreField[];
+    const fieldNames = fieldsToValidate.map((field) => field.name);
+
     setPendingAction("store");
 
     try {
-      if (storeFormStep < storeFormSteps.length - 1) {
+      const valid = await trigger(fieldNames, { shouldFocus: true });
+      if (!valid) {
+        const visibleFields = isLastStep ? selectedStoreStep.fields : fieldsToValidate;
+        const firstInvalidField = visibleFields.find((field) => getFieldState(field.name).invalid);
+        setMessage(firstInvalidField ? `请先填写${firstInvalidField.label}。` : "请先补全当前步骤的必填项。");
+        scrollToFirstFieldError(visibleFields);
+        return;
+      }
+
+      if (!isLastStep) {
         goToStoreFormStep(storeFormStep + 1);
         setMessage("已保存本步内容，继续完善门店档案。");
         return;
       }
 
+      const values = getValues();
       const now = new Date().toISOString();
       const profile: StoreProfile = {
         id: "store_demo",
@@ -226,11 +260,11 @@ export function Dashboard() {
     } finally {
       setPendingAction(null);
     }
-  });
+  }
 
   function handleStoreFormSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void onSubmitStore(event);
+    void submitCurrentStoreStep();
   }
 
   async function simulateAssetUpload() {
@@ -504,7 +538,7 @@ export function Dashboard() {
               >
                 上一步
               </button>
-              <button className="primaryButton" disabled={Boolean(pendingAction)} onClick={() => void onSubmitStore()} type="button">
+              <button className="primaryButton" disabled={Boolean(pendingAction)} onClick={() => void submitCurrentStoreStep()} type="button">
                 {pendingAction === "store" ? <span className="spinner" aria-hidden="true" /> : null}
                 {storeFormStep < storeFormSteps.length - 1 ? "保存并继续" : "保存档案"}
               </button>

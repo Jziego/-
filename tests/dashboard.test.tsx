@@ -82,7 +82,23 @@ describe("AI video assistant dashboard", () => {
     await user.click(screen.getByRole("button", { name: "保存并继续" }));
 
     expect(screen.getByText("请填写门店名称")).toBeInTheDocument();
+    expect(within(screen.getByRole("status")).getByText("请先填写门店名称。")).toBeInTheDocument();
     expect(screen.getByText("1/3")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "基础信息" })).toBeInTheDocument();
+  });
+
+  it("validates only the current step when continuing", async () => {
+    const user = userEvent.setup();
+    render(<Dashboard />);
+
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText(/主营产品/));
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+
+    expect(screen.getByText("请填写主营产品")).toBeInTheDocument();
+    expect(within(screen.getByRole("status")).getByText("请先填写主营产品。")).toBeInTheDocument();
+    expect(screen.getByText("2/3")).toBeInTheDocument();
   });
 });

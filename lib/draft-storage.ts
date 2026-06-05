@@ -4,7 +4,12 @@ const storeDraftStepChangedEvent = "ai-video-assistant:store-profile-step-change
 
 export function saveStoreDraft<T>(draft: T): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(storeDraftKey, JSON.stringify(draft));
+
+  try {
+    window.localStorage.setItem(storeDraftKey, JSON.stringify(draft));
+  } catch {
+    // Ignore storage failures on mobile private mode or quota limits.
+  }
 }
 
 export function loadStoreDraft<T>(): T | null {
@@ -21,8 +26,13 @@ export function loadStoreDraft<T>(): T | null {
 
 export function saveStoreDraftStep(step: number): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(storeDraftStepKey, String(step));
-  window.dispatchEvent(new Event(storeDraftStepChangedEvent));
+
+  try {
+    window.localStorage.setItem(storeDraftStepKey, String(step));
+    window.dispatchEvent(new Event(storeDraftStepChangedEvent));
+  } catch {
+    // Ignore storage failures on mobile private mode or quota limits.
+  }
 }
 
 export function loadStoreDraftStep(): number | null {
