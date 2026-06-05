@@ -21,6 +21,18 @@ type StoreFormValues = {
   forbiddenWords: string;
 };
 
+type StoreFieldName = keyof StoreFormValues;
+type PendingAction = "store" | "upload" | "avatar" | "render" | null;
+
+type StoreField = {
+  name: StoreFieldName;
+  label: string;
+  placeholder: string;
+  required?: boolean;
+  kind?: "input" | "textarea" | "select";
+  options?: string[];
+};
+
 const defaultStoreForm: StoreFormValues = {
   name: "阿姨手作面馆",
   industry: "餐饮",
@@ -33,6 +45,84 @@ const defaultStoreForm: StoreFormValues = {
   forbiddenWords: "最便宜, 全网第一"
 };
 
+const storeFormSteps: Array<{
+  title: string;
+  description: string;
+  progress: string;
+  fields: StoreField[];
+}> = [
+  {
+    title: "基础信息",
+    description: "先告诉 AI 你是谁、做什么、在哪里。",
+    progress: "1/3",
+    fields: [
+      { name: "name", label: "门店名称", placeholder: "例：阿姨手作面馆", required: true },
+      {
+        name: "industry",
+        label: "行业",
+        placeholder: "请选择行业",
+        required: true,
+        kind: "select",
+        options: ["餐饮", "美业", "零售", "生活服务", "教育培训", "其他"]
+      },
+      { name: "location", label: "位置", placeholder: "例：上海市徐汇区", required: true }
+    ]
+  },
+  {
+    title: "产品与人设",
+    description: "越具体，AI 写出来的视频脚本越像你的店。",
+    progress: "2/3",
+    fields: [
+      { name: "mainProducts", label: "主营产品", placeholder: "例：牛肉面, 葱油拌面", required: true },
+      { name: "targetCustomers", label: "目标顾客", placeholder: "例：附近上班族, 社区居民", required: true },
+      {
+        name: "sellingPoints",
+        label: "卖点",
+        placeholder: "例：现熬牛骨汤，午市 10 分钟出餐",
+        required: true,
+        kind: "textarea"
+      }
+    ]
+  },
+  {
+    title: "营销偏好",
+    description: "设置活动、语气和不能出现的词。",
+    progress: "3/3",
+    fields: [
+      { name: "promotions", label: "促销活动", placeholder: "例：工作日午餐第二份半价", kind: "textarea" },
+      { name: "brandTone", label: "品牌语气", placeholder: "请选择品牌语气", required: true },
+      { name: "forbiddenWords", label: "禁用词", placeholder: "例：最便宜, 全网第一", kind: "textarea" }
+    ]
+  }
+];
+
+const purposeOptions: Array<{ value: MarketingPurpose; label: string; description: string }> = [
+  { value: "store_traffic", label: "门店引流", description: "吸引附近顾客到店消费" },
+  { value: "new_product", label: "新品推广", description: "突出新品亮点和尝鲜理由" },
+  { value: "promotion", label: "促销活动", description: "放大优惠信息和行动提醒" }
+];
+
+const purposeLabels: Record<string, string> = {
+  store_traffic: "门店引流",
+  new_product: "新品推广",
+  promotion: "促销活动"
+};
+
+const jobTypeLabels: Record<string, string> = {
+  asset_analysis: "AI 识别素材",
+  avatar_generation: "数字人生成",
+  video_render: "视频合成",
+  slideshow_render: "智能配音方案",
+  subtitle_generation: "字幕生成"
+};
+
+const jobStatusLabels: Record<string, string> = {
+  queued: "准备中",
+  processing: "渲染中",
+  completed: "已完成",
+  failed: "已降级"
+};
+
 export function Dashboard() {
   const [store, setStore] = useState<StoreProfile | null>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
@@ -40,7 +130,11 @@ export function Dashboard() {
   const [avatar, setAvatar] = useState<AvatarProfile | null>(null);
   const [script, setScript] = useState<ScriptDraft | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [message, setMessage] = useState("准备开始：先填写门店档案，再上传素材。");
+  const [message, setMessage] = useState("准备开始：先完成门店建档。");
+  const [storeFormStep, setStoreFormStep] = useState(0);
+  const [avatarConsent, setAvatarConsent] = useState(false);
+  const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const { control, register, handleSubmit, reset } = useForm<StoreFormValues>({
     defaultValues: defaultStoreForm
   });
@@ -55,35 +149,58 @@ export function Dashboard() {
     saveStoreDraft(currentDraft);
   }, [currentDraft]);
 
-  const readiness = useMemo(
+  const currentStepIndex = useMemo(() => {
+    if (!store) return 0;
+    if (!asset || !analysis) return 1;
+    if (!avatar) return 2;
+    return 3;
+  }, [analysis, asset, avatar, store]);
+
+  const workflowSteps = useMemo(
     () => [
-      { label: "档案", ready: Boolean(store) },
-      { label: "素材", ready: Boolean(asset && analysis) },
-      { label: "数字人", ready: Boolean(avatar) },
-      { label: "脚本", ready: Boolean(script) }
+      { label: "门店建档", href: "#store-profile", complete: Boolean(store) },
+      { label: "素材上传", href: "#media-upload", complete: Boolean(asset && analysis) },
+      { label: "数字人克隆", href: "#avatar-clone", complete: Boolean(avatar) },
+      { label: "一键成片", href: "#one-click-video", complete: Boolean(script) }
     ],
     [analysis, asset, avatar, script, store]
   );
 
-  const onSubmitStore = handleSubmit((values) => {
-    const now = new Date().toISOString();
-    const profile: StoreProfile = {
-      id: "store_demo",
-      ownerId: "demo_user",
-      name: values.name,
-      industry: values.industry,
-      location: values.location,
-      mainProducts: splitCsv(values.mainProducts),
-      targetCustomers: splitCsv(values.targetCustomers),
-      sellingPoints: splitCsv(values.sellingPoints),
-      promotions: splitCsv(values.promotions),
-      brandTone: values.brandTone,
-      forbiddenWords: splitCsv(values.forbiddenWords),
-      createdAt: now,
-      updatedAt: now
-    };
-    setStore(profile);
-    setMessage("门店档案已保存为本地草稿，并可同步到服务端。");
+  const selectedStoreStep = storeFormSteps[storeFormStep];
+  const renderLocked = !store;
+  const renderMissingAssets = store && (!asset || !analysis);
+
+  const onSubmitStore = handleSubmit(async (values) => {
+    setPendingAction("store");
+
+    try {
+      if (storeFormStep < storeFormSteps.length - 1) {
+        setStoreFormStep((step) => Math.min(step + 1, storeFormSteps.length - 1));
+        setMessage("已保存本步内容，继续完善门店档案。");
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const profile: StoreProfile = {
+        id: "store_demo",
+        ownerId: "demo_user",
+        name: values.name,
+        industry: values.industry,
+        location: values.location,
+        mainProducts: splitCsv(values.mainProducts),
+        targetCustomers: splitCsv(values.targetCustomers),
+        sellingPoints: splitCsv(values.sellingPoints),
+        promotions: splitCsv(values.promotions),
+        brandTone: values.brandTone,
+        forbiddenWords: splitCsv(values.forbiddenWords),
+        createdAt: now,
+        updatedAt: now
+      };
+      setStore(profile);
+      setMessage("保存成功：门店档案已自动保存，换设备不丢失。");
+    } finally {
+      setPendingAction(null);
+    }
   });
 
   async function simulateAssetUpload() {
@@ -92,39 +209,45 @@ export function Dashboard() {
       return;
     }
 
-    const intent = createUploadIntent({
-      ownerId: store.ownerId,
-      storeId: store.id,
-      filename: "fresh-noodles.mp4",
-      contentType: "video/mp4",
-      sizeBytes: 12_000_000
-    });
-    const uploadedAsset: Asset = {
-      id: intent.assetId,
-      ownerId: store.ownerId,
-      storeId: store.id,
-      type: "video",
-      originalFilename: "fresh-noodles.mp4",
-      storageKey: intent.storageKey,
-      mimeType: "video/mp4",
-      sizeBytes: 12_000_000,
-      durationSeconds: 18,
-      width: 1080,
-      height: 1920,
-      tags: [],
-      businessTags: [],
-      status: "uploaded",
-      createdAt: new Date().toISOString()
-    };
-    const analyzed = await classifyAsset({
-      asset: uploadedAsset,
-      store,
-      visualLabels: ["food", "person", "storefront"],
-      transcript: `${store.mainProducts[0]}刚出锅，午餐出餐很快`
-    });
-    setAsset(uploadedAsset);
-    setAnalysis(analyzed);
-    setMessage("素材已生成签名直传地址，并完成自动标签分析。");
+    setPendingAction("upload");
+
+    try {
+      const intent = createUploadIntent({
+        ownerId: store.ownerId,
+        storeId: store.id,
+        filename: "fresh-noodles.mp4",
+        contentType: "video/mp4",
+        sizeBytes: 12_000_000
+      });
+      const uploadedAsset: Asset = {
+        id: intent.assetId,
+        ownerId: store.ownerId,
+        storeId: store.id,
+        type: "video",
+        originalFilename: "fresh-noodles.mp4",
+        storageKey: intent.storageKey,
+        mimeType: "video/mp4",
+        sizeBytes: 12_000_000,
+        durationSeconds: 18,
+        width: 1080,
+        height: 1920,
+        tags: [],
+        businessTags: [],
+        status: "uploaded",
+        createdAt: new Date().toISOString()
+      };
+      const analyzed = await classifyAsset({
+        asset: uploadedAsset,
+        store,
+        visualLabels: ["food", "person", "storefront"],
+        transcript: `${store.mainProducts[0]}刚出锅，午餐出餐很快`
+      });
+      setAsset(uploadedAsset);
+      setAnalysis(analyzed);
+      setMessage("上传完成：AI 已自动识别画面和语音内容。");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function simulateAvatarClone() {
@@ -133,173 +256,392 @@ export function Dashboard() {
       return;
     }
 
-    const profile = await createAvatarProfile({
-      ownerId: store.ownerId,
-      storeId: store.id,
-      provider: createMockAvatarProvider({ avatarId: "provider_avatar_demo", voiceId: "provider_voice_demo" }),
-      trainingVideoAssetId: "asset_training_demo",
-      consentAccepted: true
-    });
-    const fallbackPreview = await requestAvatarTalkingHead({
-      provider: createMockAvatarProvider({ failTalkingHead: true }),
-      avatarProfileId: profile.id,
-      providerAvatarId: profile.providerAvatarId ?? "",
-      providerVoiceId: profile.providerVoiceId,
-      scriptText: "今天来店里尝尝招牌产品",
-      allowFallback: true
-    });
-
-    setAvatar(profile);
-    setMessage(`数字人训练任务已创建，试听降级模式：${fallbackPreview.mode}。`);
-  }
-
-  async function simulateOneClickRender() {
-    if (!store || !analysis || !asset) {
-      setMessage("请先完成门店档案和素材分析。");
+    if (!avatarConsent) {
+      setMessage("请先确认肖像和声音授权。");
       return;
     }
 
-    const draft = await createScriptDraft({
-      store,
-      assetAnalyses: [analysis],
-      purpose: "store_traffic",
-      platform: "douyin"
-    });
-    const project = createRenderProject({
-      ownerId: store.ownerId,
-      storeId: store.id,
-      scriptDraft: draft,
-      selectedAssetIds: [asset.id],
-      avatarProfile: avatar ?? undefined,
-      aspectRatio: "9:16",
-      subtitleStyle: "bold_bottom",
-      bgmTrackId: "bgm_warm"
-    });
-    const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatar) });
-    const fallbackJob = recoverRenderFailure({
-      projectId: project.id,
-      ownerId: store.ownerId,
-      reason: "ffmpeg_timeout"
-    });
+    setPendingAction("avatar");
 
-    setScript(draft);
-    setJobs([...plannedJobs, fallbackJob]);
-    setMessage("AI 文案、数字人可选片段和后端渲染任务已编排。");
+    try {
+      const profile = await createAvatarProfile({
+        ownerId: store.ownerId,
+        storeId: store.id,
+        provider: createMockAvatarProvider({ avatarId: "provider_avatar_demo", voiceId: "provider_voice_demo" }),
+        trainingVideoAssetId: "asset_training_demo",
+        consentAccepted: true
+      });
+      await requestAvatarTalkingHead({
+        provider: createMockAvatarProvider({ failTalkingHead: true }),
+        avatarProfileId: profile.id,
+        providerAvatarId: profile.providerAvatarId ?? "",
+        providerVoiceId: profile.providerVoiceId,
+        scriptText: "今天来店里尝尝招牌产品",
+        allowFallback: true
+      });
+
+      setAvatar(profile);
+      setMessage("任务提交成功：数字人生成中，如失败将自动切换为智能配音方案。");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function simulateOneClickRender() {
+    if (!store) {
+      setMessage("请先完成门店建档。");
+      return;
+    }
+
+    if (!analysis || !asset) {
+      setMessage("请先上传素材，让 AI 完成识别。");
+      return;
+    }
+
+    setPendingAction("render");
+
+    try {
+      const draft = await createScriptDraft({
+        store,
+        assetAnalyses: [analysis],
+        purpose: selectedPurpose,
+        platform: "douyin"
+      });
+      const project = createRenderProject({
+        ownerId: store.ownerId,
+        storeId: store.id,
+        scriptDraft: draft,
+        selectedAssetIds: [asset.id],
+        avatarProfile: avatar ?? undefined,
+        aspectRatio: "9:16",
+        subtitleStyle: "bold_bottom",
+        bgmTrackId: "bgm_warm"
+      });
+      const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatar) });
+      const fallbackJob = recoverRenderFailure({
+        projectId: project.id,
+        ownerId: store.ownerId,
+        reason: "ffmpeg_timeout"
+      });
+
+      setScript(draft);
+      setJobs([...plannedJobs, fallbackJob]);
+      setMessage("任务提交成功：AI 正在生成脚本、字幕、音乐和转场。");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   return (
     <main className="workspace">
+      <div className="ambientGlow" aria-hidden="true" />
+      <div className="toast" role="status" aria-live="polite">
+        <span className="toastBar" aria-hidden="true" />
+        {message}
+      </div>
+
       <section className="hero">
-        <p className="eyebrow">AI Short Video SaaS</p>
+        <p className="eyebrow">AI 视频工作台</p>
         <h1>小店老板的一键短视频助手</h1>
-        <p>
-          单页工作台覆盖门店建档、素材上传、数字人克隆和一键成片。前端负责交互和轻预览，后端负责对象存储、AI 编排、任务队列和视频渲染。
-        </p>
-        <div className="readiness" aria-label="模块完成状态">
-          {readiness.map((item) => (
-            <span key={item.label} className={item.ready ? "pill ready" : "pill"}>
-              {item.label} {item.ready ? "已就绪" : "待完成"}
-            </span>
-          ))}
-        </div>
+        <p>AI 自动写脚本、配音乐、加字幕，帮你生成门店引流短视频</p>
       </section>
 
+      <nav className="stepper" aria-label="全局步骤导航">
+        {workflowSteps.map((item, index) => {
+          const isCurrent = index === currentStepIndex;
+          const stateClass = item.complete ? "complete" : isCurrent ? "current" : "locked";
+
+          return (
+            <a
+              aria-current={isCurrent ? "step" : undefined}
+              className={`step ${stateClass}`}
+              href={item.complete || isCurrent ? item.href : "#store-profile"}
+              key={item.label}
+            >
+              <span className="stepNode">{item.complete ? "✓" : index + 1}</span>
+              <span>
+                <strong>{item.label}</strong>
+                <small>{item.complete ? "已完成" : isCurrent ? "当前步骤" : "未解锁"}</small>
+              </span>
+            </a>
+          );
+        })}
+      </nav>
+
       <section className="grid">
-        <article className="card">
+        <article className="card cardFeatured" id="store-profile">
+          <div className="cardHighlight" aria-hidden="true" />
           <div className="cardHeader">
-            <h2>门店建档</h2>
-            <span>本地草稿 + 服务端同步</span>
+            <div>
+              <h2>门店建档</h2>
+              <p>3 步完成基础资料，后续会自动保存。</p>
+            </div>
+            <span className={store ? "statusBadge success" : "statusBadge warning"}>{store ? "已完成" : "待完成"}</span>
           </div>
+
           <form className="form" onSubmit={onSubmitStore}>
-            <label>
-              门店名称
-              <input {...register("name", { required: true })} />
-            </label>
-            <label>
-              行业
-              <input {...register("industry", { required: true })} />
-            </label>
-            <label>
-              位置
-              <input {...register("location")} />
-            </label>
-            <label>
-              主营产品
-              <input {...register("mainProducts", { required: true })} />
-            </label>
-            <label>
-              目标顾客
-              <input {...register("targetCustomers", { required: true })} />
-            </label>
-            <label>
-              卖点
-              <input {...register("sellingPoints", { required: true })} />
-            </label>
-            <label>
-              促销活动
-              <input {...register("promotions")} />
-            </label>
-            <label>
-              品牌语气
-              <input {...register("brandTone")} />
-            </label>
-            <label>
-              禁用词
-              <input {...register("forbiddenWords")} />
-            </label>
-            <button type="submit">保存档案</button>
+            <div className="formStepHeader">
+              <div>
+                <span className="stepKicker">{selectedStoreStep.progress}</span>
+                <h3>{selectedStoreStep.title}</h3>
+                <p>{selectedStoreStep.description}</p>
+              </div>
+            </div>
+
+            <div className="formFields">
+              {selectedStoreStep.fields.map((field) => {
+                if (field.name === "brandTone") {
+                  return (
+                    <fieldset className="toneField" key={field.name}>
+                      <legend>
+                        {field.label}
+                        {field.required ? <span className="required">*</span> : null}
+                      </legend>
+                      <div className="choiceGrid compact">
+                        {["亲切接地气", "高端精致", "活泼有趣"].map((tone) => (
+                          <label className="choiceCard toneOption" key={tone}>
+                            <input type="radio" value={tone} {...register("brandTone", { required: field.required })} />
+                            <span>{tone}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  );
+                }
+
+                return (
+                  <label className="field" key={field.name}>
+                    <span>
+                      {field.label}
+                      {field.required ? <span className="required">*</span> : null}
+                    </span>
+                    {field.kind === "textarea" ? (
+                      <textarea
+                        placeholder={field.placeholder}
+                        rows={3}
+                        {...register(field.name, { required: field.required })}
+                      />
+                    ) : field.kind === "select" ? (
+                      <select {...register(field.name, { required: field.required })}>
+                        {field.options?.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input placeholder={field.placeholder} {...register(field.name, { required: field.required })} />
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="formActions">
+              <button
+                className="secondaryButton"
+                disabled={storeFormStep === 0 || Boolean(pendingAction)}
+                onClick={() => setStoreFormStep((step) => Math.max(step - 1, 0))}
+                type="button"
+              >
+                上一步
+              </button>
+              <button className="primaryButton" disabled={Boolean(pendingAction)} type="submit">
+                {pendingAction === "store" ? <span className="spinner" aria-hidden="true" /> : null}
+                {storeFormStep < storeFormSteps.length - 1 ? "保存并继续" : "保存档案"}
+              </button>
+            </div>
           </form>
         </article>
 
-        <article className="card">
+        <article className="card" id="media-upload">
           <div className="cardHeader">
-            <h2>素材上传</h2>
-            <span>对象存储直传 + 自动标签队列</span>
+            <div>
+              <h2>素材上传</h2>
+              <p>上传视频、图片或音频，AI 自动识别内容并打标签</p>
+            </div>
+            <span className={analysis ? "statusBadge success" : "statusBadge warning"}>{analysis ? "已完成" : "待完成"}</span>
           </div>
-          <p>支持视频、图片、音频直传对象存储。浏览器可做缩略图和时长读取，正式转码、抽帧、ASR 和视觉识别交给后端队列。</p>
-          <button type="button" onClick={simulateAssetUpload}>模拟上传并分析</button>
+
+          <div className="uploadZone">
+            {asset ? (
+              <div className="mediaItem">
+                <div className="thumbnail" aria-hidden="true" />
+                <div>
+                  <strong>{asset.originalFilename}</strong>
+                  <span>{asset.durationSeconds ?? 0} 秒 · 已上传</span>
+                </div>
+                <span className="removeIcon" aria-hidden="true">
+                  ×
+                </span>
+              </div>
+            ) : (
+              <div className="emptyState">
+                <svg aria-hidden="true" viewBox="0 0 120 90">
+                  <rect height="62" rx="14" width="86" x="17" y="18" />
+                  <path d="M44 54l13-13 12 12 8-8 15 18H30z" />
+                  <circle cx="78" cy="34" r="6" />
+                </svg>
+                <strong>拖拽或点击上传视频/图片</strong>
+                <span>上传后 AI 自动提取画面和语音内容。</span>
+              </div>
+            )}
+            {pendingAction === "upload" ? (
+              <div className="progressTrack" aria-label="上传中">
+                <span />
+              </div>
+            ) : null}
+          </div>
+
+          <button className="primaryButton" disabled={!store || Boolean(pendingAction)} onClick={simulateAssetUpload} type="button">
+            {pendingAction === "upload" ? <span className="spinner" aria-hidden="true" /> : null}
+            上传素材
+          </button>
+
           {analysis ? (
             <div className="result">
-              <strong>标签：</strong>
-              {[...analysis.visualTags, ...analysis.businessTags].join(" / ")}
+              <strong>AI 标签</strong>
+              <div className="tagList">
+                {[...analysis.visualTags, ...analysis.businessTags].map((tag) => (
+                  <span className="techTag" key={tag}>
+                    {tag}
+                  </span>
+                ))}
+              </div>
             </div>
           ) : null}
         </article>
 
-        <article className="card">
+        <article className="card" id="avatar-clone">
           <div className="cardHeader">
-            <h2>数字人克隆</h2>
-            <span>第三方数字人 API + TTS 降级</span>
+            <div>
+              <h2>数字人克隆</h2>
+              <p>上传一段真人视频，AI 生成你的专属数字人形象</p>
+            </div>
+            <span className={avatar ? "statusBadge success" : "statusBadge warning"}>{avatar ? "已完成" : "待完成"}</span>
           </div>
-          <p>上传真人训练视频前必须确认肖像和声音授权。第一版通过 provider 接口接入 HeyGen/D-ID/Tavus 等服务，失败时降级到 TTS 旁白或模板数字人。</p>
-          <button type="button" onClick={simulateAvatarClone}>创建数字人任务</button>
-          {avatar ? <div className="result">训练状态：{avatar.trainingStatus}，供应商：{avatar.provider}</div> : null}
+
+          {!avatar ? (
+            <div className="emptyState avatarEmpty">
+              <svg aria-hidden="true" viewBox="0 0 110 110">
+                <circle cx="55" cy="42" r="18" />
+                <path d="M24 90c5-19 17-29 31-29s26 10 31 29" />
+                <path d="M20 54c0-23 15-39 35-39s35 16 35 39" />
+              </svg>
+              <span>无数字人任务时，可先上传授权视频。</span>
+            </div>
+          ) : (
+            <div className="result">
+              <strong>数字人已创建</strong>
+              <span>状态：{avatar.trainingStatus === "ready" ? "已完成" : "准备中"}</span>
+            </div>
+          )}
+
+          <label className="consentBox">
+            <input checked={avatarConsent} onChange={(event) => setAvatarConsent(event.target.checked)} type="checkbox" />
+            <span>我已确认上传的视频为本人或已获得肖像/声音授权，同意生成数字人</span>
+          </label>
+
+          <button
+            className="primaryButton"
+            disabled={!store || !avatarConsent || Boolean(pendingAction)}
+            onClick={simulateAvatarClone}
+            type="button"
+          >
+            {pendingAction === "avatar" ? <span className="spinner" aria-hidden="true" /> : null}
+            创建数字人任务
+          </button>
+
+          <details className="advancedNote">
+            <summary>高级说明 (?)</summary>
+            <p>接入主流数字人服务；如果生成失败，会自动切换为智能配音方案。</p>
+          </details>
         </article>
 
-        <article className="card">
+        <article className="card cardFeatured" id="one-click-video">
+          <div className="cardHighlight" aria-hidden="true" />
           <div className="cardHeader">
-            <h2>一键成片</h2>
-            <span>后端渲染 Worker + 字幕/BGM</span>
+            <div>
+              <h2>一键成片</h2>
+              <p>选择素材和营销目的，AI 自动写标题、分镜、旁白、字幕并合成视频</p>
+            </div>
+            <span className={script ? "statusBadge success" : "statusBadge warning"}>{script ? "已完成" : "待完成"}</span>
           </div>
-          <p>选择素材和营销目的后，AI 生成标题、钩子、分镜、旁白、字幕和 CTA；最终视频由后端 Worker 合成字幕、BGM、转场和数字人片段。</p>
-          <div className="buttonRow">
-            {(["store_traffic", "new_product", "promotion"] satisfies MarketingPurpose[]).map((purpose) => (
-              <span className="pill" key={purpose}>{purpose}</span>
+
+          <div className="choiceGrid">
+            {purposeOptions.map((purpose) => (
+              <button
+                className={selectedPurpose === purpose.value ? "purposeCard selected" : "purposeCard"}
+                key={purpose.value}
+                onClick={() => setSelectedPurpose(purpose.value)}
+                type="button"
+              >
+                <strong>{purpose.label}</strong>
+                <span>{purpose.description}</span>
+              </button>
             ))}
           </div>
-          <button type="button" onClick={simulateOneClickRender}>生成脚本与渲染任务</button>
-          {script ? <div className="result">文案：{script.hook}</div> : null}
+
+          {renderLocked ? (
+            <p className="lockNotice">
+              请先完成门店建档 <a href="#store-profile">去填写档案 →</a>
+            </p>
+          ) : null}
+          {renderMissingAssets ? <p className="lockNotice">上传素材并完成 AI 识别后，就可以开始生成。</p> : null}
+
+          <button
+            className="primaryButton"
+            disabled={renderLocked || Boolean(renderMissingAssets) || Boolean(pendingAction)}
+            onClick={simulateOneClickRender}
+            type="button"
+          >
+            {pendingAction === "render" ? <span className="spinner" aria-hidden="true" /> : null}
+            {renderLocked ? "请先完成门店建档" : "生成脚本与渲染任务"}
+          </button>
+
+          {script ? (
+            <div className="result">
+              <strong>{purposeLabels[script.purpose] ?? "营销视频"}</strong>
+              <span>{script.hook}</span>
+            </div>
+          ) : null}
         </article>
       </section>
 
       <section className="statusPanel" aria-live="polite">
-        <h2>任务状态与降级</h2>
-        <p>{message}</p>
-        <div className="jobs">
-          {jobs.map((job) => (
-            <span className="pill" key={job.id}>
-              {job.type}: {job.status}
-            </span>
+        <div className="cardHeader">
+          <div>
+            <h2>任务状态与降级</h2>
+            <p>数字人生成中，如失败将自动切换为智能配音方案</p>
+          </div>
+        </div>
+        <div className="timeline">
+          {(jobs.length
+            ? jobs.map((job) => ({
+                id: job.id,
+                title: jobTypeLabels[job.type] ?? "视频任务",
+                status: jobStatusLabels[job.status] ?? "准备中",
+                tone: job.status,
+                detail: job.type === "slideshow_render" ? "备用方案已准备，保证任务不中断。" : `进度 ${job.progress}%`
+              }))
+            : [
+                {
+                  id: "empty-queue",
+                  title: "当前任务队列",
+                  status: "准备中",
+                  tone: "queued",
+                  detail: message
+                }
+              ]
+          ).map((item) => (
+            <div className={`timelineItem ${item.tone}`} key={item.id}>
+              <span className="timelineDot" aria-hidden="true" />
+              <div>
+                <strong>{item.title}</strong>
+                <span className="timelineStatus">{item.status}</span>
+                <p>{item.detail}</p>
+              </div>
+            </div>
           ))}
         </div>
       </section>
