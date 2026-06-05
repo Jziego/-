@@ -1,4 +1,7 @@
 .next/
+.open-next/
+.wrangler/
+.dev.vars
 node_modules/
 coverage/
 dist/
