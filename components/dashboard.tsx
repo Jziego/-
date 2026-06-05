@@ -131,6 +131,19 @@ function getInitialStoreFormStep(): number {
   return normalizeStoreFormStep(loadStoreDraftStep() ?? 0);
 }
 
+function mergeStoreDraftWithDefaults(draft: Partial<StoreFormValues>): StoreFormValues {
+  const merged: StoreFormValues = { ...defaultStoreForm };
+
+  for (const key of Object.keys(defaultStoreForm) as StoreFieldName[]) {
+    const value = draft[key];
+    if (typeof value === "string" && value.trim() !== "") {
+      merged[key] = value;
+    }
+  }
+
+  return merged;
+}
+
 function scrollToFirstFieldError(fields: StoreField[]): void {
   if (typeof window === "undefined") return;
 
@@ -157,7 +170,7 @@ export function Dashboard() {
   const [script, setScript] = useState<ScriptDraft | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [message, setMessage] = useState("准备开始：先完成门店建档。");
-  const [storeFormStep, setStoreFormStep] = useState(getInitialStoreFormStep);
+  const [storeFormStep, setStoreFormStep] = useState(0);
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -167,6 +180,7 @@ export function Dashboard() {
     trigger,
     getValues,
     getFieldState,
+    setValue,
     reset,
     formState: { errors }
   } = useForm<StoreFormValues>({
@@ -177,7 +191,10 @@ export function Dashboard() {
 
   useEffect(() => {
     const draft = loadStoreDraft<StoreFormValues>();
-    if (draft) reset(draft);
+    if (draft) {
+      reset(mergeStoreDraftWithDefaults(draft));
+    }
+    setStoreFormStep(getInitialStoreFormStep());
   }, [reset]);
 
   useEffect(() => {
@@ -223,7 +240,19 @@ export function Dashboard() {
     setPendingAction("store");
 
     try {
+      if (typeof document !== "undefined") {
+        for (const name of fieldNames) {
+          const el = document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+            `[name="${name}"]`
+          );
+          if (el) {
+            setValue(name, el.value, { shouldValidate: false, shouldDirty: true });
+          }
+        }
+      }
+
       const valid = await trigger(fieldNames, { shouldFocus: true });
+
       if (!valid) {
         const visibleFields = isLastStep ? selectedStoreStep.fields : fieldsToValidate;
         const firstInvalidField = visibleFields.find((field) => getFieldState(field.name).invalid);
@@ -505,6 +534,9 @@ export function Dashboard() {
                         aria-invalid={Boolean(fieldError)}
                         {...register(field.name, { required: field.required })}
                       >
+                        <option disabled hidden value="">
+                          {field.placeholder}
+                        </option>
                         {field.options?.map((option) => (
                           <option key={option} value={option}>
                             {option}

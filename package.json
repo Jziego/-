@@ -4,7 +4,7 @@
   "description": "Production-ready SaaS prototype for an AI short-video assistant for local shop owners.",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
