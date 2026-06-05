@@ -446,6 +446,12 @@ strong {
   margin-left: 4px;
 }
 
+.fieldError {
+  color: var(--warning);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .formActions {
   display: grid;
   gap: 12px;

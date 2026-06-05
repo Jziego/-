@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useForm, useWatch } from "react-hook-form";
-import { loadStoreDraft, saveStoreDraft } from "@/lib/draft-storage";
+import {
+  loadStoreDraft,
+  loadStoreDraftStep,
+  saveStoreDraft,
+  saveStoreDraftStep,
+  subscribeStoreDraftStep
+} from "@/lib/draft-storage";
 import { classifyAsset, createUploadIntent } from "@/lib/services/assets";
 import { createMockAvatarProvider, createAvatarProfile, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
 import { createScriptDraft } from "@/lib/services/script-engine";
@@ -123,6 +129,14 @@ const jobStatusLabels: Record<string, string> = {
   failed: "已降级"
 };
 
+function normalizeStoreFormStep(step: number): number {
+  return Math.min(Math.max(step, 0), storeFormSteps.length - 1);
+}
+
+function getStoreFormStepSnapshot(): number {
+  return normalizeStoreFormStep(loadStoreDraftStep() ?? 0);
+}
+
 export function Dashboard() {
   const [store, setStore] = useState<StoreProfile | null>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
@@ -131,11 +145,17 @@ export function Dashboard() {
   const [script, setScript] = useState<ScriptDraft | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [message, setMessage] = useState("准备开始：先完成门店建档。");
-  const [storeFormStep, setStoreFormStep] = useState(0);
+  const storeFormStep = useSyncExternalStore(subscribeStoreDraftStep, getStoreFormStepSnapshot, () => 0);
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
-  const { control, register, handleSubmit, reset } = useForm<StoreFormValues>({
+  const {
+    control,
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors }
+  } = useForm<StoreFormValues>({
     defaultValues: defaultStoreForm
   });
   const currentDraft = useWatch({ control });
@@ -170,12 +190,17 @@ export function Dashboard() {
   const renderLocked = !store;
   const renderMissingAssets = store && (!asset || !analysis);
 
+  function goToStoreFormStep(step: number) {
+    const nextStep = normalizeStoreFormStep(step);
+    saveStoreDraftStep(nextStep);
+  }
+
   const onSubmitStore = handleSubmit(async (values) => {
     setPendingAction("store");
 
     try {
       if (storeFormStep < storeFormSteps.length - 1) {
-        setStoreFormStep((step) => Math.min(step + 1, storeFormSteps.length - 1));
+        goToStoreFormStep(storeFormStep + 1);
         setMessage("已保存本步内容，继续完善门店档案。");
         return;
       }
@@ -202,6 +227,11 @@ export function Dashboard() {
       setPendingAction(null);
     }
   });
+
+  function handleStoreFormSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void onSubmitStore(event);
+  }
 
   async function simulateAssetUpload() {
     if (!store) {
@@ -379,7 +409,7 @@ export function Dashboard() {
             <span className={store ? "statusBadge success" : "statusBadge warning"}>{store ? "已完成" : "待完成"}</span>
           </div>
 
-          <form className="form" onSubmit={onSubmitStore}>
+          <form className="form" noValidate onSubmit={handleStoreFormSubmit}>
             <div className="formStepHeader">
               <div>
                 <span className="stepKicker">{selectedStoreStep.progress}</span>
@@ -390,6 +420,9 @@ export function Dashboard() {
 
             <div className="formFields">
               {selectedStoreStep.fields.map((field) => {
+                const fieldError = errors[field.name];
+                const errorId = `${field.name}-error`;
+
                 if (field.name === "brandTone") {
                   return (
                     <fieldset className="toneField" key={field.name}>
@@ -400,11 +433,20 @@ export function Dashboard() {
                       <div className="choiceGrid compact">
                         {["亲切接地气", "高端精致", "活泼有趣"].map((tone) => (
                           <label className="choiceCard toneOption" key={tone}>
-                            <input type="radio" value={tone} {...register("brandTone", { required: field.required })} />
+                            <input
+                              type="radio"
+                              value={tone}
+                              {...register("brandTone", { required: field.required })}
+                            />
                             <span>{tone}</span>
                           </label>
                         ))}
                       </div>
+                      {fieldError ? (
+                        <span className="fieldError" id={errorId} role="alert">
+                          请填写{field.label}
+                        </span>
+                      ) : null}
                     </fieldset>
                   );
                 }
@@ -417,12 +459,18 @@ export function Dashboard() {
                     </span>
                     {field.kind === "textarea" ? (
                       <textarea
+                        aria-describedby={fieldError ? errorId : undefined}
+                        aria-invalid={Boolean(fieldError)}
                         placeholder={field.placeholder}
                         rows={3}
                         {...register(field.name, { required: field.required })}
                       />
                     ) : field.kind === "select" ? (
-                      <select {...register(field.name, { required: field.required })}>
+                      <select
+                        aria-describedby={fieldError ? errorId : undefined}
+                        aria-invalid={Boolean(fieldError)}
+                        {...register(field.name, { required: field.required })}
+                      >
                         {field.options?.map((option) => (
                           <option key={option} value={option}>
                             {option}
@@ -430,8 +478,18 @@ export function Dashboard() {
                         ))}
                       </select>
                     ) : (
-                      <input placeholder={field.placeholder} {...register(field.name, { required: field.required })} />
+                      <input
+                        aria-describedby={fieldError ? errorId : undefined}
+                        aria-invalid={Boolean(fieldError)}
+                        placeholder={field.placeholder}
+                        {...register(field.name, { required: field.required })}
+                      />
                     )}
+                    {fieldError ? (
+                      <span className="fieldError" id={errorId} role="alert">
+                        请填写{field.label}
+                      </span>
+                    ) : null}
                   </label>
                 );
               })}
@@ -441,12 +499,12 @@ export function Dashboard() {
               <button
                 className="secondaryButton"
                 disabled={storeFormStep === 0 || Boolean(pendingAction)}
-                onClick={() => setStoreFormStep((step) => Math.max(step - 1, 0))}
+                onClick={() => goToStoreFormStep(storeFormStep - 1)}
                 type="button"
               >
                 上一步
               </button>
-              <button className="primaryButton" disabled={Boolean(pendingAction)} type="submit">
+              <button className="primaryButton" disabled={Boolean(pendingAction)} onClick={() => void onSubmitStore()} type="button">
                 {pendingAction === "store" ? <span className="spinner" aria-hidden="true" /> : null}
                 {storeFormStep < storeFormSteps.length - 1 ? "保存并继续" : "保存档案"}
               </button>
