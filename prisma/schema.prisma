@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id             String          @id
+  email          String          @unique
+  plan           String          @default("free")
+  quotaRemaining Int             @default(10)
+  createdAt      DateTime        @default(now())
+  stores         StoreProfile[]
+  assets         Asset[]
+  avatars        AvatarProfile[]
+  scripts        ScriptDraft[]
+  renderProjects RenderProject[]
+  jobs           Job[]
+}
+
+model StoreProfile {
+  id                 String          @id
+  ownerId            String
+  name               String
+  industry           String
+  location           String?
+  mainProducts       String[]
+  averageOrderValue  Float?
+  targetCustomers    String[]
+  sellingPoints      String[]
+  promotions         String[]
+  brandTone          String
+  forbiddenWords     String[]
+  contactPhone       String?
+  logoAssetId        String?
+  storefrontAssetId  String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  owner              User            @relation(fields: [ownerId], references: [id])
+  assets             Asset[]
+  avatars            AvatarProfile[]
+  scripts            ScriptDraft[]
+  renderProjects     RenderProject[]
+}
+
+model Asset {
+  id                  String          @id
+  ownerId             String
+  storeId             String
+  type                String
+  originalFilename    String
+  storageKey          String
+  mimeType            String
+  sizeBytes           Int
+  durationSeconds     Float?
+  width               Int?
+  height              Int?
+  thumbnailStorageKey String?
+  proxyStorageKey     String?
+  tags                String[]
+  businessTags        String[]
+  status              String
+  createdAt           DateTime        @default(now())
+  owner               User            @relation(fields: [ownerId], references: [id])
+  store               StoreProfile    @relation(fields: [storeId], references: [id])
+  analysis            AssetAnalysis?
+}
+
+model AssetAnalysis {
+  id              String   @id
+  assetId         String   @unique
+  visualTags      String[]
+  businessTags    String[]
+  transcript      String?
+  keywords        String[]
+  confidence      Float
+  recommendedUses String[]
+  createdAt       DateTime @default(now())
+  asset           Asset    @relation(fields: [assetId], references: [id])
+}
+
+model AvatarProfile {
+  id               String       @id
+  ownerId          String
+  storeId          String
+  provider         String
+  providerAvatarId String?
+  providerVoiceId  String?
+  consentAcceptedAt DateTime
+  trainingStatus   String
+  fallbackMode     String
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  owner            User         @relation(fields: [ownerId], references: [id])
+  store            StoreProfile @relation(fields: [storeId], references: [id])
+  renderProjects   RenderProject[]
+}
+
+model ScriptDraft {
+  id                 String          @id
+  ownerId            String
+  storeId            String
+  purpose            String
+  platform           String
+  title              String
+  hook               String
+  scenes             Json
+  voiceover          String
+  captions           String[]
+  cta                String
+  generationMode     String
+  complianceWarnings String[]
+  createdAt          DateTime        @default(now())
+  owner              User            @relation(fields: [ownerId], references: [id])
+  store              StoreProfile    @relation(fields: [storeId], references: [id])
+  renderProjects     RenderProject[]
+}
+
+model RenderProject {
+  id               String          @id
+  ownerId          String
+  storeId          String
+  scriptDraftId    String
+  selectedAssetIds String[]
+  avatarProfileId  String?
+  purpose          String
+  aspectRatio      String
+  subtitleStyle    String
+  bgmTrackId       String?
+  status           String
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  owner            User            @relation(fields: [ownerId], references: [id])
+  store            StoreProfile    @relation(fields: [storeId], references: [id])
+  scriptDraft      ScriptDraft      @relation(fields: [scriptDraftId], references: [id])
+  avatarProfile    AvatarProfile?   @relation(fields: [avatarProfileId], references: [id])
+  jobs             Job[]
+  outputs          VideoOutput[]
+}
+
+model Job {
+  id              String         @id
+  ownerId         String
+  projectId       String?
+  type            String
+  status          String
+  progress        Int
+  payload         Json
+  dependsOnJobIds String[]
+  error           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  owner           User           @relation(fields: [ownerId], references: [id])
+  project         RenderProject? @relation(fields: [projectId], references: [id])
+}
+
+model VideoOutput {
+  id              String        @id
+  ownerId         String
+  renderProjectId String
+  storageKey      String
+  coverStorageKey String?
+  aspectRatio     String
+  durationSeconds Float
+  status          String
+  createdAt       DateTime      @default(now())
+  project         RenderProject @relation(fields: [renderProjectId], references: [id])
+}
