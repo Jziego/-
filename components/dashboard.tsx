@@ -85,21 +85,21 @@ const storeFormSteps: Array<{
     ]
   },
   {
-    title: "营销偏好",
-    description: "设置活动、语气和不能出现的词。",
+    title: "内容风格",
+    description: "告诉 AI 你的活动、说话风格，以及需要避开的敏感词。",
     progress: "3/3",
     fields: [
       { name: "promotions", label: "促销活动", placeholder: "例：工作日午餐第二份半价", kind: "textarea" },
-      { name: "brandTone", label: "品牌语气", placeholder: "请选择品牌语气", required: true },
-      { name: "forbiddenWords", label: "禁用词", placeholder: "例：最便宜, 全网第一", kind: "textarea" }
+      { name: "brandTone", label: "说话风格", placeholder: "请选择说话风格", required: true },
+      { name: "forbiddenWords", label: "敏感词 / 规避词", placeholder: "例：最便宜, 全网第一", kind: "textarea" }
     ]
   }
 ];
 
 const purposeOptions: Array<{ value: MarketingPurpose; label: string; description: string }> = [
-  { value: "store_traffic", label: "门店引流", description: "吸引附近顾客到店消费" },
-  { value: "new_product", label: "新品推广", description: "突出新品亮点和尝鲜理由" },
-  { value: "promotion", label: "促销活动", description: "放大优惠信息和行动提醒" }
+  { value: "store_traffic", label: "门店引流", description: "让附近刷到的人，忍不住想进店看看" },
+  { value: "new_product", label: "新品推广", description: "讲清楚新品好在哪，让人看了就想尝" },
+  { value: "promotion", label: "促销活动", description: "把优惠信息说清楚，看完就想下单/到店" }
 ];
 
 const purposeLabels: Record<string, string> = {
@@ -110,17 +110,23 @@ const purposeLabels: Record<string, string> = {
 
 const jobTypeLabels: Record<string, string> = {
   asset_analysis: "AI 识别素材",
-  avatar_generation: "数字人生成",
-  video_render: "视频合成",
-  slideshow_render: "智能配音方案",
+  avatar_generation: "AI 形象训练",
+  video_render: "视频合成中",
+  slideshow_render: "备用配音方案",
   subtitle_generation: "字幕生成"
 };
 
 const jobStatusLabels: Record<string, string> = {
-  queued: "准备中",
-  processing: "渲染中",
+  queued: "进行中",
+  processing: "生成中",
   completed: "已完成",
-  failed: "已降级"
+  failed: "已启用备用方案"
+};
+
+const tagDisplayLabels: Record<string, string> = {
+  food: "美食",
+  person: "人物",
+  storefront: "门店环境"
 };
 
 function normalizeStoreFormStep(step: number): number {
@@ -169,7 +175,7 @@ export function Dashboard() {
   const [avatar, setAvatar] = useState<AvatarProfile | null>(null);
   const [script, setScript] = useState<ScriptDraft | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [message, setMessage] = useState("准备开始：先完成门店建档。");
+  const [message, setMessage] = useState("准备开始：先完成门店档案。");
   const [storeFormStep, setStoreFormStep] = useState(0);
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
@@ -210,10 +216,10 @@ export function Dashboard() {
 
   const workflowSteps = useMemo(
     () => [
-      { label: "门店建档", href: "#store-profile", complete: Boolean(store) },
-      { label: "素材上传", href: "#media-upload", complete: Boolean(asset && analysis) },
-      { label: "数字人克隆", href: "#avatar-clone", complete: Boolean(avatar) },
-      { label: "一键成片", href: "#one-click-video", complete: Boolean(script) }
+      { label: "门店档案", href: "#store-profile", complete: Boolean(store) },
+      { label: "素材库", href: "#media-upload", complete: Boolean(asset && analysis) },
+      { label: "AI 分身", href: "#avatar-clone", complete: Boolean(avatar) },
+      { label: "智能成片", href: "#one-click-video", complete: Boolean(script) }
     ],
     [analysis, asset, avatar, script, store]
   );
@@ -285,7 +291,7 @@ export function Dashboard() {
         updatedAt: now
       };
       setStore(profile);
-      setMessage("保存成功：门店档案已自动保存，换设备不丢失。");
+      setMessage("保存成功：门店档案已自动记忆，换设备不丢失。");
     } finally {
       setPendingAction(null);
     }
@@ -298,7 +304,7 @@ export function Dashboard() {
 
   async function simulateAssetUpload() {
     if (!store) {
-      setMessage("请先完成门店建档。");
+      setMessage("请先完成门店档案。");
       return;
     }
 
@@ -345,7 +351,7 @@ export function Dashboard() {
 
   async function simulateAvatarClone() {
     if (!store) {
-      setMessage("请先完成门店建档。");
+      setMessage("请先完成门店档案。");
       return;
     }
 
@@ -374,7 +380,7 @@ export function Dashboard() {
       });
 
       setAvatar(profile);
-      setMessage("任务提交成功：数字人生成中，如失败将自动切换为智能配音方案。");
+      setMessage("已提交：正在训练你的 AI 形象，完成后自动合成视频；若暂未就绪会自动启用备用配音，保证按时出片。");
     } finally {
       setPendingAction(null);
     }
@@ -382,7 +388,7 @@ export function Dashboard() {
 
   async function simulateOneClickRender() {
     if (!store) {
-      setMessage("请先完成门店建档。");
+      setMessage("请先完成门店档案。");
       return;
     }
 
@@ -419,7 +425,7 @@ export function Dashboard() {
 
       setScript(draft);
       setJobs([...plannedJobs, fallbackJob]);
-      setMessage("任务提交成功：AI 正在生成脚本、字幕、音乐和转场。");
+      setMessage("AI 正在生成你的视频：自动写文案、剪画面、加字幕、配音乐。");
     } finally {
       setPendingAction(null);
     }
@@ -435,8 +441,8 @@ export function Dashboard() {
 
       <section className="hero">
         <p className="eyebrow">AI 视频工作台</p>
-        <h1>小店老板的一键短视频助手</h1>
-        <p>AI 自动写脚本、配音乐、加字幕，帮你生成门店引流短视频</p>
+        <h1>不会拍视频？AI 一键帮你生成门店引流片</h1>
+        <p>0 基础也能做。自动写脚本、配音乐、加字幕，你只管传素材，剩下的 AI 全包，让顾客主动找到你。</p>
       </section>
 
       <nav className="stepper" aria-label="全局步骤导航">
@@ -466,8 +472,8 @@ export function Dashboard() {
           <div className="cardHighlight" aria-hidden="true" />
           <div className="cardHeader">
             <div>
-              <h2>门店建档</h2>
-              <p>3 步完成基础资料，后续会自动保存。</p>
+              <h2>门店档案</h2>
+              <p>3 步设置好门店信息，AI 后续自动记忆，不用重复填写。</p>
             </div>
             <span className={store ? "statusBadge success" : "statusBadge warning"}>{store ? "已完成" : "待完成"}</span>
           </div>
@@ -572,7 +578,7 @@ export function Dashboard() {
               </button>
               <button className="primaryButton" disabled={Boolean(pendingAction)} onClick={() => void submitCurrentStoreStep()} type="button">
                 {pendingAction === "store" ? <span className="spinner" aria-hidden="true" /> : null}
-                {storeFormStep < storeFormSteps.length - 1 ? "保存并继续" : "保存档案"}
+                {storeFormStep < storeFormSteps.length - 1 ? "保存并继续" : "完成设置"}
               </button>
             </div>
           </form>
@@ -581,8 +587,8 @@ export function Dashboard() {
         <article className="card" id="media-upload">
           <div className="cardHeader">
             <div>
-              <h2>素材上传</h2>
-              <p>上传视频、图片或音频，AI 自动识别内容并打标签</p>
+              <h2>素材库</h2>
+              <p>上传你的视频、图片或音频，AI 自动看懂内容并分类，找素材时一搜就有</p>
             </div>
             <span className={analysis ? "statusBadge success" : "statusBadge warning"}>{analysis ? "已完成" : "待完成"}</span>
           </div>
@@ -624,11 +630,11 @@ export function Dashboard() {
 
           {analysis ? (
             <div className="result">
-              <strong>AI 标签</strong>
+              <strong>AI 自动分类</strong>
               <div className="tagList">
                 {[...analysis.visualTags, ...analysis.businessTags].map((tag) => (
                   <span className="techTag" key={tag}>
-                    {tag}
+                    {tagDisplayLabels[tag] ?? tag}
                   </span>
                 ))}
               </div>
@@ -639,8 +645,8 @@ export function Dashboard() {
         <article className="card" id="avatar-clone">
           <div className="cardHeader">
             <div>
-              <h2>数字人克隆</h2>
-              <p>上传一段真人视频，AI 生成你的专属数字人形象</p>
+              <h2>AI 分身</h2>
+              <p>上传一段真人视频，AI 学习你的形象和声音，以后不用出镜也能“真人”出镜</p>
             </div>
             <span className={avatar ? "statusBadge success" : "statusBadge warning"}>{avatar ? "已完成" : "待完成"}</span>
           </div>
@@ -652,18 +658,19 @@ export function Dashboard() {
                 <path d="M24 90c5-19 17-29 31-29s26 10 31 29" />
                 <path d="M20 54c0-23 15-39 35-39s35 16 35 39" />
               </svg>
-              <span>无数字人任务时，可先上传授权视频。</span>
+              <span>还没有 AI 形象时，可先上传授权视频。</span>
             </div>
           ) : (
             <div className="result">
-              <strong>数字人已创建</strong>
-              <span>状态：{avatar.trainingStatus === "ready" ? "已完成" : "准备中"}</span>
+              <strong>AI 形象已创建</strong>
+              <span>{avatar.trainingStatus === "ready" ? "已完成" : "正在训练你的 AI 形象…"}</span>
+              <span className="resultHint">预计需要 5-10 分钟，完成后会通知你。</span>
             </div>
           )}
 
           <label className="consentBox">
             <input checked={avatarConsent} onChange={(event) => setAvatarConsent(event.target.checked)} type="checkbox" />
-            <span>我已确认上传的视频为本人或已获得肖像/声音授权，同意生成数字人</span>
+            <span>我已确认拥有该视频的肖像/声音使用权，同意生成 AI 形象</span>
           </label>
 
           <button
@@ -673,12 +680,12 @@ export function Dashboard() {
             type="button"
           >
             {pendingAction === "avatar" ? <span className="spinner" aria-hidden="true" /> : null}
-            创建数字人任务
+            创建 AI 形象
           </button>
 
           <details className="advancedNote">
             <summary>高级说明 (?)</summary>
-            <p>接入主流数字人服务；如果生成失败，会自动切换为智能配音方案。</p>
+            <p>接入主流 AI 形象服务；如果暂未就绪，会自动启用备用配音方案，保证视频按时出片。</p>
           </details>
         </article>
 
@@ -686,8 +693,8 @@ export function Dashboard() {
           <div className="cardHighlight" aria-hidden="true" />
           <div className="cardHeader">
             <div>
-              <h2>一键成片</h2>
-              <p>选择素材和营销目的，AI 自动写标题、分镜、旁白、字幕并合成视频</p>
+              <h2>智能成片</h2>
+              <p>选好素材和目的，AI 自动写文案、剪画面、加字幕，直接出片</p>
             </div>
             <span className={script ? "statusBadge success" : "statusBadge warning"}>{script ? "已完成" : "待完成"}</span>
           </div>
@@ -708,7 +715,7 @@ export function Dashboard() {
 
           {renderLocked ? (
             <p className="lockNotice">
-              请先完成门店建档 <a href="#store-profile">去填写档案 →</a>
+              请先完成门店档案 <a href="#store-profile">去填写档案 →</a>
             </p>
           ) : null}
           {renderMissingAssets ? <p className="lockNotice">上传素材并完成 AI 识别后，就可以开始生成。</p> : null}
@@ -720,7 +727,7 @@ export function Dashboard() {
             type="button"
           >
             {pendingAction === "render" ? <span className="spinner" aria-hidden="true" /> : null}
-            {renderLocked ? "请先完成门店建档" : "生成脚本与渲染任务"}
+            {renderLocked ? "请先完成门店档案" : "开始生成视频"}
           </button>
 
           {script ? (
@@ -735,8 +742,8 @@ export function Dashboard() {
       <section className="statusPanel" aria-live="polite">
         <div className="cardHeader">
           <div>
-            <h2>任务状态与降级</h2>
-            <p>数字人生成中，如失败将自动切换为智能配音方案</p>
+            <h2>生成进度</h2>
+            <p>AI 正在制作你的视频，AI 形象训练完成后自动合成。如果暂未就绪，会自动启用备用配音，保证视频按时出片。</p>
           </div>
         </div>
         <div className="timeline">
@@ -746,7 +753,7 @@ export function Dashboard() {
                 title: jobTypeLabels[job.type] ?? "视频任务",
                 status: jobStatusLabels[job.status] ?? "准备中",
                 tone: job.status,
-                detail: job.type === "slideshow_render" ? "备用方案已准备，保证任务不中断。" : `进度 ${job.progress}%`
+                detail: job.type === "slideshow_render" ? "备用方案已就绪，确保视频顺利生成。" : `进度 ${job.progress}%`
               }))
             : [
                 {

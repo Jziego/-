@@ -665,6 +665,11 @@ strong {
   padding: 14px;
 }
 
+.result .resultHint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .tagList {
   display: flex;
   flex-wrap: wrap;

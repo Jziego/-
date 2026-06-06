@@ -11,24 +11,26 @@ describe("AI video assistant dashboard", () => {
   it("shows the four production modules in one SPA workspace", () => {
     render(<Dashboard />);
 
-    expect(screen.getByRole("heading", { name: "门店建档" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "素材上传" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "数字人克隆" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "一键成片" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "门店档案" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "素材库" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI 分身" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "智能成片" })).toBeInTheDocument();
   });
 
   it("uses customer-friendly copy and the global stepper", () => {
     render(<Dashboard />);
 
     const stepper = screen.getByRole("navigation", { name: "全局步骤导航" });
-    expect(within(stepper).getByText("门店建档")).toBeInTheDocument();
-    expect(within(stepper).getByText("素材上传")).toBeInTheDocument();
-    expect(within(stepper).getByText("数字人克隆")).toBeInTheDocument();
-    expect(within(stepper).getByText("一键成片")).toBeInTheDocument();
-    expect(screen.getByText("AI 自动写脚本、配音乐、加字幕，帮你生成门店引流短视频")).toBeInTheDocument();
-    expect(screen.getByText("上传视频、图片或音频，AI 自动识别内容并打标签")).toBeInTheDocument();
-    expect(screen.getByText("我已确认上传的视频为本人或已获得肖像/声音授权，同意生成数字人")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "请先完成门店建档" })).toBeDisabled();
+    expect(within(stepper).getByText("门店档案")).toBeInTheDocument();
+    expect(within(stepper).getByText("素材库")).toBeInTheDocument();
+    expect(within(stepper).getByText("AI 分身")).toBeInTheDocument();
+    expect(within(stepper).getByText("智能成片")).toBeInTheDocument();
+    expect(
+      screen.getByText("0 基础也能做。自动写脚本、配音乐、加字幕，你只管传素材，剩下的 AI 全包，让顾客主动找到你。")
+    ).toBeInTheDocument();
+    expect(screen.getByText("上传你的视频、图片或音频，AI 自动看懂内容并分类，找素材时一搜就有")).toBeInTheDocument();
+    expect(screen.getByText("我已确认拥有该视频的肖像/声音使用权，同意生成 AI 形象")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "请先完成门店档案" })).toBeDisabled();
   });
 
   it("keeps save and continue out of native form submission", () => {
