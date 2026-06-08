@@ -17,6 +17,7 @@ function parseAllowedDevOrigins(): string[] {
 }
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg"],
   env: {
     NEXT_PUBLIC_APP_MODE: process.env.APP_MODE ?? "demo"
   },
