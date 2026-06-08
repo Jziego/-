@@ -1,10 +1,12 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { createId, nowIso } from "@/lib/ids";
-import { demoOwnerId, getRuntimeState } from "@/lib/runtime-store";
+import { getStoreRepository } from "@/lib/repositories";
+import { demoOwnerId } from "@/lib/runtime-store";
 import { storeProfileSchema } from "@/lib/schemas";
 
 export async function GET() {
-  return jsonOk({ stores: getRuntimeState().stores });
+  const stores = await getStoreRepository().listByOwner(demoOwnerId);
+  return jsonOk({ stores });
 }
 
 export async function POST(request: Request) {
@@ -22,14 +24,6 @@ export async function POST(request: Request) {
     return jsonError(parsed.error.issues[0]?.message ?? "Invalid store profile");
   }
 
-  const state = getRuntimeState();
-  const existingIndex = state.stores.findIndex((store) => store.id === parsed.data.id);
-
-  if (existingIndex >= 0) {
-    state.stores[existingIndex] = parsed.data;
-  } else {
-    state.stores.push(parsed.data);
-  }
-
-  return jsonOk({ store: parsed.data }, 201);
+  const store = await getStoreRepository().upsert(parsed.data);
+  return jsonOk({ store }, 201);
 }

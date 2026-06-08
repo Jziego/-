@@ -1,6 +1,8 @@
 import { jsonOk } from "@/lib/api-response";
-import { getRuntimeState } from "@/lib/runtime-store";
+import { getJobRepository } from "@/lib/repositories";
+import { demoOwnerId } from "@/lib/runtime-store";
 
 export async function GET() {
-  return jsonOk({ jobs: getRuntimeState().jobs });
+  const jobs = await getJobRepository().listByOwner(demoOwnerId);
+  return jsonOk({ jobs });
 }

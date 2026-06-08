@@ -1,12 +1,11 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
-import { getRuntimeState } from "@/lib/runtime-store";
+import { getAssetAnalysisRepository, getAssetRepository, getStoreRepository } from "@/lib/repositories";
 import { classifyAsset } from "@/lib/services/assets";
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const state = getRuntimeState();
-  const asset = state.assets.find((item) => item.id === body.assetId);
-  const store = state.stores.find((item) => item.id === body.storeId);
+  const asset = await getAssetRepository().findById(body.assetId);
+  const store = await getStoreRepository().findById(body.storeId);
 
   if (!asset || !store) {
     return jsonError("Asset or store not found", 404);
@@ -21,6 +20,6 @@ export async function POST(request: Request) {
     analysisUnavailable: body.analysisUnavailable
   });
 
-  state.analyses.push(analysis);
-  return jsonOk({ analysis }, 201);
+  const saved = await getAssetAnalysisRepository().create(analysis);
+  return jsonOk({ analysis: saved }, 201);
 }

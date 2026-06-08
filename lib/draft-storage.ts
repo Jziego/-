@@ -44,6 +44,17 @@ export function loadStoreDraftStep(): number | null {
   return Number.isInteger(step) ? step : null;
 }
 
+export function clearStoreDraft(): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(storeDraftKey);
+    window.localStorage.removeItem(storeDraftStepKey);
+  } catch {
+    // Ignore storage failures on mobile private mode or quota limits.
+  }
+}
+
 export function subscribeStoreDraftStep(listener: () => void): () => void {
   if (typeof window === "undefined") return () => {};
 

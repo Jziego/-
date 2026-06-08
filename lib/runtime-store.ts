@@ -42,3 +42,7 @@ export function getRuntimeState(): RuntimeState {
 }
 
 export const demoOwnerId = "demo_user";
+
+export function resetRuntimeStateForTests(): void {
+  globalStore.__aiVideoAssistantState = undefined;
+}

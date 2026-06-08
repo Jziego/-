@@ -871,6 +871,20 @@ strong {
   }
 }
 
+.demoBadge {
+  background: rgba(251, 191, 36, 0.92);
+  border-radius: 999px;
+  color: #422006;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.35rem 0.85rem;
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  z-index: 100;
+}
+
 @media (max-width: 520px) {
   body {
     font-size: 14px;

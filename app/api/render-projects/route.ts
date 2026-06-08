@@ -1,24 +1,34 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
-import { getRuntimeState } from "@/lib/runtime-store";
-import { createRenderProject, planRenderJobs } from "@/lib/services/render-pipeline";
+import {
+  getAvatarRepository,
+  getJobRepository,
+  getRenderRepository,
+  getScriptRepository
+} from "@/lib/repositories";
+import { demoOwnerId } from "@/lib/runtime-store";
+import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib/services/render-pipeline";
 import type { AspectRatio, RenderProject } from "@/lib/types";
 
 export async function GET() {
-  const state = getRuntimeState();
-  return jsonOk({ renderProjects: state.renderProjects, jobs: state.jobs, outputs: state.outputs });
+  const renderRepo = getRenderRepository();
+  const [renderProjects, jobs, outputs] = await Promise.all([
+    renderRepo.listProjectsByOwner(demoOwnerId),
+    getJobRepository().listByOwner(demoOwnerId),
+    renderRepo.listOutputsByOwner(demoOwnerId)
+  ]);
+  return jsonOk({ renderProjects, jobs, outputs });
 }
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const state = getRuntimeState();
-  const scriptDraft = state.scripts.find((item) => item.id === body.scriptDraftId);
+  const scriptDraft = await getScriptRepository().findById(body.scriptDraftId);
 
   if (!scriptDraft) {
     return jsonError("Script draft not found", 404);
   }
 
   const avatarProfile = body.avatarProfileId
-    ? state.avatars.find((item) => item.id === body.avatarProfileId)
+    ? (await getAvatarRepository().findById(body.avatarProfileId)) ?? undefined
     : undefined;
   const project = createRenderProject({
     ownerId: body.ownerId ?? scriptDraft.ownerId,
@@ -31,9 +41,16 @@ export async function POST(request: Request) {
     bgmTrackId: body.bgmTrackId
   });
 
-  const jobs = planRenderJobs({ project, includeAvatar: Boolean(avatarProfile) });
-  state.renderProjects.push(project);
-  state.jobs.push(...jobs);
+  const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatarProfile) });
+  const fallbackJob = recoverRenderFailure({
+    projectId: project.id,
+    ownerId: project.ownerId,
+    reason: "ffmpeg_timeout"
+  });
+  const jobs = [...plannedJobs, fallbackJob];
+
+  await getRenderRepository().createProject(project);
+  await getJobRepository().createMany(jobs);
 
   return jsonOk({ project, jobs }, 201);
 }

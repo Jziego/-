@@ -1,15 +1,39 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Dashboard } from "@/components/dashboard";
+import { Providers } from "@/components/providers";
+
+function mockApiFetch() {
+  return vi.fn(async (url: string) => ({
+    ok: true,
+    json: async () => {
+      if (url === "/api/store-profiles") return { stores: [] };
+      if (url === "/api/assets") return { assets: [] };
+      if (url === "/api/asset-analyses") return { analyses: [] };
+      if (url === "/api/avatars") return { avatars: [] };
+      if (url === "/api/jobs") return { jobs: [] };
+      return {};
+    }
+  }));
+}
+
+function renderDashboard() {
+  return render(
+    <Providers>
+      <Dashboard />
+    </Providers>
+  );
+}
 
 describe("AI video assistant dashboard", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    vi.stubGlobal("fetch", mockApiFetch());
   });
 
   it("shows the four production modules in one SPA workspace", () => {
-    render(<Dashboard />);
+    renderDashboard();
 
     expect(screen.getByRole("heading", { name: "门店档案" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "素材库" })).toBeInTheDocument();
@@ -18,7 +42,7 @@ describe("AI video assistant dashboard", () => {
   });
 
   it("uses customer-friendly copy and the global stepper", () => {
-    render(<Dashboard />);
+    renderDashboard();
 
     const stepper = screen.getByRole("navigation", { name: "全局步骤导航" });
     expect(within(stepper).getByText("门店档案")).toBeInTheDocument();
@@ -34,7 +58,7 @@ describe("AI video assistant dashboard", () => {
   });
 
   it("keeps save and continue out of native form submission", () => {
-    render(<Dashboard />);
+    renderDashboard();
 
     const saveAndContinue = screen.getByRole("button", { name: "保存并继续" });
     expect(saveAndContinue).toHaveAttribute("type", "button");
@@ -42,7 +66,7 @@ describe("AI video assistant dashboard", () => {
   });
 
   it("prevents native form submit navigation", async () => {
-    render(<Dashboard />);
+    renderDashboard();
 
     const form = screen.getByRole("button", { name: "保存并继续" }).closest("form");
     expect(form).not.toBeNull();
@@ -57,7 +81,7 @@ describe("AI video assistant dashboard", () => {
 
   it("persists the store profile step and draft values after continuing", async () => {
     const user = userEvent.setup();
-    const { unmount } = render(<Dashboard />);
+    const { unmount } = renderDashboard();
 
     await user.clear(screen.getByLabelText(/门店名称/));
     await user.type(screen.getByLabelText(/门店名称/), "测试小店");
@@ -67,7 +91,7 @@ describe("AI video assistant dashboard", () => {
     expect(screen.getByRole("heading", { name: "产品与人设" })).toBeInTheDocument();
 
     unmount();
-    render(<Dashboard />);
+    renderDashboard();
 
     expect(screen.getByText("2/3")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "产品与人设" })).toBeInTheDocument();
@@ -78,7 +102,7 @@ describe("AI video assistant dashboard", () => {
 
   it("shows a clear validation message when a required field is missing", async () => {
     const user = userEvent.setup();
-    render(<Dashboard />);
+    renderDashboard();
 
     await user.clear(screen.getByLabelText(/门店名称/));
     await user.click(screen.getByRole("button", { name: "保存并继续" }));
@@ -91,7 +115,7 @@ describe("AI video assistant dashboard", () => {
 
   it("validates only the current step when continuing", async () => {
     const user = userEvent.setup();
-    render(<Dashboard />);
+    renderDashboard();
 
     await user.click(screen.getByRole("button", { name: "保存并继续" }));
     expect(screen.getByText("2/3")).toBeInTheDocument();

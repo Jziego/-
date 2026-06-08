@@ -1,10 +1,12 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { createId, nowIso } from "@/lib/ids";
-import { demoOwnerId, getRuntimeState } from "@/lib/runtime-store";
+import { getAssetRepository } from "@/lib/repositories";
+import { demoOwnerId } from "@/lib/runtime-store";
 import { assetSchema } from "@/lib/schemas";
 
 export async function GET() {
-  return jsonOk({ assets: getRuntimeState().assets });
+  const assets = await getAssetRepository().listByOwner(demoOwnerId);
+  return jsonOk({ assets });
 }
 
 export async function POST(request: Request) {
@@ -23,6 +25,6 @@ export async function POST(request: Request) {
     return jsonError(parsed.error.issues[0]?.message ?? "Invalid asset");
   }
 
-  getRuntimeState().assets.push(parsed.data);
-  return jsonOk({ asset: parsed.data }, 201);
+  const asset = await getAssetRepository().create(parsed.data);
+  return jsonOk({ asset }, 201);
 }

@@ -17,6 +17,9 @@ function parseAllowedDevOrigins(): string[] {
 }
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_MODE: process.env.APP_MODE ?? "demo"
+  },
   allowedDevOrigins: parseAllowedDevOrigins(),
   experimental: {
     serverActions: {

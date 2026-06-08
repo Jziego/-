@@ -1,12 +1,25 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
-import { loadStoreDraft, loadStoreDraftStep, saveStoreDraft, saveStoreDraftStep } from "@/lib/draft-storage";
-import { classifyAsset, createUploadIntent } from "@/lib/services/assets";
-import { createMockAvatarProvider, createAvatarProfile, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
-import { createScriptDraft } from "@/lib/services/script-engine";
-import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib/services/render-pipeline";
+import {
+  analyzeAssetApi,
+  createAvatarApi,
+  createRenderProjectApi,
+  createScriptDraftApi,
+  createUploadIntentApi,
+  fetchAssetAnalyses,
+  fetchAssets,
+  fetchAvatars,
+  fetchJobs,
+  fetchStores,
+  requestTalkingHeadApi,
+  saveAsset,
+  saveStore
+} from "@/lib/api-client";
+import { clearStoreDraft, loadStoreDraft, loadStoreDraftStep, saveStoreDraft, saveStoreDraftStep } from "@/lib/draft-storage";
+import { createId, nowIso } from "@/lib/ids";
 import type { Asset, AssetAnalysis, AvatarProfile, Job, MarketingPurpose, ScriptDraft, StoreProfile } from "@/lib/types";
 
 type StoreFormValues = {
@@ -169,17 +182,56 @@ function scrollToFirstFieldError(fields: StoreField[]): void {
 }
 
 export function Dashboard() {
-  const [store, setStore] = useState<StoreProfile | null>(null);
-  const [asset, setAsset] = useState<Asset | null>(null);
-  const [analysis, setAnalysis] = useState<AssetAnalysis | null>(null);
-  const [avatar, setAvatar] = useState<AvatarProfile | null>(null);
+  const queryClient = useQueryClient();
+  const [localStore, setLocalStore] = useState<StoreProfile | null>(null);
+  const [localAsset, setLocalAsset] = useState<Asset | null>(null);
+  const [localAnalysis, setLocalAnalysis] = useState<AssetAnalysis | null>(null);
+  const [localAvatar, setLocalAvatar] = useState<AvatarProfile | null>(null);
   const [script, setScript] = useState<ScriptDraft | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [localJobs, setLocalJobs] = useState<Job[] | null>(null);
   const [message, setMessage] = useState("准备开始：先完成门店档案。");
-  const [storeFormStep, setStoreFormStep] = useState(0);
+  const [storeFormStep, setStoreFormStep] = useState(getInitialStoreFormStep);
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+
+  const { data: stores = [] } = useQuery({
+    queryKey: ["stores"],
+    queryFn: fetchStores
+  });
+
+  const { data: serverAssets = [] } = useQuery({
+    queryKey: ["assets"],
+    queryFn: fetchAssets
+  });
+
+  const { data: serverAnalyses = [] } = useQuery({
+    queryKey: ["asset-analyses"],
+    queryFn: fetchAssetAnalyses
+  });
+
+  const { data: serverAvatars = [] } = useQuery({
+    queryKey: ["avatars"],
+    queryFn: fetchAvatars
+  });
+
+  const { data: serverJobs = [] } = useQuery({
+    queryKey: ["jobs"],
+    queryFn: fetchJobs,
+    refetchInterval: (query) => {
+      const currentJobs = localJobs ?? query.state.data ?? [];
+      return currentJobs.some((job) => job.status === "queued" || job.status === "processing") ? 5000 : false;
+    }
+  });
+
+  const store = localStore ?? stores[0] ?? null;
+  const asset =
+    localAsset ?? (store ? (serverAssets.find((item) => item.storeId === store.id) ?? null) : null);
+  const analysis =
+    localAnalysis ?? (asset ? (serverAnalyses.find((item) => item.assetId === asset.id) ?? null) : null);
+  const avatar =
+    localAvatar ?? (store ? (serverAvatars.find((item) => item.storeId === store.id) ?? null) : null);
+  const jobs = localJobs ?? serverJobs;
   const {
     control,
     register,
@@ -200,7 +252,6 @@ export function Dashboard() {
     if (draft) {
       reset(mergeStoreDraftWithDefaults(draft));
     }
-    setStoreFormStep(getInitialStoreFormStep());
   }, [reset]);
 
   useEffect(() => {
@@ -274,10 +325,10 @@ export function Dashboard() {
       }
 
       const values = getValues();
-      const now = new Date().toISOString();
+      const now = nowIso();
       const profile: StoreProfile = {
-        id: "store_demo",
-        ownerId: "demo_user",
+        id: store?.id ?? createId("store"),
+        ownerId: store?.ownerId ?? "demo_user",
         name: values.name,
         industry: values.industry,
         location: values.location,
@@ -287,11 +338,14 @@ export function Dashboard() {
         promotions: splitCsv(values.promotions),
         brandTone: values.brandTone,
         forbiddenWords: splitCsv(values.forbiddenWords),
-        createdAt: now,
+        createdAt: store?.createdAt ?? now,
         updatedAt: now
       };
-      setStore(profile);
-      setMessage("保存成功：门店档案已自动记忆，换设备不丢失。");
+      const saved = await saveStore(profile);
+      setLocalStore(saved);
+      clearStoreDraft();
+      await queryClient.invalidateQueries({ queryKey: ["stores"] });
+      setMessage("保存成功：门店档案已同步到服务端，刷新后仍可恢复。");
     } finally {
       setPendingAction(null);
     }
@@ -311,14 +365,14 @@ export function Dashboard() {
     setPendingAction("upload");
 
     try {
-      const intent = createUploadIntent({
+      const intent = await createUploadIntentApi({
         ownerId: store.ownerId,
         storeId: store.id,
         filename: "fresh-noodles.mp4",
         contentType: "video/mp4",
         sizeBytes: 12_000_000
       });
-      const uploadedAsset: Asset = {
+      const uploadedAsset = await saveAsset({
         id: intent.assetId,
         ownerId: store.ownerId,
         storeId: store.id,
@@ -333,16 +387,18 @@ export function Dashboard() {
         tags: [],
         businessTags: [],
         status: "uploaded",
-        createdAt: new Date().toISOString()
-      };
-      const analyzed = await classifyAsset({
-        asset: uploadedAsset,
-        store,
+        createdAt: nowIso()
+      });
+      const analyzed = await analyzeAssetApi({
+        assetId: uploadedAsset.id,
+        storeId: store.id,
         visualLabels: ["food", "person", "storefront"],
         transcript: `${store.mainProducts[0]}刚出锅，午餐出餐很快`
       });
-      setAsset(uploadedAsset);
-      setAnalysis(analyzed);
+      setLocalAsset(uploadedAsset);
+      setLocalAnalysis(analyzed);
+      await queryClient.invalidateQueries({ queryKey: ["assets"] });
+      await queryClient.invalidateQueries({ queryKey: ["asset-analyses"] });
       setMessage("上传完成：AI 已自动识别画面和语音内容。");
     } finally {
       setPendingAction(null);
@@ -363,23 +419,20 @@ export function Dashboard() {
     setPendingAction("avatar");
 
     try {
-      const profile = await createAvatarProfile({
+      const profile = await createAvatarApi({
         ownerId: store.ownerId,
         storeId: store.id,
-        provider: createMockAvatarProvider({ avatarId: "provider_avatar_demo", voiceId: "provider_voice_demo" }),
-        trainingVideoAssetId: "asset_training_demo",
+        trainingVideoAssetId: asset?.id ?? "asset_training_demo",
         consentAccepted: true
       });
-      await requestAvatarTalkingHead({
-        provider: createMockAvatarProvider({ failTalkingHead: true }),
+      await requestTalkingHeadApi({
         avatarProfileId: profile.id,
-        providerAvatarId: profile.providerAvatarId ?? "",
-        providerVoiceId: profile.providerVoiceId,
         scriptText: "今天来店里尝尝招牌产品",
-        allowFallback: true
+        forceFallback: true
       });
 
-      setAvatar(profile);
+      setLocalAvatar(profile);
+      await queryClient.invalidateQueries({ queryKey: ["avatars"] });
       setMessage("已提交：正在训练你的 AI 形象，完成后自动合成视频；若暂未就绪会自动启用备用配音，保证按时出片。");
     } finally {
       setPendingAction(null);
@@ -400,31 +453,24 @@ export function Dashboard() {
     setPendingAction("render");
 
     try {
-      const draft = await createScriptDraft({
-        store,
-        assetAnalyses: [analysis],
+      const draft = await createScriptDraftApi({
+        storeId: store.id,
+        assetAnalysisIds: [analysis.id],
         purpose: selectedPurpose,
         platform: "douyin"
       });
-      const project = createRenderProject({
-        ownerId: store.ownerId,
-        storeId: store.id,
-        scriptDraft: draft,
+      const { jobs: plannedJobs } = await createRenderProjectApi({
+        scriptDraftId: draft.id,
         selectedAssetIds: [asset.id],
-        avatarProfile: avatar ?? undefined,
+        avatarProfileId: avatar?.id,
         aspectRatio: "9:16",
         subtitleStyle: "bold_bottom",
         bgmTrackId: "bgm_warm"
       });
-      const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatar) });
-      const fallbackJob = recoverRenderFailure({
-        projectId: project.id,
-        ownerId: store.ownerId,
-        reason: "ffmpeg_timeout"
-      });
 
       setScript(draft);
-      setJobs([...plannedJobs, fallbackJob]);
+      setLocalJobs(plannedJobs);
+      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
       setMessage("AI 正在生成你的视频：自动写文案、剪画面、加字幕、配音乐。");
     } finally {
       setPendingAction(null);
