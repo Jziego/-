@@ -1,6 +1,5 @@
 const storeDraftKey = "ai-video-assistant:store-profile-draft";
 const storeDraftStepKey = "ai-video-assistant:store-profile-step";
-const storeDraftStepChangedEvent = "ai-video-assistant:store-profile-step-changed";
 
 export function saveStoreDraft<T>(draft: T): void {
   if (typeof window === "undefined") return;
@@ -29,7 +28,6 @@ export function saveStoreDraftStep(step: number): void {
 
   try {
     window.localStorage.setItem(storeDraftStepKey, String(step));
-    window.dispatchEvent(new Event(storeDraftStepChangedEvent));
   } catch {
     // Ignore storage failures on mobile private mode or quota limits.
   }
@@ -50,24 +48,7 @@ export function clearStoreDraft(): void {
   try {
     window.localStorage.removeItem(storeDraftKey);
     window.localStorage.removeItem(storeDraftStepKey);
-    window.dispatchEvent(new Event(storeDraftStepChangedEvent));
   } catch {
     // Ignore storage failures on mobile private mode or quota limits.
   }
-}
-
-export function subscribeStoreDraftStep(listener: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-
-  function handleStorage(event: StorageEvent): void {
-    if (event.key === storeDraftStepKey) listener();
-  }
-
-  window.addEventListener(storeDraftStepChangedEvent, listener);
-  window.addEventListener("storage", handleStorage);
-
-  return () => {
-    window.removeEventListener(storeDraftStepChangedEvent, listener);
-    window.removeEventListener("storage", handleStorage);
-  };
 }

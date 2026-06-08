@@ -255,7 +255,6 @@ export function Dashboard() {
     trigger,
     getValues,
     getFieldState,
-    setValue,
     reset,
     formState: { errors }
   } = useForm<StoreFormValues>({
@@ -319,35 +318,6 @@ export function Dashboard() {
     setPendingAction("store");
 
     try {
-      if (typeof document !== "undefined") {
-        for (const name of fieldNames) {
-          const elements = document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-            `[name="${name}"]`
-          );
-          if (elements.length === 0) continue;
-
-          const first = elements[0];
-          if (first instanceof HTMLInputElement && first.type === "radio") {
-            const checked = Array.from(elements).find(
-              (el): el is HTMLInputElement => el instanceof HTMLInputElement && el.checked
-            );
-            if (checked) {
-              setValue(name, checked.value, { shouldValidate: false, shouldDirty: true });
-            }
-            continue;
-          }
-
-          setValue(name, first.value, { shouldValidate: false, shouldDirty: true });
-        }
-      }
-
-      if (isLastStep) {
-        const merged = mergeStoreDraftWithDefaults(getValues());
-        for (const key of Object.keys(merged) as StoreFieldName[]) {
-          setValue(key, merged[key], { shouldValidate: false, shouldDirty: true });
-        }
-      }
-
       const valid = await trigger(fieldNames, { shouldFocus: true });
 
       if (!valid) {
