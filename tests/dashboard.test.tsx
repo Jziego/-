@@ -152,6 +152,35 @@ describe("AI video assistant dashboard", () => {
     expect(within(stepper).getByRole("link", { name: /素材库/ })).toHaveAttribute("href", "#media-upload");
   });
 
+  it("lets a returning user complete the profile from the saved step", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("ai-video-assistant:store-profile-step", "2");
+    window.localStorage.setItem(
+      "ai-video-assistant:store-profile-draft",
+      JSON.stringify({
+        name: "返店完成测试",
+        industry: "零售",
+        location: "深圳",
+        mainProducts: "A",
+        targetCustomers: "B",
+        sellingPoints: "C",
+        promotions: "D",
+        brandTone: "高端精致",
+        forbiddenWords: "E"
+      })
+    );
+
+    renderDashboard();
+
+    expect(screen.getByRole("heading", { name: "内容风格" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "完成设置" }));
+
+    expect(
+      await within(screen.getByRole("status")).findByText("保存成功：请继续上传素材。")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传素材" })).toBeEnabled();
+  });
+
   it("resumes at the saved step for a returning user", () => {
     window.localStorage.setItem("ai-video-assistant:store-profile-step", "2");
     window.localStorage.setItem(

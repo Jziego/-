@@ -50,6 +50,7 @@ export function clearStoreDraft(): void {
   try {
     window.localStorage.removeItem(storeDraftKey);
     window.localStorage.removeItem(storeDraftStepKey);
+    window.dispatchEvent(new Event(storeDraftStepChangedEvent));
   } catch {
     // Ignore storage failures on mobile private mode or quota limits.
   }

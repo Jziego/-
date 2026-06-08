@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import {
   analyzeAssetApi,
@@ -23,8 +23,7 @@ import {
   loadStoreDraft,
   loadStoreDraftStep,
   saveStoreDraft,
-  saveStoreDraftStep,
-  subscribeStoreDraftStep
+  saveStoreDraftStep
 } from "@/lib/draft-storage";
 import { createId, nowIso } from "@/lib/ids";
 import type { Asset, AssetAnalysis, AvatarProfile, Job, MarketingPurpose, ScriptDraft, StoreProfile } from "@/lib/types";
@@ -207,7 +206,7 @@ export function Dashboard() {
   const [script, setScript] = useState<ScriptDraft | null>(null);
   const [localJobs, setLocalJobs] = useState<Job[] | null>(null);
   const [message, setMessage] = useState("准备开始：先完成门店档案。");
-  const storeFormStep = useSyncExternalStore(subscribeStoreDraftStep, getInitialStoreFormStep, () => 0);
+  const [storeFormStep, setStoreFormStep] = useState(0);
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -269,6 +268,9 @@ export function Dashboard() {
     if (draft) {
       reset(mergeStoreDraftWithDefaults(draft));
     }
+    // Restore persisted step after hydration so SSR and the first client render stay aligned.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only draft step must load after mount
+    setStoreFormStep(getInitialStoreFormStep());
   }, [reset]);
 
   useEffect(() => {
@@ -298,6 +300,7 @@ export function Dashboard() {
 
   function goToStoreFormStep(step: number) {
     const nextStep = normalizeStoreFormStep(step);
+    setStoreFormStep(nextStep);
     saveStoreDraftStep(nextStep);
   }
 
