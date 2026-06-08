@@ -5,7 +5,28 @@ import { Dashboard } from "@/components/dashboard";
 import { Providers } from "@/components/providers";
 
 function mockApiFetch() {
-  return vi.fn(async (url: string) => ({
+  return vi.fn(async (url: string, init?: RequestInit) => {
+  const method = init?.method ?? "GET";
+
+  if (url === "/api/store-profiles" && method === "POST") {
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    return {
+      ok: true,
+      json: async () => ({
+        store: {
+          ...body,
+          id: body.id ?? "store_test",
+          ownerId: body.ownerId ?? "demo_user",
+          promotions: body.promotions ?? [],
+          forbiddenWords: body.forbiddenWords ?? [],
+          createdAt: body.createdAt ?? new Date().toISOString(),
+          updatedAt: body.updatedAt ?? new Date().toISOString()
+        }
+      })
+    };
+  }
+
+  return {
     ok: true,
     json: async () => {
       if (url === "/api/store-profiles") return { stores: [] };
@@ -15,7 +36,8 @@ function mockApiFetch() {
       if (url === "/api/jobs") return { jobs: [] };
       return {};
     }
-  }));
+  };
+  });
 }
 
 function renderDashboard() {
@@ -111,6 +133,61 @@ describe("AI video assistant dashboard", () => {
     expect(within(screen.getByRole("status")).getByText("请先填写门店名称。")).toBeInTheDocument();
     expect(screen.getByText("1/3")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "基础信息" })).toBeInTheDocument();
+  });
+
+  it("unlocks media upload after completing the store profile", async () => {
+    const user = userEvent.setup();
+
+    renderDashboard();
+
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    await user.click(screen.getByRole("button", { name: "完成设置" }));
+
+    expect(
+      await within(screen.getByRole("status")).findByText("保存成功：请继续上传素材。")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传素材" })).toBeEnabled();
+    const stepper = screen.getByRole("navigation", { name: "全局步骤导航" });
+    expect(within(stepper).getByRole("link", { name: /素材库/ })).toHaveAttribute("href", "#media-upload");
+  });
+
+  it("shows an error when store profile save fails", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/store-profiles" && init?.method === "POST") {
+          return {
+            ok: false,
+            json: async () => ({ error: "Foreign key constraint failed" })
+          };
+        }
+
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    await user.click(screen.getByRole("button", { name: "完成设置" }));
+
+    expect(
+      await within(screen.getByRole("status")).findByText("门店档案保存失败：Foreign key constraint failed")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传素材" })).toBeDisabled();
   });
 
   it("validates only the current step when continuing", async () => {

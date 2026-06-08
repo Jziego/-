@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { ensureDemoUser } from "@/lib/demo-user";
 import {
   toAsset,
   toAssetAnalysis,
@@ -45,6 +46,7 @@ export class PrismaStoreRepository implements StoreRepository {
   }
 
   async upsert(profile: StoreProfile): Promise<StoreProfile> {
+    await ensureDemoUser(this.prisma, profile.ownerId);
     const data = toStoreProfileInput(profile);
     const row = await this.prisma.storeProfile.upsert({
       where: { id: profile.id },

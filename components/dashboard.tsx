@@ -163,6 +163,16 @@ function mergeStoreDraftWithDefaults(draft: Partial<StoreFormValues>): StoreForm
   return merged;
 }
 
+function scrollToSection(sectionId: string): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    document.getElementById(sectionId)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  } catch {
+    // jsdom and some embedded browsers do not implement scrollIntoView.
+  }
+}
+
 function scrollToFirstFieldError(fields: StoreField[]): void {
   if (typeof window === "undefined") return;
 
@@ -308,6 +318,13 @@ export function Dashboard() {
         }
       }
 
+      if (isLastStep) {
+        const merged = mergeStoreDraftWithDefaults(getValues());
+        for (const key of Object.keys(merged) as StoreFieldName[]) {
+          setValue(key, merged[key], { shouldValidate: false, shouldDirty: true });
+        }
+      }
+
       const valid = await trigger(fieldNames, { shouldFocus: true });
 
       if (!valid) {
@@ -324,7 +341,7 @@ export function Dashboard() {
         return;
       }
 
-      const values = getValues();
+      const values = mergeStoreDraftWithDefaults(getValues());
       const now = nowIso();
       const profile: StoreProfile = {
         id: store?.id ?? createId("store"),
@@ -345,7 +362,11 @@ export function Dashboard() {
       setLocalStore(saved);
       clearStoreDraft();
       await queryClient.invalidateQueries({ queryKey: ["stores"] });
-      setMessage("保存成功：门店档案已同步到服务端，刷新后仍可恢复。");
+      setMessage("保存成功：请继续上传素材。");
+      scrollToSection("media-upload");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "保存失败，请稍后重试。";
+      setMessage(`门店档案保存失败：${detail}`);
     } finally {
       setPendingAction(null);
     }
