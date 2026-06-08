@@ -152,6 +152,68 @@ describe("AI video assistant dashboard", () => {
     expect(within(stepper).getByRole("link", { name: /素材库/ })).toHaveAttribute("href", "#media-upload");
   });
 
+  it("resumes at the saved step for a returning user", () => {
+    window.localStorage.setItem("ai-video-assistant:store-profile-step", "2");
+    window.localStorage.setItem(
+      "ai-video-assistant:store-profile-draft",
+      JSON.stringify({
+        name: "返店测试",
+        industry: "零售",
+        location: "深圳",
+        mainProducts: "A",
+        targetCustomers: "B",
+        sellingPoints: "C",
+        promotions: "D",
+        brandTone: "高端精致",
+        forbiddenWords: "E"
+      })
+    );
+
+    renderDashboard();
+
+    expect(screen.getByRole("heading", { name: "内容风格" })).toBeInTheDocument();
+    expect(screen.getByText("3/3")).toBeInTheDocument();
+  });
+
+  it("keeps the user's selected brand tone when completing the profile", async () => {
+    const user = userEvent.setup();
+    let postedBrandTone: string | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/store-profiles" && init?.method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          postedBrandTone = body.brandTone ?? null;
+          return { ok: true, json: async () => ({ store: body }) };
+        }
+
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    await user.click(screen.getByRole("radio", { name: "活泼有趣" }));
+    await user.click(screen.getByRole("button", { name: "完成设置" }));
+
+    expect(
+      await within(screen.getByRole("status")).findByText("保存成功：请继续上传素材。")
+    ).toBeInTheDocument();
+    expect(postedBrandTone).toBe("活泼有趣");
+  });
+
   it("shows an error when store profile save fails", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(

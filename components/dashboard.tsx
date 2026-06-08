@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import {
   analyzeAssetApi,
@@ -18,7 +18,14 @@ import {
   saveAsset,
   saveStore
 } from "@/lib/api-client";
-import { clearStoreDraft, loadStoreDraft, loadStoreDraftStep, saveStoreDraft, saveStoreDraftStep } from "@/lib/draft-storage";
+import {
+  clearStoreDraft,
+  loadStoreDraft,
+  loadStoreDraftStep,
+  saveStoreDraft,
+  saveStoreDraftStep,
+  subscribeStoreDraftStep
+} from "@/lib/draft-storage";
 import { createId, nowIso } from "@/lib/ids";
 import type { Asset, AssetAnalysis, AvatarProfile, Job, MarketingPurpose, ScriptDraft, StoreProfile } from "@/lib/types";
 
@@ -200,7 +207,7 @@ export function Dashboard() {
   const [script, setScript] = useState<ScriptDraft | null>(null);
   const [localJobs, setLocalJobs] = useState<Job[] | null>(null);
   const [message, setMessage] = useState("准备开始：先完成门店档案。");
-  const [storeFormStep, setStoreFormStep] = useState(getInitialStoreFormStep);
+  const storeFormStep = useSyncExternalStore(subscribeStoreDraftStep, getInitialStoreFormStep, () => 0);
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -291,7 +298,6 @@ export function Dashboard() {
 
   function goToStoreFormStep(step: number) {
     const nextStep = normalizeStoreFormStep(step);
-    setStoreFormStep(nextStep);
     saveStoreDraftStep(nextStep);
   }
 
@@ -309,12 +315,23 @@ export function Dashboard() {
     try {
       if (typeof document !== "undefined") {
         for (const name of fieldNames) {
-          const el = document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+          const elements = document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
             `[name="${name}"]`
           );
-          if (el) {
-            setValue(name, el.value, { shouldValidate: false, shouldDirty: true });
+          if (elements.length === 0) continue;
+
+          const first = elements[0];
+          if (first instanceof HTMLInputElement && first.type === "radio") {
+            const checked = Array.from(elements).find(
+              (el): el is HTMLInputElement => el instanceof HTMLInputElement && el.checked
+            );
+            if (checked) {
+              setValue(name, checked.value, { shouldValidate: false, shouldDirty: true });
+            }
+            continue;
           }
+
+          setValue(name, first.value, { shouldValidate: false, shouldDirty: true });
         }
       }
 
