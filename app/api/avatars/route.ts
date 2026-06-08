@@ -4,8 +4,13 @@ import { demoOwnerId } from "@/lib/runtime-store";
 import { createAvatarProfile, createMockAvatarProvider } from "@/lib/services/avatar-provider";
 
 export async function GET() {
-  const avatars = await getAvatarRepository().listByOwner(demoOwnerId);
-  return jsonOk({ avatars });
+  try {
+    const avatars = await getAvatarRepository().listByOwner(demoOwnerId);
+    return jsonOk({ avatars });
+  } catch (error) {
+    console.error("Failed to list avatars:", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to list avatars", 500);
+  }
 }
 
 export async function POST(request: Request) {

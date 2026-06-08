@@ -384,7 +384,9 @@ export function Dashboard() {
       setLocalStore(saved);
       draftClearedRef.current = true;
       clearStoreDraft();
-      await queryClient.invalidateQueries({ queryKey: ["stores"] });
+      // Fire background refresh but don't block the UI update — the local state already
+      // holds the saved store, so the material library unlocks immediately.
+      void queryClient.invalidateQueries({ queryKey: ["stores"] });
       setMessage("保存成功：请继续上传素材。");
       scrollToSection("media-upload");
     } catch (error) {

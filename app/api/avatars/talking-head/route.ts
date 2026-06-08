@@ -3,21 +3,26 @@ import { getAvatarRepository } from "@/lib/repositories";
 import { createMockAvatarProvider, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const avatar = await getAvatarRepository().findById(body.avatarProfileId);
+  try {
+    const body = await request.json();
+    const avatar = await getAvatarRepository().findById(body.avatarProfileId);
 
-  if (!avatar?.providerAvatarId) {
-    return jsonError("Avatar profile not ready", 404);
+    if (!avatar?.providerAvatarId) {
+      return jsonError("Avatar profile not ready", 404);
+    }
+
+    const result = await requestAvatarTalkingHead({
+      provider: createMockAvatarProvider({ failTalkingHead: body.forceFallback }),
+      avatarProfileId: avatar.id,
+      providerAvatarId: avatar.providerAvatarId,
+      providerVoiceId: avatar.providerVoiceId,
+      scriptText: body.scriptText,
+      allowFallback: true
+    });
+
+    return jsonOk({ result }, 201);
+  } catch (error) {
+    console.error("Failed to request talking head:", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to request talking head", 500);
   }
-
-  const result = await requestAvatarTalkingHead({
-    provider: createMockAvatarProvider({ failTalkingHead: body.forceFallback }),
-    avatarProfileId: avatar.id,
-    providerAvatarId: avatar.providerAvatarId,
-    providerVoiceId: avatar.providerVoiceId,
-    scriptText: body.scriptText,
-    allowFallback: true
-  });
-
-  return jsonOk({ result }, 201);
 }

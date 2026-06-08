@@ -10,47 +10,57 @@ import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib
 import type { AspectRatio, RenderProject } from "@/lib/types";
 
 export async function GET() {
-  const renderRepo = getRenderRepository();
-  const [renderProjects, jobs, outputs] = await Promise.all([
-    renderRepo.listProjectsByOwner(demoOwnerId),
-    getJobRepository().listByOwner(demoOwnerId),
-    renderRepo.listOutputsByOwner(demoOwnerId)
-  ]);
-  return jsonOk({ renderProjects, jobs, outputs });
+  try {
+    const renderRepo = getRenderRepository();
+    const [renderProjects, jobs, outputs] = await Promise.all([
+      renderRepo.listProjectsByOwner(demoOwnerId),
+      getJobRepository().listByOwner(demoOwnerId),
+      renderRepo.listOutputsByOwner(demoOwnerId)
+    ]);
+    return jsonOk({ renderProjects, jobs, outputs });
+  } catch (error) {
+    console.error("Failed to list render projects:", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to list render projects", 500);
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const scriptDraft = await getScriptRepository().findById(body.scriptDraftId);
+  try {
+    const body = await request.json();
+    const scriptDraft = await getScriptRepository().findById(body.scriptDraftId);
 
-  if (!scriptDraft) {
-    return jsonError("Script draft not found", 404);
+    if (!scriptDraft) {
+      return jsonError("Script draft not found", 404);
+    }
+
+    const avatarProfile = body.avatarProfileId
+      ? (await getAvatarRepository().findById(body.avatarProfileId)) ?? undefined
+      : undefined;
+    const project = createRenderProject({
+      ownerId: body.ownerId ?? scriptDraft.ownerId,
+      storeId: scriptDraft.storeId,
+      scriptDraft,
+      selectedAssetIds: body.selectedAssetIds ?? [],
+      avatarProfile,
+      aspectRatio: (body.aspectRatio ?? "9:16") as AspectRatio,
+      subtitleStyle: (body.subtitleStyle ?? "bold_bottom") as RenderProject["subtitleStyle"],
+      bgmTrackId: body.bgmTrackId
+    });
+
+    const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatarProfile) });
+    const fallbackJob = recoverRenderFailure({
+      projectId: project.id,
+      ownerId: project.ownerId,
+      reason: "ffmpeg_timeout"
+    });
+    const jobs = [...plannedJobs, fallbackJob];
+
+    await getRenderRepository().createProject(project);
+    await getJobRepository().createMany(jobs);
+
+    return jsonOk({ project, jobs }, 201);
+  } catch (error) {
+    console.error("Failed to create render project:", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to create render project", 500);
   }
-
-  const avatarProfile = body.avatarProfileId
-    ? (await getAvatarRepository().findById(body.avatarProfileId)) ?? undefined
-    : undefined;
-  const project = createRenderProject({
-    ownerId: body.ownerId ?? scriptDraft.ownerId,
-    storeId: scriptDraft.storeId,
-    scriptDraft,
-    selectedAssetIds: body.selectedAssetIds ?? [],
-    avatarProfile,
-    aspectRatio: (body.aspectRatio ?? "9:16") as AspectRatio,
-    subtitleStyle: (body.subtitleStyle ?? "bold_bottom") as RenderProject["subtitleStyle"],
-    bgmTrackId: body.bgmTrackId
-  });
-
-  const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatarProfile) });
-  const fallbackJob = recoverRenderFailure({
-    projectId: project.id,
-    ownerId: project.ownerId,
-    reason: "ffmpeg_timeout"
-  });
-  const jobs = [...plannedJobs, fallbackJob];
-
-  await getRenderRepository().createProject(project);
-  await getJobRepository().createMany(jobs);
-
-  return jsonOk({ project, jobs }, 201);
 }

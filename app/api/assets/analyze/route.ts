@@ -3,23 +3,28 @@ import { getAssetAnalysisRepository, getAssetRepository, getStoreRepository } fr
 import { classifyAsset } from "@/lib/services/assets";
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const asset = await getAssetRepository().findById(body.assetId);
-  const store = await getStoreRepository().findById(body.storeId);
+  try {
+    const body = await request.json();
+    const asset = await getAssetRepository().findById(body.assetId);
+    const store = await getStoreRepository().findById(body.storeId);
 
-  if (!asset || !store) {
-    return jsonError("Asset or store not found", 404);
+    if (!asset || !store) {
+      return jsonError("Asset or store not found", 404);
+    }
+
+    const analysis = await classifyAsset({
+      asset,
+      store,
+      visualLabels: body.visualLabels,
+      transcript: body.transcript,
+      manualTags: body.manualTags,
+      analysisUnavailable: body.analysisUnavailable
+    });
+
+    const saved = await getAssetAnalysisRepository().create(analysis);
+    return jsonOk({ analysis: saved }, 201);
+  } catch (error) {
+    console.error("Failed to analyze asset:", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to analyze asset", 500);
   }
-
-  const analysis = await classifyAsset({
-    asset,
-    store,
-    visualLabels: body.visualLabels,
-    transcript: body.transcript,
-    manualTags: body.manualTags,
-    analysisUnavailable: body.analysisUnavailable
-  });
-
-  const saved = await getAssetAnalysisRepository().create(analysis);
-  return jsonOk({ analysis: saved }, 201);
 }

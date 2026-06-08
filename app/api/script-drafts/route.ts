@@ -5,32 +5,42 @@ import { createScriptDraft, createTemplateScriptDraft } from "@/lib/services/scr
 import type { MarketingPurpose, Platform } from "@/lib/types";
 
 export async function GET() {
-  const scripts = await getScriptRepository().listByOwner(demoOwnerId);
-  return jsonOk({ scripts });
+  try {
+    const scripts = await getScriptRepository().listByOwner(demoOwnerId);
+    return jsonOk({ scripts });
+  } catch (error) {
+    console.error("Failed to list script drafts:", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to list script drafts", 500);
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const store = await getStoreRepository().findById(body.storeId);
+  try {
+    const body = await request.json();
+    const store = await getStoreRepository().findById(body.storeId);
 
-  if (!store) {
-    return jsonError("Store profile not found", 404);
+    if (!store) {
+      return jsonError("Store profile not found", 404);
+    }
+
+    const assetAnalyses = body.assetAnalysisIds?.length
+      ? await getAssetAnalysisRepository().listByIds(body.assetAnalysisIds)
+      : [];
+    const purpose = (body.purpose ?? "store_traffic") as MarketingPurpose;
+
+    const script = body.forceTemplate
+      ? createTemplateScriptDraft({ store, assetAnalyses, purpose, reason: "manual_template_mode" })
+      : await createScriptDraft({
+          store,
+          assetAnalyses,
+          purpose,
+          platform: (body.platform ?? "douyin") as Platform
+        });
+
+    const saved = await getScriptRepository().create(script);
+    return jsonOk({ script: saved }, 201);
+  } catch (error) {
+    console.error("Failed to create script draft:", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to create script draft", 500);
   }
-
-  const assetAnalyses = body.assetAnalysisIds?.length
-    ? await getAssetAnalysisRepository().listByIds(body.assetAnalysisIds)
-    : [];
-  const purpose = (body.purpose ?? "store_traffic") as MarketingPurpose;
-
-  const script = body.forceTemplate
-    ? createTemplateScriptDraft({ store, assetAnalyses, purpose, reason: "manual_template_mode" })
-    : await createScriptDraft({
-        store,
-        assetAnalyses,
-        purpose,
-        platform: (body.platform ?? "douyin") as Platform
-      });
-
-  const saved = await getScriptRepository().create(script);
-  return jsonOk({ script: saved }, 201);
 }

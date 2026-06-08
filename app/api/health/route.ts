@@ -1,17 +1,22 @@
-import { jsonOk } from "@/lib/api-response";
+import { jsonError, jsonOk } from "@/lib/api-response";
 import { getAppMode, hasDatabase } from "@/lib/env";
 
 export async function GET() {
-  const checks = {
-    database: hasDatabase() ? "configured" : "missing",
-    redis: process.env.REDIS_URL ? "configured" : "missing"
-  };
-  const degraded = checks.database === "missing";
+  try {
+    const checks = {
+      database: hasDatabase() ? "configured" : "missing",
+      redis: process.env.REDIS_URL ? "configured" : "missing"
+    };
+    const degraded = checks.database === "missing";
 
-  return jsonOk({
-    status: degraded ? "degraded" : "ok",
-    mode: getAppMode(),
-    checks,
-    timestamp: new Date().toISOString()
-  });
+    return jsonOk({
+      status: degraded ? "degraded" : "ok",
+      mode: getAppMode(),
+      checks,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Health check failed:", error);
+    return jsonError(error instanceof Error ? error.message : "Health check failed", 500);
+  }
 }

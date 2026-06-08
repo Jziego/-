@@ -5,26 +5,36 @@ import { demoOwnerId } from "@/lib/runtime-store";
 import { assetSchema } from "@/lib/schemas";
 
 export async function GET() {
-  const assets = await getAssetRepository().listByOwner(demoOwnerId);
-  return jsonOk({ assets });
+  try {
+    const assets = await getAssetRepository().listByOwner(demoOwnerId);
+    return jsonOk({ assets });
+  } catch (error) {
+    console.error("Failed to list assets:", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to list assets", 500);
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const parsed = assetSchema.safeParse({
-    ...body,
-    id: body.id ?? createId("asset"),
-    ownerId: body.ownerId ?? demoOwnerId,
-    tags: body.tags ?? [],
-    businessTags: body.businessTags ?? [],
-    status: body.status ?? "uploaded",
-    createdAt: body.createdAt ?? nowIso()
-  });
+  try {
+    const body = await request.json();
+    const parsed = assetSchema.safeParse({
+      ...body,
+      id: body.id ?? createId("asset"),
+      ownerId: body.ownerId ?? demoOwnerId,
+      tags: body.tags ?? [],
+      businessTags: body.businessTags ?? [],
+      status: body.status ?? "uploaded",
+      createdAt: body.createdAt ?? nowIso()
+    });
 
-  if (!parsed.success) {
-    return jsonError(parsed.error.issues[0]?.message ?? "Invalid asset");
+    if (!parsed.success) {
+      return jsonError(parsed.error.issues[0]?.message ?? "Invalid asset");
+    }
+
+    const asset = await getAssetRepository().create(parsed.data);
+    return jsonOk({ asset }, 201);
+  } catch (error) {
+    console.error("Failed to create asset:", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to create asset", 500);
   }
-
-  const asset = await getAssetRepository().create(parsed.data);
-  return jsonOk({ asset }, 201);
 }
