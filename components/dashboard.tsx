@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import {
   analyzeAssetApi,
@@ -210,6 +210,7 @@ export function Dashboard() {
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const draftClearedRef = useRef(false);
 
   const { data: stores = [] } = useQuery({
     queryKey: ["stores"],
@@ -274,6 +275,7 @@ export function Dashboard() {
   }, [reset]);
 
   useEffect(() => {
+    if (draftClearedRef.current) return;
     saveStoreDraft(currentDraft);
   }, [currentDraft]);
 
@@ -308,9 +310,10 @@ export function Dashboard() {
     if (pendingAction) return;
 
     const isLastStep = storeFormStep >= storeFormSteps.length - 1;
-    const fieldsToValidate = (isLastStep
-      ? storeFormSteps.flatMap((step) => step.fields)
-      : selectedStoreStep.fields) as StoreField[];
+    // Only validate the current step's fields, not all fields across all steps.
+    // Previous steps were already validated when the user clicked "保存并继续".
+    // The API schema validation is the ultimate guard for data completeness.
+    const fieldsToValidate = selectedStoreStep.fields as StoreField[];
     const fieldNames = fieldsToValidate.map((field) => field.name);
 
     setPendingAction("store");
@@ -348,10 +351,9 @@ export function Dashboard() {
       const valid = await trigger(fieldNames, { shouldFocus: true });
 
       if (!valid) {
-        const visibleFields = isLastStep ? selectedStoreStep.fields : fieldsToValidate;
-        const firstInvalidField = visibleFields.find((field) => getFieldState(field.name).invalid);
+        const firstInvalidField = fieldsToValidate.find((field) => getFieldState(field.name).invalid);
         setMessage(firstInvalidField ? `请先填写${firstInvalidField.label}。` : "请先补全当前步骤的必填项。");
-        scrollToFirstFieldError(visibleFields);
+        scrollToFirstFieldError(fieldsToValidate);
         return;
       }
 
@@ -380,6 +382,7 @@ export function Dashboard() {
       };
       const saved = await saveStore(profile);
       setLocalStore(saved);
+      draftClearedRef.current = true;
       clearStoreDraft();
       await queryClient.invalidateQueries({ queryKey: ["stores"] });
       setMessage("保存成功：请继续上传素材。");
