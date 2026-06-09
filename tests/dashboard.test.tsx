@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Dashboard } from "@/components/dashboard";
 import { Providers } from "@/components/providers";
 
@@ -52,6 +52,10 @@ describe("AI video assistant dashboard", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.stubGlobal("fetch", mockApiFetch());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("shows the four production modules in one SPA workspace", () => {
@@ -179,6 +183,88 @@ describe("AI video assistant dashboard", () => {
       await within(screen.getByRole("status")).findByText("保存成功：请继续上传素材。")
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传素材" })).toBeEnabled();
+  });
+
+  it("lets a user fill step one, refresh, and complete the profile", async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderDashboard();
+
+    await user.clear(screen.getByLabelText(/门店名称/));
+    await user.type(screen.getByLabelText(/门店名称/), "刷新后保存测试");
+    await user.selectOptions(screen.getByLabelText(/行业/), "零售");
+    await user.clear(screen.getByLabelText(/位置/));
+    await user.type(screen.getByLabelText(/位置/), "杭州");
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+
+    unmount();
+    renderDashboard();
+
+    await user.click(screen.getByRole("button", { name: "上一步" }));
+    expect(screen.getByLabelText(/门店名称/)).toHaveValue("刷新后保存测试");
+
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    await user.click(screen.getByRole("button", { name: "完成设置" }));
+
+    expect(
+      await within(screen.getByRole("status")).findByText("保存成功：请继续上传素材。")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传素材" })).toBeEnabled();
+  });
+
+  it("does not wipe a saved draft when the dashboard remounts", async () => {
+    const customDraft = {
+      name: "用户自定义店名",
+      industry: "零售",
+      location: "北京",
+      mainProducts: "手工皂",
+      targetCustomers: "年轻人",
+      sellingPoints: "天然无添加",
+      promotions: "开业八折",
+      brandTone: "活泼有趣",
+      forbiddenWords: "最好"
+    };
+    window.localStorage.setItem("ai-video-assistant:store-profile-step", "2");
+    window.localStorage.setItem("ai-video-assistant:store-profile-draft", JSON.stringify(customDraft));
+
+    const { unmount } = renderDashboard();
+    await screen.findByRole("heading", { name: "内容风格" });
+
+    expect(JSON.parse(window.localStorage.getItem("ai-video-assistant:store-profile-draft")!)).toMatchObject({
+      name: "用户自定义店名"
+    });
+
+    unmount();
+    renderDashboard();
+    await screen.findByRole("heading", { name: "内容风格" });
+
+    expect(JSON.parse(window.localStorage.getItem("ai-video-assistant:store-profile-draft")!)).toMatchObject({
+      name: "用户自定义店名"
+    });
+  });
+
+  it("does not write default values over a saved draft while hydrating", async () => {
+    const customDraft = {
+      name: "用户自定义店名",
+      industry: "零售",
+      location: "北京",
+      mainProducts: "手工皂",
+      targetCustomers: "年轻人",
+      sellingPoints: "天然无添加",
+      promotions: "开业八折",
+      brandTone: "活泼有趣",
+      forbiddenWords: "最好"
+    };
+    window.localStorage.setItem("ai-video-assistant:store-profile-step", "2");
+    window.localStorage.setItem("ai-video-assistant:store-profile-draft", JSON.stringify(customDraft));
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+
+    renderDashboard();
+    await screen.findByRole("heading", { name: "内容风格" });
+
+    const draftWrites = setItemSpy.mock.calls.filter(([key]) => key === "ai-video-assistant:store-profile-draft");
+    expect(draftWrites.length).toBeGreaterThan(0);
+    expect(draftWrites.every(([, value]) => JSON.parse(String(value)).name === customDraft.name)).toBe(true);
   });
 
   it("resumes at the saved step for a returning user", () => {

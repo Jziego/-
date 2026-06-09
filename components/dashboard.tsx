@@ -169,6 +169,27 @@ function mergeStoreDraftWithDefaults(draft: Partial<StoreFormValues>): StoreForm
   return merged;
 }
 
+function collectStoreFormValues(
+  getValues: () => StoreFormValues,
+  dirtyFields: Partial<Record<StoreFieldName, unknown>>
+): StoreFormValues {
+  const storedDraft = loadStoreDraft<Partial<StoreFormValues>>() ?? {};
+  const currentValues = getValues();
+  const mergedDraft: Partial<StoreFormValues> = { ...storedDraft };
+
+  for (const key of Object.keys(defaultStoreForm) as StoreFieldName[]) {
+    const storedValue = storedDraft[key];
+    const currentValue = currentValues[key];
+    const currentValueIsDefault = currentValue === defaultStoreForm[key];
+
+    if (dirtyFields[key] || !storedValue || !currentValueIsDefault) {
+      mergedDraft[key] = currentValue;
+    }
+  }
+
+  return mergeStoreDraftWithDefaults(mergedDraft);
+}
+
 function scrollToSection(sectionId: string): void {
   if (typeof window === "undefined") return;
 
@@ -207,6 +228,7 @@ export function Dashboard() {
   const [localJobs, setLocalJobs] = useState<Job[] | null>(null);
   const [message, setMessage] = useState("准备开始：先完成门店档案。");
   const [storeFormStep, setStoreFormStep] = useState(0);
+  const [draftReady, setDraftReady] = useState(false);
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -256,7 +278,7 @@ export function Dashboard() {
     getValues,
     getFieldState,
     reset,
-    formState: { errors }
+    formState: { dirtyFields, errors }
   } = useForm<StoreFormValues>({
     defaultValues: defaultStoreForm,
     shouldUnregister: false
@@ -271,12 +293,14 @@ export function Dashboard() {
     // Restore persisted step after hydration so SSR and the first client render stay aligned.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only draft step must load after mount
     setStoreFormStep(getInitialStoreFormStep());
+    setDraftReady(true);
   }, [reset]);
 
   useEffect(() => {
+    if (!draftReady) return;
     if (draftClearedRef.current) return;
     saveStoreDraft(currentDraft);
-  }, [currentDraft]);
+  }, [currentDraft, draftReady]);
 
   const currentStepIndex = useMemo(() => {
     if (!store) return 0;
@@ -333,7 +357,7 @@ export function Dashboard() {
         return;
       }
 
-      const values = mergeStoreDraftWithDefaults(getValues());
+      const values = collectStoreFormValues(getValues, dirtyFields);
       const now = nowIso();
       const profile: StoreProfile = {
         id: store?.id ?? createId("store"),
