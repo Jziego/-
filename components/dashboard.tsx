@@ -13,6 +13,7 @@ import {
   fetchAssets,
   fetchAvatars,
   fetchJobs,
+  fetchScriptDrafts,
   fetchStores,
   requestTalkingHeadApi,
   saveAsset,
@@ -156,6 +157,30 @@ function getInitialStoreFormStep(): number {
   return normalizeStoreFormStep(loadStoreDraftStep() ?? 0);
 }
 
+function joinCsv(values: string[] | undefined): string {
+  return (values ?? []).join(", ");
+}
+
+function storeProfileToFormValues(profile: StoreProfile): StoreFormValues {
+  return {
+    name: profile.name,
+    industry: profile.industry,
+    location: profile.location ?? "",
+    mainProducts: joinCsv(profile.mainProducts),
+    targetCustomers: joinCsv(profile.targetCustomers),
+    sellingPoints: joinCsv(profile.sellingPoints),
+    promotions: joinCsv(profile.promotions),
+    brandTone: profile.brandTone,
+    forbiddenWords: joinCsv(profile.forbiddenWords)
+  };
+}
+
+function draftMatchesDefaults(draft: Partial<StoreFormValues>): boolean {
+  return (Object.keys(defaultStoreForm) as StoreFieldName[]).every(
+    (key) => mergeStoreDraftWithDefaults(draft)[key] === defaultStoreForm[key]
+  );
+}
+
 function mergeStoreDraftWithDefaults(draft: Partial<StoreFormValues>): StoreFormValues {
   const merged: StoreFormValues = { ...defaultStoreForm };
 
@@ -224,17 +249,19 @@ export function Dashboard() {
   const [localAsset, setLocalAsset] = useState<Asset | null>(null);
   const [localAnalysis, setLocalAnalysis] = useState<AssetAnalysis | null>(null);
   const [localAvatar, setLocalAvatar] = useState<AvatarProfile | null>(null);
-  const [script, setScript] = useState<ScriptDraft | null>(null);
+  const [localScript, setLocalScript] = useState<ScriptDraft | null>(null);
   const [localJobs, setLocalJobs] = useState<Job[] | null>(null);
   const [message, setMessage] = useState("准备开始：先完成门店档案。");
   const [storeFormStep, setStoreFormStep] = useState(0);
   const [draftReady, setDraftReady] = useState(false);
+  const [storeHydrationResolved, setStoreHydrationResolved] = useState(false);
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const draftClearedRef = useRef(false);
+  const savedStoreHydratedRef = useRef(false);
 
-  const { data: stores = [] } = useQuery({
+  const { data: stores = [], isPending: storesPending } = useQuery({
     queryKey: ["stores"],
     queryFn: fetchStores
   });
@@ -263,6 +290,11 @@ export function Dashboard() {
     }
   });
 
+  const { data: serverScripts = [] } = useQuery({
+    queryKey: ["script-drafts"],
+    queryFn: fetchScriptDrafts
+  });
+
   const store = localStore ?? stores[0] ?? null;
   const asset =
     localAsset ?? (store ? (serverAssets.find((item) => item.storeId === store.id) ?? null) : null);
@@ -270,6 +302,13 @@ export function Dashboard() {
     localAnalysis ?? (asset ? (serverAnalyses.find((item) => item.assetId === asset.id) ?? null) : null);
   const avatar =
     localAvatar ?? (store ? (serverAvatars.find((item) => item.storeId === store.id) ?? null) : null);
+  const script =
+    localScript ??
+    (store
+      ? (serverScripts
+          .filter((item) => item.storeId === store.id)
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null)
+      : null);
   const jobs = localJobs ?? serverJobs;
   const {
     control,
@@ -297,10 +336,43 @@ export function Dashboard() {
   }, [reset]);
 
   useEffect(() => {
-    if (!draftReady) return;
+    if (!draftReady || storesPending || storeHydrationResolved) return;
+
+    const savedStore = stores[0];
+    const draft = loadStoreDraft<StoreFormValues>();
+
+    if (savedStore && (!draft || draftMatchesDefaults(draft))) {
+      savedStoreHydratedRef.current = true;
+      draftClearedRef.current = true;
+      if (draft) clearStoreDraft();
+      reset(storeProfileToFormValues(savedStore));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate completed profile from API after stores load
+      setStoreFormStep(storeFormSteps.length - 1);
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- gate draft persistence until API hydration is decided
+    setStoreHydrationResolved(true);
+  }, [draftReady, reset, storeHydrationResolved, stores, storesPending]);
+
+  useEffect(() => {
+    if (!draftReady || !storeHydrationResolved) return;
     if (draftClearedRef.current) return;
     saveStoreDraft(currentDraft);
-  }, [currentDraft, draftReady]);
+  }, [currentDraft, draftReady, storeHydrationResolved]);
+
+  useEffect(() => {
+    if (avatar) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mirror server avatar consent on refresh
+      setAvatarConsent(true);
+    }
+  }, [avatar]);
+
+  useEffect(() => {
+    if (script) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore marketing purpose from saved script
+      setSelectedPurpose(script.purpose);
+    }
+  }, [script]);
 
   const currentStepIndex = useMemo(() => {
     if (!store) return 0;
@@ -508,8 +580,9 @@ export function Dashboard() {
         bgmTrackId: "bgm_warm"
       });
 
-      setScript(draft);
+      setLocalScript(draft);
       setLocalJobs(plannedJobs);
+      await queryClient.invalidateQueries({ queryKey: ["script-drafts"] });
       await queryClient.invalidateQueries({ queryKey: ["jobs"] });
       setMessage("AI 正在生成你的视频：自动写文案、剪画面、加字幕、配音乐。");
     } finally {

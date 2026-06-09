@@ -40,6 +40,11 @@ export async function fetchStores(): Promise<StoreProfile[]> {
   return data.stores;
 }
 
+export async function fetchScriptDrafts(): Promise<ScriptDraft[]> {
+  const data = await api<{ scripts: ScriptDraft[] }>("/api/script-drafts");
+  return data.scripts;
+}
+
 export async function saveStore(profile: StoreProfile): Promise<StoreProfile> {
   const data = await api<{ store: StoreProfile }>("/api/store-profiles", {
     method: "POST",

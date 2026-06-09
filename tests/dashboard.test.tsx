@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Dashboard } from "@/components/dashboard";
@@ -34,6 +34,7 @@ function mockApiFetch() {
       if (url === "/api/asset-analyses") return { analyses: [] };
       if (url === "/api/avatars") return { avatars: [] };
       if (url === "/api/jobs") return { jobs: [] };
+      if (url === "/api/script-drafts") return { scripts: [] };
       return {};
     }
   };
@@ -262,9 +263,11 @@ describe("AI video assistant dashboard", () => {
     renderDashboard();
     await screen.findByRole("heading", { name: "内容风格" });
 
-    const draftWrites = setItemSpy.mock.calls.filter(([key]) => key === "ai-video-assistant:store-profile-draft");
-    expect(draftWrites.length).toBeGreaterThan(0);
-    expect(draftWrites.every(([, value]) => JSON.parse(String(value)).name === customDraft.name)).toBe(true);
+    await waitFor(() => {
+      const draftWrites = setItemSpy.mock.calls.filter(([key]) => key === "ai-video-assistant:store-profile-draft");
+      expect(draftWrites.length).toBeGreaterThan(0);
+      expect(draftWrites.every(([, value]) => JSON.parse(String(value)).name === customDraft.name)).toBe(true);
+    });
   });
 
   it("resumes at the saved step for a returning user", () => {
@@ -365,6 +368,145 @@ describe("AI video assistant dashboard", () => {
       await within(screen.getByRole("status")).findByText("门店档案保存失败：Foreign key constraint failed")
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传素材" })).toBeDisabled();
+  });
+
+  it("restores the store profile form from the API after a completed save and refresh", async () => {
+    const user = userEvent.setup();
+    const savedStore = {
+      id: "store_saved",
+      ownerId: "demo_user",
+      name: "已保存门店",
+      industry: "零售",
+      location: "成都",
+      mainProducts: ["手工皂"],
+      targetCustomers: ["年轻人"],
+      sellingPoints: ["天然无添加"],
+      promotions: ["开业八折"],
+      brandTone: "活泼有趣",
+      forbiddenWords: ["最好"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/store-profiles" && init?.method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return {
+            ok: true,
+            json: async () => ({
+              store: {
+                ...savedStore,
+                ...body,
+                id: savedStore.id,
+                ownerId: savedStore.ownerId
+              }
+            })
+          };
+        }
+
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    await screen.findByRole("heading", { name: "内容风格" });
+    expect(screen.getByRole("radio", { name: "活泼有趣" })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "上一步" }));
+    await user.click(screen.getByRole("button", { name: "上一步" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/门店名称/)).toHaveValue("已保存门店");
+    });
+    expect(screen.getByLabelText(/位置/)).toHaveValue("成都");
+    expect(window.localStorage.getItem("ai-video-assistant:store-profile-draft")).toBeNull();
+  });
+
+  it("restores avatar and script progress from the API after refresh", async () => {
+    const savedStore = {
+      id: "store_saved",
+      ownerId: "demo_user",
+      name: "已保存门店",
+      industry: "零售",
+      location: "成都",
+      mainProducts: ["手工皂"],
+      targetCustomers: ["年轻人"],
+      sellingPoints: ["天然无添加"],
+      promotions: [],
+      brandTone: "活泼有趣",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAvatar = {
+      id: "avatar_saved",
+      ownerId: "demo_user",
+      storeId: savedStore.id,
+      provider: "mock-avatar" as const,
+      consentAcceptedAt: "2026-01-01T00:00:00.000Z",
+      trainingStatus: "processing" as const,
+      fallbackMode: "tts_voiceover" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedScript = {
+      id: "script_saved",
+      ownerId: "demo_user",
+      storeId: savedStore.id,
+      purpose: "new_product" as const,
+      platform: "douyin" as const,
+      title: "新品推广",
+      hook: "今天上新，欢迎来尝",
+      scenes: [],
+      voiceover: "欢迎来尝",
+      captions: [],
+      cta: "到店体验",
+      generationMode: "ai" as const,
+      complianceWarnings: [],
+      createdAt: "2026-01-02T00:00:00.000Z"
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [savedAvatar] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [savedScript] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    const stepper = await screen.findByRole("navigation", { name: "全局步骤导航" });
+    await waitFor(() => {
+      expect(within(stepper).getByRole("link", { name: /AI 分身/ })).toHaveTextContent("已完成");
+    });
+    expect(within(stepper).getByRole("link", { name: /智能成片/ })).toHaveTextContent("已完成");
+    expect(screen.getByText("AI 形象已创建")).toBeInTheDocument();
+    expect(screen.getByText("今天上新，欢迎来尝")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /我已确认拥有该视频的肖像/ })).toBeChecked();
   });
 
   it("validates only the current step when continuing", async () => {

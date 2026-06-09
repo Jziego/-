@@ -1,4 +1,3 @@
-import { handleRouteError } from "@/lib/api-errors";
 import { jsonError, jsonOk } from "@/lib/api-response";
 import {
   getAvatarRepository,
@@ -11,55 +10,47 @@ import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib
 import type { AspectRatio, RenderProject } from "@/lib/types";
 
 export async function GET() {
-  try {
-    const renderRepo = getRenderRepository();
-    const [renderProjects, jobs, outputs] = await Promise.all([
-      renderRepo.listProjectsByOwner(demoOwnerId),
-      getJobRepository().listByOwner(demoOwnerId),
-      renderRepo.listOutputsByOwner(demoOwnerId)
-    ]);
-    return jsonOk({ renderProjects, jobs, outputs });
-  } catch (error) {
-    return handleRouteError("Failed to list render projects", error);
-  }
+  const renderRepo = getRenderRepository();
+  const [renderProjects, jobs, outputs] = await Promise.all([
+    renderRepo.listProjectsByOwner(demoOwnerId),
+    getJobRepository().listByOwner(demoOwnerId),
+    renderRepo.listOutputsByOwner(demoOwnerId)
+  ]);
+  return jsonOk({ renderProjects, jobs, outputs });
 }
 
 export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const scriptDraft = await getScriptRepository().findById(body.scriptDraftId);
+  const body = await request.json();
+  const scriptDraft = await getScriptRepository().findById(body.scriptDraftId);
 
-    if (!scriptDraft) {
-      return jsonError("Script draft not found", 404);
-    }
-
-    const avatarProfile = body.avatarProfileId
-      ? (await getAvatarRepository().findById(body.avatarProfileId)) ?? undefined
-      : undefined;
-    const project = createRenderProject({
-      ownerId: body.ownerId ?? scriptDraft.ownerId,
-      storeId: scriptDraft.storeId,
-      scriptDraft,
-      selectedAssetIds: body.selectedAssetIds ?? [],
-      avatarProfile,
-      aspectRatio: (body.aspectRatio ?? "9:16") as AspectRatio,
-      subtitleStyle: (body.subtitleStyle ?? "bold_bottom") as RenderProject["subtitleStyle"],
-      bgmTrackId: body.bgmTrackId
-    });
-
-    const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatarProfile) });
-    const fallbackJob = recoverRenderFailure({
-      projectId: project.id,
-      ownerId: project.ownerId,
-      reason: "ffmpeg_timeout"
-    });
-    const jobs = [...plannedJobs, fallbackJob];
-
-    await getRenderRepository().createProject(project);
-    await getJobRepository().createMany(jobs);
-
-    return jsonOk({ project, jobs }, 201);
-  } catch (error) {
-    return handleRouteError("Failed to create render project", error);
+  if (!scriptDraft) {
+    return jsonError("Script draft not found", 404);
   }
+
+  const avatarProfile = body.avatarProfileId
+    ? (await getAvatarRepository().findById(body.avatarProfileId)) ?? undefined
+    : undefined;
+  const project = createRenderProject({
+    ownerId: body.ownerId ?? scriptDraft.ownerId,
+    storeId: scriptDraft.storeId,
+    scriptDraft,
+    selectedAssetIds: body.selectedAssetIds ?? [],
+    avatarProfile,
+    aspectRatio: (body.aspectRatio ?? "9:16") as AspectRatio,
+    subtitleStyle: (body.subtitleStyle ?? "bold_bottom") as RenderProject["subtitleStyle"],
+    bgmTrackId: body.bgmTrackId
+  });
+
+  const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatarProfile) });
+  const fallbackJob = recoverRenderFailure({
+    projectId: project.id,
+    ownerId: project.ownerId,
+    reason: "ffmpeg_timeout"
+  });
+  const jobs = [...plannedJobs, fallbackJob];
+
+  await getRenderRepository().createProject(project);
+  await getJobRepository().createMany(jobs);
+
+  return jsonOk({ project, jobs }, 201);
 }
