@@ -1,10 +1,16 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET, POST } from "@/app/api/store-profiles/route";
+import * as repositories from "@/lib/repositories";
+import { MemoryStoreRepository } from "@/lib/repositories/memory";
 import { resetRuntimeStateForTests } from "@/lib/runtime-store";
 
 describe("store-profiles API", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     resetRuntimeStateForTests();
+    vi.spyOn(repositories, "getStoreRepository").mockImplementation(
+      () => new MemoryStoreRepository()
+    );
   });
 
   it("creates and lists store profiles", async () => {
