@@ -1,0 +1,36 @@
+---
+description: React Hook Form 多步门店档案表单约定
+globs: components/dashboard.tsx
+alwaysApply: false
+---
+
+# React Hook Form 多步表单
+
+参考实现：`components/dashboard.tsx` 门店档案（`storeFormSteps`）。
+
+## shouldUnregister
+
+- 门店表单使用 `shouldUnregister: false`，**保留未挂载步骤的字段值**
+- 分步只渲染当前步字段时，若改为 `true` 会丢失其它步数据，提交前 `collectStoreFormValues` 会不完整
+
+## 分步校验
+
+- 每步提交只 `trigger` 当前步字段名：`trigger(fieldNames, { shouldFocus: true })`
+- 非最后一步：校验通过 → `goToStoreFormStep(step + 1)`，不调 API
+- 最后一步：校验通过 → `collectStoreFormValues` → `saveStore`
+
+## 最终提交与 DOM sync
+
+- 提交前用 `collectStoreFormValues(getValues, dirtyFields)` 合并 localStorage 草稿与当前值
+- `dirtyFields` 为 true 或当前值非默认值时，以当前值为准
+- radio / select：确保 `register` 的 `name` 与 `trigger` 字段名一致；校验失败时用 `scrollToFirstFieldError` 定位
+
+## 草稿存储
+
+- Key：`ai-video-assistant:store-profile-draft`、`ai-video-assistant:store-profile-step`（见 `lib/draft-storage.ts`）
+- `mergeStoreDraftWithDefaults`：空字符串不覆盖 `defaultStoreForm` 默认值
+- `useWatch` 在 `draftReady` 后自动 `saveStoreDraft`；成功保存门店后 `clearStoreDraft()` 并设 `draftClearedRef`
+
+## 浏览器回归
+
+改多步逻辑后，用 browser MCP 验证：三步填完 →「完成设置」→ 素材库解锁。

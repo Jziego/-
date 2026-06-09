@@ -1,0 +1,44 @@
+---
+description: Next.js SSR / Hydration 约束（禁止首屏读浏览器 API）
+globs: **/*.{tsx,ts}
+alwaysApply: false
+---
+
+# Next.js SSR / Hydration
+
+## 禁止
+
+- 在 `useState(initializer)` 中读取 `localStorage`、`sessionStorage`、`window`、`document`
+- 用浏览器专属值作为首屏渲染分支条件（会导致 SSR HTML 与客户端首帧不一致）
+
+```tsx
+// ❌ 首屏 step 来自 localStorage
+const [step, setStep] = useState(() => loadStoreDraftStep() ?? 0);
+
+// ✅ 服务端与首帧统一为默认值，mount 后再恢复
+const [step, setStep] = useState(0);
+useEffect(() => {
+  setStoreFormStep(getInitialStoreFormStep());
+  setDraftReady(true);
+}, [reset]);
+```
+
+## 客户端专属状态
+
+- 用 `useEffect` + `mounted` / `draftReady` 模式延迟恢复
+- `draft-storage.ts` 的读写函数已做 `typeof window` 守卫，但**调用时机**仍须在 mount 之后
+
+## 多步表单步骤恢复
+
+- 首屏 step 固定为 `0`（或与 SSR 一致的常量）
+- mount 后从 localStorage 恢复 step 与草稿，再 `reset(mergeStoreDraftWithDefaults(draft))`
+
+## 改完后必须浏览器验证
+
+修改 `components/dashboard.tsx` 或其它涉及 SSR 的组件后，必须用 **cursor-ide-browser** MCP 走通：
+
+1. 打开 dev server（`npm run dev`）
+2. 完成门店档案三步表单 → 点击「完成设置」
+3. 确认素材库（`#media-upload`）解锁、无 hydration 报错
+
+Vitest 通过不等于浏览器流程可用。

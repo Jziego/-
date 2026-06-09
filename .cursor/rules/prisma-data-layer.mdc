@@ -1,0 +1,34 @@
+---
+description: Prisma / 数据层与 API 仓库选择约定
+globs: "{lib/repositories/**,lib/prisma.ts,app/api/**,prisma/**}"
+alwaysApply: false
+---
+
+# Prisma / 数据层
+
+## 内存 vs PostgreSQL
+
+- `hasDatabase()`（`lib/env.ts`）为 false 时：`getPrisma()` 返回 `null`，`lib/repositories/index.ts` 使用 **Memory*** 实现
+- 有 `DATABASE_URL` 时：使用 **Prisma*** 实现，经 `@prisma/adapter-pg` + `pg` Pool
+
+本地无 `.env` 时默认内存模式；持久化需复制 `.env.example` → `.env` 并配置 `DATABASE_URL`。
+
+## ensureDemoUser 与外键
+
+- `StoreProfile.ownerId` 等外键指向 `User.id`
+- PostgreSQL 模式下写入前须 `ensureDemoUser(prisma, ownerId)`（见 `lib/demo-user.ts`）
+- 默认 owner：`demoOwnerId`（`lib/runtime-store.ts`，值为 `demo_user`）
+- `prisma/seed.ts` 会 upsert `demo_user`；生产首次部署后执行 `npm run db:seed`
+
+外键错误常见原因：未 seed、ownerId 与 User 不匹配。
+
+## API 与 Repository
+
+- API 路由通过 `getStoreRepository()`、`getAssetRepository()` 等工厂获取实例，**不要**在 route 里直接 `new PrismaClient()`
+- 新增实体：先定义 `lib/repositories/types.ts` 接口，再实现 `memory.ts` 与 `prisma.ts`，最后在 `index.ts` 注册工厂
+- 错误处理：统一 `handleRouteError` + `jsonError` / `jsonOk`
+
+## 迁移
+
+- 开发：`npm run db:migrate`
+- 部署：`npm run db:migrate:deploy`（Zeabur `zbpack.json` 已集成）
