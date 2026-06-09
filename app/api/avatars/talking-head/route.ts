@@ -1,3 +1,4 @@
+import { handleRouteError } from "@/lib/api-errors";
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { getAvatarRepository } from "@/lib/repositories";
 import { createMockAvatarProvider, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
@@ -22,7 +23,6 @@ export async function POST(request: Request) {
 
     return jsonOk({ result }, 201);
   } catch (error) {
-    console.error("Failed to request talking head:", error);
-    return jsonError(error instanceof Error ? error.message : "Failed to request talking head", 500);
+    return handleRouteError("Failed to request talking head", error);
   }
 }

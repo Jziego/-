@@ -1,4 +1,5 @@
-import { jsonError, jsonOk } from "@/lib/api-response";
+import { handleRouteError } from "@/lib/api-errors";
+import { jsonOk } from "@/lib/api-response";
 import { getAppMode, hasDatabase } from "@/lib/env";
 
 export async function GET() {
@@ -16,7 +17,6 @@ export async function GET() {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error("Health check failed:", error);
-    return jsonError(error instanceof Error ? error.message : "Health check failed", 500);
+    return handleRouteError("Health check failed", error);
   }
 }

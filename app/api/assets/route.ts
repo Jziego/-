@@ -1,3 +1,4 @@
+import { handleRouteError } from "@/lib/api-errors";
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { createId, nowIso } from "@/lib/ids";
 import { getAssetRepository } from "@/lib/repositories";
@@ -9,8 +10,7 @@ export async function GET() {
     const assets = await getAssetRepository().listByOwner(demoOwnerId);
     return jsonOk({ assets });
   } catch (error) {
-    console.error("Failed to list assets:", error);
-    return jsonError(error instanceof Error ? error.message : "Failed to list assets", 500);
+    return handleRouteError("Failed to list assets", error);
   }
 }
 
@@ -34,7 +34,6 @@ export async function POST(request: Request) {
     const asset = await getAssetRepository().create(parsed.data);
     return jsonOk({ asset }, 201);
   } catch (error) {
-    console.error("Failed to create asset:", error);
-    return jsonError(error instanceof Error ? error.message : "Failed to create asset", 500);
+    return handleRouteError("Failed to create asset", error);
   }
 }

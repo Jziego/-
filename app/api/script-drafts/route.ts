@@ -1,3 +1,4 @@
+import { handleRouteError } from "@/lib/api-errors";
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { getAssetAnalysisRepository, getScriptRepository, getStoreRepository } from "@/lib/repositories";
 import { demoOwnerId } from "@/lib/runtime-store";
@@ -9,8 +10,7 @@ export async function GET() {
     const scripts = await getScriptRepository().listByOwner(demoOwnerId);
     return jsonOk({ scripts });
   } catch (error) {
-    console.error("Failed to list script drafts:", error);
-    return jsonError(error instanceof Error ? error.message : "Failed to list script drafts", 500);
+    return handleRouteError("Failed to list script drafts", error);
   }
 }
 
@@ -40,7 +40,6 @@ export async function POST(request: Request) {
     const saved = await getScriptRepository().create(script);
     return jsonOk({ script: saved }, 201);
   } catch (error) {
-    console.error("Failed to create script draft:", error);
-    return jsonError(error instanceof Error ? error.message : "Failed to create script draft", 500);
+    return handleRouteError("Failed to create script draft", error);
   }
 }

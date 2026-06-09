@@ -1,3 +1,4 @@
+import { handleRouteError } from "@/lib/api-errors";
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { createUploadIntent } from "@/lib/services/assets";
 
@@ -19,7 +20,6 @@ export async function POST(request: Request) {
 
     return jsonOk({ intent }, 201);
   } catch (error) {
-    console.error("Failed to create upload intent:", error);
-    return jsonError(error instanceof Error ? error.message : "Failed to create upload intent", 500);
+    return handleRouteError("Failed to create upload intent", error);
   }
 }

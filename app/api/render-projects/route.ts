@@ -1,3 +1,4 @@
+import { handleRouteError } from "@/lib/api-errors";
 import { jsonError, jsonOk } from "@/lib/api-response";
 import {
   getAvatarRepository,
@@ -19,8 +20,7 @@ export async function GET() {
     ]);
     return jsonOk({ renderProjects, jobs, outputs });
   } catch (error) {
-    console.error("Failed to list render projects:", error);
-    return jsonError(error instanceof Error ? error.message : "Failed to list render projects", 500);
+    return handleRouteError("Failed to list render projects", error);
   }
 }
 
@@ -60,7 +60,6 @@ export async function POST(request: Request) {
 
     return jsonOk({ project, jobs }, 201);
   } catch (error) {
-    console.error("Failed to create render project:", error);
-    return jsonError(error instanceof Error ? error.message : "Failed to create render project", 500);
+    return handleRouteError("Failed to create render project", error);
   }
 }

@@ -1,3 +1,4 @@
+import { handleRouteError } from "@/lib/api-errors";
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { getAssetAnalysisRepository, getAssetRepository, getStoreRepository } from "@/lib/repositories";
 import { classifyAsset } from "@/lib/services/assets";
@@ -24,7 +25,6 @@ export async function POST(request: Request) {
     const saved = await getAssetAnalysisRepository().create(analysis);
     return jsonOk({ analysis: saved }, 201);
   } catch (error) {
-    console.error("Failed to analyze asset:", error);
-    return jsonError(error instanceof Error ? error.message : "Failed to analyze asset", 500);
+    return handleRouteError("Failed to analyze asset", error);
   }
 }
