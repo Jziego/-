@@ -33,6 +33,17 @@ export const storeProfileSchema = z.object({
   updatedAt: isoDateString
 });
 
+export const confirmAssetUploadSchema = z.object({
+  assetId: z.string().min(1),
+  storeId: z.string().min(1),
+  ownerId: z.string().min(1).optional(),
+  storageKey: z.string().min(1),
+  originalFilename: z.string().min(1),
+  mimeType: z.string().min(1),
+  type: z.enum(["video", "image", "audio"]),
+  sizeBytes: z.number().positive().optional()
+});
+
 export const assetSchema = z.object({
   id: z.string().min(1),
   ownerId: z.string().min(1),

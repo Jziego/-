@@ -53,21 +53,79 @@ export async function saveStore(profile: StoreProfile): Promise<StoreProfile> {
   return data.store;
 }
 
+export interface UploadIntentResponse {
+  assetId: string;
+  storageKey: string;
+  uploadUrl: string;
+  headers: Record<string, string>;
+  maxSizeBytes: number;
+  expiresInSeconds: number;
+}
+
+export interface ConfirmAssetInput {
+  assetId: string;
+  storeId: string;
+  ownerId?: string;
+  storageKey: string;
+  originalFilename: string;
+  mimeType: string;
+  type: "video" | "image" | "audio";
+  sizeBytes?: number;
+}
+
 export async function createUploadIntentApi(input: {
   ownerId: string;
   storeId: string;
   filename: string;
   contentType: string;
   sizeBytes: number;
-}) {
-  const data = await api<{ intent: { assetId: string; storageKey: string; uploadUrl: string } }>(
-    "/api/assets/upload-intent",
-    {
-      method: "POST",
-      body: JSON.stringify(input)
-    }
-  );
+}): Promise<UploadIntentResponse> {
+  const data = await api<{ intent: UploadIntentResponse }>("/api/assets/upload-intent", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
   return data.intent;
+}
+
+export async function uploadFileToStorage(
+  uploadUrl: string,
+  file: File,
+  headers: Record<string, string>,
+  onProgress?: (ratio: number) => void
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+
+    for (const [key, value] of Object.entries(headers)) {
+      xhr.setRequestHeader(key, value);
+    }
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(event.loaded / event.total);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      reject(new Error(`Upload failed with status ${xhr.status}`));
+    };
+
+    xhr.onerror = () => reject(new Error("Upload failed due to a network error"));
+    xhr.send(file);
+  });
+}
+
+export async function confirmAssetUpload(input: ConfirmAssetInput): Promise<Asset> {
+  const data = await api<{ asset: Asset }>("/api/assets/confirm", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+  return data.asset;
 }
 
 export async function saveAsset(asset: Asset): Promise<Asset> {

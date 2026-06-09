@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Dashboard } from "@/components/dashboard";
 import { Providers } from "@/components/providers";
+import * as apiClient from "@/lib/api-client";
 
 function mockApiFetch() {
   return vi.fn(async (url: string, init?: RequestInit) => {
@@ -507,6 +508,124 @@ describe("AI video assistant dashboard", () => {
     expect(screen.getByText("AI 形象已创建")).toBeInTheDocument();
     expect(screen.getByText("今天上新，欢迎来尝")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /我已确认拥有该视频的肖像/ })).toBeChecked();
+  });
+
+  it("uploads a selected file through intent, storage PUT and confirm", async () => {
+    const user = userEvent.setup();
+    const uploadSpy = vi.fn();
+    const savedStore = {
+      id: "store_upload",
+      ownerId: "demo_user",
+      name: "上传测试店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/store-profiles" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return { ok: true, json: async () => ({ store: { ...savedStore, ...body, id: savedStore.id } }) };
+        }
+
+        if (url === "/api/assets/upload-intent" && method === "POST") {
+          return {
+            ok: true,
+            json: async () => ({
+              intent: {
+                assetId: "asset_upload",
+                storageKey: "stores/store_upload/assets/asset_upload-demo.mp4",
+                uploadUrl: "https://storage.example/upload",
+                headers: { "Content-Type": "video/mp4" },
+                maxSizeBytes: 200 * 1024 * 1024,
+                expiresInSeconds: 900
+              }
+            })
+          };
+        }
+
+        if (url === "/api/assets/confirm" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return {
+            ok: true,
+            json: async () => ({
+              asset: {
+                id: body.assetId,
+                ownerId: savedStore.ownerId,
+                storeId: savedStore.id,
+                type: "video",
+                originalFilename: body.originalFilename,
+                storageKey: body.storageKey,
+                mimeType: body.mimeType,
+                sizeBytes: body.sizeBytes ?? 1000,
+                tags: [],
+                businessTags: [],
+                status: "uploaded",
+                createdAt: new Date().toISOString()
+              }
+            })
+          };
+        }
+
+        if (url === "/api/assets/analyze" && method === "POST") {
+          return {
+            ok: true,
+            json: async () => ({
+              analysis: {
+                id: "analysis_upload",
+                assetId: "asset_upload",
+                visualTags: ["food"],
+                businessTags: ["新品推荐"],
+                keywords: ["牛肉面"],
+                confidence: 0.8,
+                recommendedUses: ["new_product"],
+                createdAt: new Date().toISOString()
+              }
+            })
+          };
+        }
+
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    vi.spyOn(apiClient, "uploadFileToStorage").mockImplementation(async () => {
+      uploadSpy();
+    });
+
+    renderDashboard();
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["video"], "demo.mp4", { type: "video/mp4" });
+    await user.upload(fileInput, file);
+
+    expect(uploadSpy).toHaveBeenCalled();
+    expect(
+      await within(screen.getByRole("status")).findByText("上传完成：AI 已自动识别画面和语音内容。")
+    ).toBeInTheDocument();
+    expect(screen.getByText("demo.mp4")).toBeInTheDocument();
   });
 
   it("validates only the current step when continuing", async () => {

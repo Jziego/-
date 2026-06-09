@@ -18,8 +18,9 @@ Dashboard 单页按 `#store-profile` → `#media-upload` → `#avatar-clone` →
 | 路径 | 用途 |
 |------|------|
 | `GET/POST /api/store-profiles` | 门店档案列表与保存 |
-| `GET/POST /api/assets` | 素材 CRUD |
-| `POST /api/assets/upload-intent` | 上传签名意图 |
+| `GET/POST /api/assets` | 素材 CRUD（`POST` 供测试/admin；Dashboard 走 confirm 流程） |
+| `POST /api/assets/upload-intent` | 签发 presigned PUT 上传意图 |
+| `POST /api/assets/confirm` | HeadObject 校验后写入 Asset |
 | `POST /api/assets/analyze` | 触发素材 AI 分析 |
 | `GET /api/asset-analyses` | 分析结果列表 |
 | `GET/POST /api/avatars` | AI 分身档案 |
@@ -27,7 +28,7 @@ Dashboard 单页按 `#store-profile` → `#media-upload` → `#avatar-clone` →
 | `GET/POST /api/script-drafts` | 营销脚本草稿 |
 | `GET/POST /api/render-projects` | 渲染项目 |
 | `GET /api/jobs` | 后台任务状态 |
-| `GET /api/health` | 健康检查（DB/Redis 配置状态） |
+| `GET /api/health` | 健康检查（DB/Redis/对象存储配置状态） |
 
 客户端封装：`lib/api-client.ts`。
 
@@ -52,7 +53,11 @@ tests/                  # Vitest 单元与 API 测试
 | `DATABASE_URL` | PostgreSQL；未设置则内存仓库 |
 | `REDIS_URL` | BullMQ；未设置则连 `127.0.0.1:6379` |
 | `DEV_ALLOWED_ORIGINS` | 非 localhost 开发访问白名单 |
-| `OBJECT_STORAGE_*` | 对象存储（生产上传） |
+| `OBJECT_STORAGE_ENDPOINT` | S3 兼容端点（本地 MinIO `http://127.0.0.1:9000`，R2 `https://<account>.r2.cloudflarestorage.com`） |
+| `OBJECT_STORAGE_BUCKET` | 桶名，默认 `ai-video-assistant` |
+| `OBJECT_STORAGE_ACCESS_KEY_ID` / `OBJECT_STORAGE_SECRET_ACCESS_KEY` | S3 凭据 |
+| `OBJECT_STORAGE_REGION` | R2 用 `auto`；MinIO 可用 `us-east-1` |
+| `OBJECT_STORAGE_PUBLIC_URL` | 可选 CDN 公网前缀 |
 | `OPENAI_API_KEY` | AI 文案等 |
 | `AVATAR_PROVIDER` / `AVATAR_PROVIDER_API_KEY` | 数字人提供商 |
 
@@ -67,12 +72,16 @@ Cloudflare：`npm run build:cf` / `deploy:cf`（OpenNext）；主运行时推荐
 | 保存门店 500 / 外键错误 | PostgreSQL 是否已 `db:seed`；`ensureDemoUser` 是否调用 |
 | 素材库未解锁 | `localStore` 或 `stores[0]` 是否存在；最后一步是否调 `saveStore` |
 | 内存 vs PG 数据不一致 | 是否配置了 `DATABASE_URL`；重启后内存数据丢失 |
-| 部署差异 | Zeabur 注入 `DATABASE_URL`；CF Workers 不适合 BullMQ 长连接 |
+| 上传 503 | `OBJECT_STORAGE_*` 未配置；生产模式禁止假 URL |
+| 浏览器 PUT 被 CORS 拦截 | R2/MinIO bucket CORS 需允许 Zeabur/localhost 域名与 `Content-Type` |
+| 部署差异 | Zeabur 注入 `DATABASE_URL` + `OBJECT_STORAGE_*`；CF Workers 不适合 BullMQ 长连接 |
 
 ## 本地开发命令
 
 ```bash
 npm install
+docker compose up -d # 本地 MinIO（可选，上传素材需要）
+cp .env.example .env
 npm run dev          # http://0.0.0.0:3000
 npm test             # Vitest
 npm run typecheck

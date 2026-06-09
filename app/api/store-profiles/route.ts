@@ -11,11 +11,12 @@ import { storeProfileSchema } from "@/lib/schemas";
 
 
 export async function GET() {
-
-  const stores = await getStoreRepository().listByOwner(demoOwnerId);
-
-  return jsonOk({ stores });
-
+  try {
+    const stores = await getStoreRepository().listByOwner(demoOwnerId);
+    return jsonOk({ stores });
+  } catch {
+    return jsonError("Failed to list store profiles", 500);
+  }
 }
 
 

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { classifyAsset, createUploadIntent } from "@/lib/services/assets";
+import * as storage from "@/lib/storage";
 import type { Asset, StoreProfile } from "@/lib/types";
 
 const store: StoreProfile = {
@@ -38,8 +39,13 @@ const asset: Asset = {
 };
 
 describe("asset upload and analysis", () => {
-  it("creates direct-to-object-storage upload intents without exposing provider secrets", () => {
-    const intent = createUploadIntent({
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(storage, "createPresignedPutUrl").mockResolvedValue("https://signed.example/upload");
+  });
+
+  it("creates direct-to-object-storage upload intents without exposing provider secrets", async () => {
+    const intent = await createUploadIntent({
       ownerId: "user_1",
       storeId: "store_1",
       filename: "fresh-croissant.mp4",
@@ -48,8 +54,11 @@ describe("asset upload and analysis", () => {
     });
 
     expect(intent.storageKey).toMatch(/^stores\/store_1\/assets\//);
-    expect(intent.uploadUrl).toContain("signed-upload");
+    expect(intent.uploadUrl).toBe("https://signed.example/upload");
+    expect(intent.headers).toEqual({ "Content-Type": "video/mp4" });
     expect(intent.headers).not.toHaveProperty("Authorization");
+    expect(intent.maxSizeBytes).toBeGreaterThan(9_000_000);
+    expect(intent.expiresInSeconds).toBeGreaterThan(0);
   });
 
   it("combines visual tags, speech keywords and store industry rules", async () => {

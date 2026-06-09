@@ -1,4 +1,11 @@
 import { createId, nowIso } from "@/lib/ids";
+import {
+  ALLOWED_MIME_PREFIXES,
+  MAX_UPLOAD_BYTES,
+  PRESIGN_EXPIRES_SECONDS,
+  createPresignedPutUrl,
+  isAllowedMimeType
+} from "@/lib/storage";
 import type { Asset, AssetAnalysis, MarketingPurpose, StoreProfile } from "@/lib/types";
 
 interface UploadIntentInput {
@@ -15,6 +22,7 @@ export interface UploadIntent {
   uploadUrl: string;
   headers: Record<string, string>;
   maxSizeBytes: number;
+  expiresInSeconds: number;
 }
 
 interface ClassifyAssetInput {
@@ -35,20 +43,31 @@ const purposeByBusinessTag: Record<string, MarketingPurpose> = {
   招聘: "recruiting"
 };
 
-export function createUploadIntent(input: UploadIntentInput): UploadIntent {
+export { ALLOWED_MIME_PREFIXES, MAX_UPLOAD_BYTES };
+
+export async function createUploadIntent(input: UploadIntentInput): Promise<UploadIntent> {
+  if (!isAllowedMimeType(input.contentType)) {
+    throw new Error(`Unsupported content type. Allowed: ${ALLOWED_MIME_PREFIXES.join(", ")}`);
+  }
+
+  if (input.sizeBytes <= 0 || input.sizeBytes > MAX_UPLOAD_BYTES) {
+    throw new Error(`File size must be between 1 and ${MAX_UPLOAD_BYTES} bytes`);
+  }
+
   const assetId = createId("asset");
   const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
   const storageKey = `stores/${input.storeId}/assets/${assetId}-${safeName}`;
+  const uploadUrl = await createPresignedPutUrl(storageKey, input.contentType);
 
   return {
     assetId,
     storageKey,
-    uploadUrl: `https://object-storage.local/signed-upload/${encodeURIComponent(storageKey)}`,
+    uploadUrl,
     headers: {
-      "Content-Type": input.contentType,
-      "x-ai-video-owner": input.ownerId
+      "Content-Type": input.contentType
     },
-    maxSizeBytes: Math.max(input.sizeBytes, 1)
+    maxSizeBytes: MAX_UPLOAD_BYTES,
+    expiresInSeconds: PRESIGN_EXPIRES_SECONDS
   };
 }
 

@@ -1,10 +1,11 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import {
   analyzeAssetApi,
+  confirmAssetUpload,
   createAvatarApi,
   createRenderProjectApi,
   createScriptDraftApi,
@@ -16,9 +17,10 @@ import {
   fetchScriptDrafts,
   fetchStores,
   requestTalkingHeadApi,
-  saveAsset,
-  saveStore
+  saveStore,
+  uploadFileToStorage
 } from "@/lib/api-client";
+import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
 import {
   clearStoreDraft,
   loadStoreDraft,
@@ -258,8 +260,10 @@ export function Dashboard() {
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const draftClearedRef = useRef(false);
   const savedStoreHydratedRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: stores = [], isPending: storesPending } = useQuery({
     queryKey: ["stores"],
@@ -468,39 +472,59 @@ export function Dashboard() {
     void submitCurrentStoreStep();
   }
 
-  async function simulateAssetUpload() {
+  function inferAssetType(mimeType: string): "video" | "image" | "audio" {
+    if (mimeType.startsWith("video/")) return "video";
+    if (mimeType.startsWith("image/")) return "image";
+    return "audio";
+  }
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleAssetUpload(file: File) {
     if (!store) {
       setMessage("请先完成门店档案。");
       return;
     }
 
+    if (!file.type.startsWith("video/") && !file.type.startsWith("image/") && !file.type.startsWith("audio/")) {
+      setMessage("仅支持上传视频、图片或音频文件。");
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setMessage("文件过大，请选择不超过 200MB 的素材。");
+      return;
+    }
+
     setPendingAction("upload");
+    setUploadProgress(0);
 
     try {
       const intent = await createUploadIntentApi({
         ownerId: store.ownerId,
         storeId: store.id,
-        filename: "fresh-noodles.mp4",
-        contentType: "video/mp4",
-        sizeBytes: 12_000_000
+        filename: file.name,
+        contentType: file.type,
+        sizeBytes: file.size
       });
-      const uploadedAsset = await saveAsset({
-        id: intent.assetId,
-        ownerId: store.ownerId,
+
+      await uploadFileToStorage(intent.uploadUrl, file, intent.headers, (ratio) => {
+        setUploadProgress(Math.round(ratio * 100));
+      });
+
+      const uploadedAsset = await confirmAssetUpload({
+        assetId: intent.assetId,
         storeId: store.id,
-        type: "video",
-        originalFilename: "fresh-noodles.mp4",
+        ownerId: store.ownerId,
         storageKey: intent.storageKey,
-        mimeType: "video/mp4",
-        sizeBytes: 12_000_000,
-        durationSeconds: 18,
-        width: 1080,
-        height: 1920,
-        tags: [],
-        businessTags: [],
-        status: "uploaded",
-        createdAt: nowIso()
+        originalFilename: file.name,
+        mimeType: file.type,
+        type: inferAssetType(file.type),
+        sizeBytes: file.size
       });
+
       const analyzed = await analyzeAssetApi({
         assetId: uploadedAsset.id,
         storeId: store.id,
@@ -512,8 +536,24 @@ export function Dashboard() {
       await queryClient.invalidateQueries({ queryKey: ["assets"] });
       await queryClient.invalidateQueries({ queryKey: ["asset-analyses"] });
       setMessage("上传完成：AI 已自动识别画面和语音内容。");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "上传失败，请稍后重试。";
+      if (detail.includes("Object storage is not configured") || detail.includes("503")) {
+        setMessage("对象存储未配置，请联系管理员。");
+      } else {
+        setMessage(`素材上传失败：${detail}`);
+      }
     } finally {
       setPendingAction(null);
+      setUploadProgress(0);
+    }
+  }
+
+  function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) {
+      void handleAssetUpload(file);
     }
   }
 
@@ -752,7 +792,30 @@ export function Dashboard() {
             <span className={analysis ? "statusBadge success" : "statusBadge warning"}>{analysis ? "已完成" : "待完成"}</span>
           </div>
 
-          <div className="uploadZone">
+          <input
+            ref={fileInputRef}
+            accept="video/*,image/*,audio/*"
+            className="srOnly"
+            onChange={handleFileInputChange}
+            type="file"
+          />
+
+          <div
+            className="uploadZone"
+            onClick={!asset && !pendingAction ? openFilePicker : undefined}
+            onKeyDown={
+              !asset && !pendingAction
+                ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openFilePicker();
+                    }
+                  }
+                : undefined
+            }
+            role={!asset ? "button" : undefined}
+            tabIndex={!asset && !pendingAction ? 0 : undefined}
+          >
             {asset ? (
               <div className="mediaItem">
                 <div className="thumbnail" aria-hidden="true" />
@@ -776,13 +839,25 @@ export function Dashboard() {
               </div>
             )}
             {pendingAction === "upload" ? (
-              <div className="progressTrack" aria-label="上传中">
-                <span />
+              <div
+                aria-label="上传中"
+                aria-valuemax={100}
+                aria-valuemin={0}
+                aria-valuenow={uploadProgress}
+                className="progressTrack"
+                role="progressbar"
+              >
+                <span style={{ width: `${Math.max(uploadProgress, 8)}%` }} />
               </div>
             ) : null}
           </div>
 
-          <button className="primaryButton" disabled={!store || Boolean(pendingAction)} onClick={simulateAssetUpload} type="button">
+          <button
+            className="primaryButton"
+            disabled={!store || Boolean(pendingAction)}
+            onClick={openFilePicker}
+            type="button"
+          >
             {pendingAction === "upload" ? <span className="spinner" aria-hidden="true" /> : null}
             上传素材
           </button>

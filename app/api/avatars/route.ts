@@ -9,13 +9,23 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  let body: {
+    ownerId?: string;
+    storeId?: string;
+    trainingVideoAssetId?: string;
+    consentAccepted?: boolean;
+  };
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Invalid JSON body");
+  }
 
   try {
     const avatar = await createAvatarProfile({
       ownerId: body.ownerId ?? demoOwnerId,
-      storeId: body.storeId,
-      trainingVideoAssetId: body.trainingVideoAssetId,
+      storeId: body.storeId ?? "",
+      trainingVideoAssetId: body.trainingVideoAssetId ?? "",
       consentAccepted: Boolean(body.consentAccepted),
       provider: createMockAvatarProvider()
     });

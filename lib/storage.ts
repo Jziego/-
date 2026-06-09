@@ -1,21 +1,122 @@
+import { HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+export const ALLOWED_MIME_PREFIXES = ["video/", "image/", "audio/"] as const;
+export const PRESIGN_EXPIRES_SECONDS = 900;
+
 export interface ObjectStorageLocation {
   bucket: string;
   key: string;
   publicUrl?: string;
 }
 
+export interface HeadObjectResult {
+  exists: boolean;
+  contentLength?: number;
+  contentType?: string;
+}
+
+let s3Client: S3Client | null = null;
+
+export function getS3Client(): S3Client {
+  if (s3Client) {
+    return s3Client;
+  }
+
+  const endpoint = process.env.OBJECT_STORAGE_ENDPOINT?.trim();
+  const region = process.env.OBJECT_STORAGE_REGION?.trim() || "us-east-1";
+  const accessKeyId = process.env.OBJECT_STORAGE_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY?.trim();
+
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    throw new Error("Object storage is not configured");
+  }
+
+  s3Client = new S3Client({
+    endpoint,
+    region,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: true
+  });
+
+  return s3Client;
+}
+
+export function resetS3ClientForTests(): void {
+  s3Client = null;
+}
+
+export function getObjectStorageBucket(): string {
+  return process.env.OBJECT_STORAGE_BUCKET?.trim() || "ai-video-assistant";
+}
+
 export function createStorageLocation(key: string): ObjectStorageLocation {
-  const bucket = process.env.OBJECT_STORAGE_BUCKET ?? "ai-video-assistant-dev";
-  const endpoint = process.env.OBJECT_STORAGE_ENDPOINT;
+  const bucket = getObjectStorageBucket();
+  const publicBase = process.env.OBJECT_STORAGE_PUBLIC_URL?.trim();
 
   return {
     bucket,
     key,
-    publicUrl: endpoint ? `${endpoint.replace(/\/$/, "")}/${bucket}/${key}` : undefined
+    publicUrl: publicBase
+      ? `${publicBase.replace(/\/$/, "")}/${key}`
+      : undefined
   };
 }
 
-export function createSignedUploadUrl(key: string): string {
-  const endpoint = process.env.OBJECT_STORAGE_ENDPOINT ?? "https://object-storage.local";
-  return `${endpoint.replace(/\/$/, "")}/signed-upload/${encodeURIComponent(key)}`;
+export async function createPresignedPutUrl(
+  key: string,
+  contentType: string,
+  expiresIn = PRESIGN_EXPIRES_SECONDS
+): Promise<string> {
+  const command = new PutObjectCommand({
+    Bucket: getObjectStorageBucket(),
+    Key: key,
+    ContentType: contentType
+  });
+
+  return getSignedUrl(getS3Client(), command, { expiresIn });
+}
+
+export async function headObject(key: string): Promise<HeadObjectResult> {
+  try {
+    const response = await getS3Client().send(
+      new HeadObjectCommand({
+        Bucket: getObjectStorageBucket(),
+        Key: key
+      })
+    );
+
+    return {
+      exists: true,
+      contentLength: response.ContentLength,
+      contentType: response.ContentType
+    };
+  } catch (error) {
+    const statusCode =
+      typeof error === "object" && error !== null && "$metadata" in error
+        ? (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
+        : undefined;
+
+    if (statusCode === 404) {
+      return { exists: false };
+    }
+
+    const name = typeof error === "object" && error !== null && "name" in error ? String(error.name) : "";
+    if (name === "NotFound" || name === "NoSuchKey") {
+      return { exists: false };
+    }
+
+    throw error;
+  }
+}
+
+export function isAllowedMimeType(contentType: string): boolean {
+  return ALLOWED_MIME_PREFIXES.some((prefix) => contentType.startsWith(prefix));
+}
+
+export function inferAssetTypeFromMime(mimeType: string): "video" | "image" | "audio" {
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("image/")) return "image";
+  return "audio";
 }
