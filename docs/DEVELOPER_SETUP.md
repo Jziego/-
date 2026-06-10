@@ -33,6 +33,14 @@
 
 含用户流程、API 地图、目录结构、环境变量与故障排查清单。
 
+## Route C 阶段文档
+
+| 阶段 | 文档 |
+|------|------|
+| Phase 0 + 1 | `docs/superpowers/plans/2026-06-08-route-c-phase0-phase1.md` |
+| Phase 2（对象存储，已完成） | `docs/superpowers/plans/2026-06-08-route-c-phase2-storage.md` |
+| 上线路径总设计 | `docs/superpowers/specs/2026-06-08-route-c-production-launch-design.md` |
+
 ## 用户级 MCP（`~/.cursor/mcp.json`）
 
 敏感信息通过**系统环境变量**注入，勿写入 git。

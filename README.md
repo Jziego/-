@@ -69,6 +69,14 @@ For browser PUT uploads from `localhost:3000`, configure the bucket CORS policy 
 
 When `APP_MODE=production` and object storage env vars are missing, upload APIs return **503** (no fake URLs).
 
+## Route C Phase Docs
+
+| Phase | Status | Document |
+|-------|--------|----------|
+| 0 + 1 | — | [`docs/superpowers/plans/2026-06-08-route-c-phase0-phase1.md`](docs/superpowers/plans/2026-06-08-route-c-phase0-phase1.md) |
+| 2 — Object storage | ✅ Complete (2026-06-09) | [`docs/superpowers/plans/2026-06-08-route-c-phase2-storage.md`](docs/superpowers/plans/2026-06-08-route-c-phase2-storage.md) |
+| Overall launch design | — | [`docs/superpowers/specs/2026-06-08-route-c-production-launch-design.md`](docs/superpowers/specs/2026-06-08-route-c-production-launch-design.md) |
+
 ## Architecture Notes
 
 - The primary runtime is **Zeabur (Node.js + `next start`)**, not Cloudflare Workers. BullMQ, ffmpeg and long-lived Redis connections require a full Node process.

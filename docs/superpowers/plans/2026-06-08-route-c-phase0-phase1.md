@@ -536,7 +536,7 @@ Zeabur Pre-deploy 或 start script 包装：
 
 ## 后续计划（不在本计划范围）
 
-- **Phase 2:** `docs/superpowers/plans/2026-06-08-route-c-phase2-storage.md`（待 Phase 1 完成后编写）
+- **Phase 2:** `docs/superpowers/plans/2026-06-08-route-c-phase2-storage.md`（✅ 已完成，2026-06-09）
 - **Phase 3:** Worker 服务
 - **Phase 4:** 真实 AI
 - **Phase 5:** Auth + 配额
