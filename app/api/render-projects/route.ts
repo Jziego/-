@@ -23,6 +23,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const body = await request.json();
+
+  if (!body.scriptDraftId) {
+    return jsonError("scriptDraftId is required", 400);
+  }
+
   const scriptDraft = await getScriptRepository().findById(body.scriptDraftId);
 
   if (!scriptDraft) {
