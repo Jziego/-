@@ -138,4 +138,21 @@ export class MemoryJobRepository implements JobRepository {
     getRuntimeState().jobs.push(...jobs);
     return jobs;
   }
+
+  async findById(id: string): Promise<Job | null> {
+    return getRuntimeState().jobs.find((job) => job.id === id) ?? null;
+  }
+
+  async update(id: string, data: Partial<Job>): Promise<Job> {
+    const state = getRuntimeState();
+    const index = state.jobs.findIndex((job) => job.id === id);
+    if (index < 0) throw new Error(`Job not found: ${id}`);
+    const updated = { ...state.jobs[index], ...data };
+    state.jobs[index] = updated;
+    return updated;
+  }
+
+  async listByStatus(status: Job["status"]): Promise<Job[]> {
+    return getRuntimeState().jobs.filter((job) => job.status === status);
+  }
 }

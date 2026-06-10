@@ -21,3 +21,11 @@ export function hasObjectStorage(): boolean {
       process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY?.trim()
   );
 }
+
+export function hasRedis(): boolean {
+  return Boolean(process.env.REDIS_URL?.trim());
+}
+
+export function getRedisUrl(): string | undefined {
+  return process.env.REDIS_URL?.trim() || undefined;
+}

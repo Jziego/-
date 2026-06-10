@@ -1,4 +1,6 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
+import { hasRedis } from "@/lib/env";
+import { createBullQueue, toQueuePayload } from "@/lib/queue";
 import {
   getAvatarRepository,
   getJobRepository,
@@ -52,5 +54,20 @@ export async function POST(request: Request) {
   await getRenderRepository().createProject(project);
   await getJobRepository().createMany(jobs);
 
-  return jsonOk({ project, jobs }, 201);
+  // Enqueue jobs to Redis/BullMQ (best-effort — data consistency hardening in step 2)
+  if (hasRedis()) {
+    const enqueueResults: { jobId: string; ok: boolean }[] = [];
+    for (const job of jobs) {
+      try {
+        const queue = createBullQueue(job.type);
+        await queue.add(job.id, toQueuePayload(job));
+        enqueueResults.push({ jobId: job.id, ok: true });
+      } catch (err) {
+        enqueueResults.push({ jobId: job.id, ok: false });
+      }
+    }
+    return jsonOk({ project, jobs, enqueueResults }, 201);
+  }
+
+  return jsonOk({ project, jobs, enqueued: false }, 201);
 }

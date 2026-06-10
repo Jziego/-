@@ -1,4 +1,12 @@
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -29,3 +37,4 @@ services:
 
 volumes:
   minio_data:
+  redis_data:

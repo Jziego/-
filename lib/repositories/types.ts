@@ -50,4 +50,7 @@ export interface RenderRepository {
 export interface JobRepository {
   listByOwner(ownerId: string): Promise<Job[]>;
   createMany(jobs: Job[]): Promise<Job[]>;
+  findById(id: string): Promise<Job | null>;
+  update(id: string, data: Partial<Job>): Promise<Job>;
+  listByStatus(status: Job["status"]): Promise<Job[]>;
 }

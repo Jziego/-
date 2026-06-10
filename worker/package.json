@@ -1,0 +1,9 @@
+{
+  "name": "ai-video-assistant-worker",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "bullmq": "^5.78.0",
+    "ioredis": "^5.11.0"
+  }
+}

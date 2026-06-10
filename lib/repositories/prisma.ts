@@ -196,4 +196,30 @@ export class PrismaJobRepository implements JobRepository {
     await this.prisma.job.createMany({ data: jobs.map(toJobInput) });
     return jobs;
   }
+
+  async findById(id: string): Promise<Job | null> {
+    const row = await this.prisma.job.findUnique({ where: { id } });
+    return row ? toJob(row) : null;
+  }
+
+  async update(id: string, data: Partial<Job>): Promise<Job> {
+    const prismaData: Record<string, unknown> = {};
+    if (data.status !== undefined) prismaData.status = data.status;
+    if (data.progress !== undefined) prismaData.progress = data.progress;
+    if (data.error !== undefined) prismaData.error = data.error ?? null;
+    if (data.payload !== undefined) prismaData.payload = data.payload as object;
+    if (data.dependsOnJobIds !== undefined) prismaData.dependsOnJobIds = data.dependsOnJobIds;
+    if (data.updatedAt !== undefined) prismaData.updatedAt = new Date(data.updatedAt);
+
+    const row = await this.prisma.job.update({
+      where: { id },
+      data: prismaData
+    });
+    return toJob(row);
+  }
+
+  async listByStatus(status: Job["status"]): Promise<Job[]> {
+    const rows = await this.prisma.job.findMany({ where: { status } });
+    return rows.map(toJob);
+  }
 }
