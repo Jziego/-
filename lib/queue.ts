@@ -19,7 +19,6 @@ export function createBullQueue(type: JobType): Queue {
 
 export function toQueuePayload(job: Job) {
   return {
-    name: job.type,
     data: {
       jobId: job.id,
       projectId: job.projectId,

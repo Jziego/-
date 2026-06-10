@@ -60,7 +60,8 @@ export async function POST(request: Request) {
     for (const job of jobs) {
       try {
         const queue = createBullQueue(job.type);
-        await queue.add(job.id, toQueuePayload(job));
+        const { data, opts } = toQueuePayload(job);
+        await queue.add(job.id, data, opts);
         enqueueResults.push({ jobId: job.id, ok: true });
       } catch (err) {
         enqueueResults.push({ jobId: job.id, ok: false });
