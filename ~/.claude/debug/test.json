@@ -1,0 +1,85 @@
+2026-06-11T03:39:36.862Z [DEBUG] MDM settings load completed in 13ms
+2026-06-11T03:39:36.886Z [DEBUG] Broken symlink or missing file encountered for settings.json at path: C:\Program Files\ClaudeCode\managed-settings.json
+2026-06-11T03:39:36.888Z [DEBUG] Broken symlink or missing file encountered for settings.json at path: C:\Users\Administrator\Projects\ai-video-assistant\.claude\settings.json
+2026-06-11T03:39:36.891Z [DEBUG] CA certs: Config fallback - globalEnv keys: , settingsEnv keys: none
+2026-06-11T03:39:36.893Z [DEBUG] [init] configureGlobalMTLS starting
+2026-06-11T03:39:36.893Z [DEBUG] [init] configureGlobalMTLS complete
+2026-06-11T03:39:36.894Z [DEBUG] [init] configureGlobalAgents starting
+2026-06-11T03:39:36.895Z [DEBUG] CA certs: stores=bundled,system, extraCertsPath=undefined
+2026-06-11T03:39:36.896Z [DEBUG] CA certs: Loaded 145 bundled root certificates
+2026-06-11T03:39:36.913Z [DEBUG] CA certs: Loaded 84 system CA certificates
+2026-06-11T03:39:36.913Z [DEBUG] mTLS: Creating HTTPS agent with custom certificates
+2026-06-11T03:39:36.914Z [DEBUG] [init] configureGlobalAgents complete
+2026-06-11T03:39:36.916Z [DEBUG] Using bash path: "C:\Program Files\Git\bin\bash.exe"
+2026-06-11T03:39:36.918Z [DEBUG] Error log sink initialized
+2026-06-11T03:39:36.928Z [DEBUG] Applying permission update: Adding 59 allow rule(s) to destination 'localSettings': ["WebSearch","Bash(pg_isready)","Bash(redis-cli ping *)","Bash(claude mcp *)","Bash(claude plugin *)","Bash(psql --version)","Bash(redis-server --version)","Bash(redis-cli --version)","Bash(code --version)","Bash(git config *)","Bash(npm ping *)","Bash(winget search *)","Bash(where claude *)","Bash(claude --version)","Bash(npm search *)","Bash(npm view *)","Bash(npx prisma *)","Bash(winget install *)","Bash(GIT_CURL_VERBOSE=1 git clone --depth 1 https://github.com/obra/superpowers-marketplace.git __TRACKED_VAR__/.claude/plugins/marketplaces/obra-superpowers-marketplace)","Bash(curl --connect-timeout 10 -L https://github.com/obra/superpowers-marketplace/archive/refs/heads/main.zip -o __TRACKED_VAR__/superpowers-tmp.zip)","Bash(curl --connect-timeout 15 -L https://ghproxy.net/https://github.com/obra/superpowers-marketplace/archive/refs/heads/main.zip -o __TRACKED_VAR__/superpowers-tmp.zip)","Bash(file __TRACKED_VAR__/superpowers-tmp.zip)","Bash(curl --connect-timeout 15 -L https://ghfast.top/https://github.com/obra/superpowers-marketplace/archive/refs/heads/main.zip -o __TRACKED_VAR__/superpowers-tmp2.zip)","Bash(mkdir -p __TRACKED_VAR__/superpowers-tmp)","Bash(unzip -o __TRACKED_VAR__/superpowers-tmp.zip)","Bash(cat superpowers-marketplace-main/.claude-plugin/marketplace.json)","Bash(mkdir -p __TRACKED_VAR__/.claude/plugins/marketplaces/obra-superpowers-marketplace/.claude-plugin)","Bash(cp __TRACKED_VAR__/superpowers-tmp/superpowers-marketplace-main/.claude-plugin/marketplace.json __TRACKED_VAR__/.claude/plugins/marketplaces/obra-superpowers-marketplace/.claude-plugin/marketplace.json)","Bash(/c/Users/Administrator/AppData/Roaming/npm/claude.cmd plugin *)","Bash(curl --connect-timeout 30 -L https://ghproxy.net/https://github.com/obra/superpowers/archive/refs/heads/main.zip -o __TRACKED_VAR__/superpowers-main.zip)","Bash(mkdir -p __TRACKED_VAR__/.claude/plugins/cache/superpowers-main)","Bash(unzip -o __TRACKED_VAR__/superpowers-main.zip)","Bash(ls -la superpowers-main/)","Bash(curl --connect-timeout 30 -L https://ghproxy.net/https://github.com/obra/episodic-memory/archive/refs/heads/main.zip -o __TRACKED_VAR__/episodic-memory.zip)","Bash(curl --connect-timeout 30 -L https://ghproxy.net/https://github.com/obra/superpowers-chrome/archive/refs/heads/main.zip -o __TRACKED_VAR__/superpowers-chrome.zip)","Bash(curl --connect-timeout 30 -L https://ghproxy.net/https://github.com/obra/double-shot-latte/archive/refs/heads/main.zip -o __TRACKED_VAR__/double-shot-latte.zip)","Bash(curl --connect-timeout 30 -L https://ghproxy.net/https://github.com/obra/the-elements-of-style/archive/refs/heads/main.zip -o __TRACKED_VAR__/elements-of-style.zip)","Bash(mkdir -p __TRACKED_VAR__/dsl-tmp)","Bash(unzip -o __TRACKED_VAR__/double-shot-latte.zip)","Bash(cat __TRACKED_VAR__/dsl-tmp/double-shot-latte-main/.claude-plugin/plugin.json)","Bash(mkdir -p __TRACKED_VAR__/eos-tmp)","Bash(unzip -o __TRACKED_VAR__/elements-of-style.zip)","Bash(cat __TRACKED_VAR__/eos-tmp/the-elements-of-style-main/.claude-plugin/plugin.json)","Bash(cmd.exe *)","Bash(git add *)","Bash(git commit *)","Bash(git status *)","Bash(git diff *)","Bash(git log *)","Bash(git stash *)","Bash(git branch *)","Bash(git checkout *)","Bash(git restore *)","Bash(git reset *)","Bash(git remote *)","Bash(curl *)","Bash(claude /model)","Read(//c/Users/Administrator/AppData/Roaming/QClaw/npm-global/**)","Bash(npx claude *)"]
+2026-06-11T03:39:36.929Z [DEBUG] [ToolSearch:optimistic] disabled: ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic is not a first-party Anthropic host. Set ENABLE_TOOL_SEARCH=true (or auto / auto:N) if your proxy forwards tool_reference blocks.
+2026-06-11T03:39:36.933Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-06-11T03:39:36.933Z [DEBUG] [STARTUP] Running setup()...
+2026-06-11T03:39:36.936Z [DEBUG] Loading skills from: managed=C:\Program Files\ClaudeCode\.claude\skills, user=C:\Users\Administrator\.claude\skills, project=[]
+2026-06-11T03:39:36.937Z [DEBUG] [reduced mode] Skipping skill dir discovery
+2026-06-11T03:39:36.938Z [DEBUG] Broken symlink or missing file encountered for settings.json at path: C:\Program Files\ClaudeCode\managed-settings.json
+2026-06-11T03:39:36.941Z [DEBUG] Broken symlink or missing file encountered for settings.json at path: C:\Users\Administrator\Projects\ai-video-assistant\.claude\settings.json
+2026-06-11T03:39:36.943Z [DEBUG] Error log sink initialized
+2026-06-11T03:39:36.944Z [DEBUG] [STARTUP] setup() completed in 10ms
+2026-06-11T03:39:36.944Z [DEBUG] Cleared CA certificates cache
+2026-06-11T03:39:36.945Z [DEBUG] Cleared mTLS configuration cache
+2026-06-11T03:39:36.945Z [DEBUG] Cleared proxy agent cache
+2026-06-11T03:39:36.946Z [DEBUG] CA certs: stores=bundled,system, extraCertsPath=undefined
+2026-06-11T03:39:36.946Z [DEBUG] CA certs: Loaded 145 bundled root certificates
+2026-06-11T03:39:36.946Z [DEBUG] CA certs: Loaded 84 system CA certificates
+2026-06-11T03:39:36.947Z [DEBUG] mTLS: Creating HTTPS agent with custom certificates
+2026-06-11T03:39:37.029Z [DEBUG] getSkills returning: 0 skill dir commands, 0 plugin skills, 17 bundled skills, 0 builtin plugin skills
+2026-06-11T03:39:37.068Z [DEBUG] Loaded 11 installed plugins from C:\Users\Administrator\.claude\plugins\installed_plugins.json
+2026-06-11T03:39:37.070Z [DEBUG] Git remote URL: https://github.com/Jziego/-.git
+2026-06-11T03:39:37.071Z [DEBUG] Parsed repository: github.com/Jziego/- from URL: https://github.com/Jziego/-.git
+2026-06-11T03:39:37.081Z [DEBUG] Plugin elements-of-style has no entry.skills defined
+2026-06-11T03:39:37.084Z [DEBUG] Plugin superpowers-chrome has no entry.skills defined
+2026-06-11T03:39:37.086Z [DEBUG] Read hooks.json for plugin episodic-memory (enabled=true): C:\Users\Administrator\.claude\plugins\cache\superpowers-marketplace\episodic-memory\1.4.2\hooks\hooks.json
+2026-06-11T03:39:37.086Z [DEBUG] Read hooks.json for plugin superpowers (enabled=true): C:\Users\Administrator\.claude\plugins\cache\superpowers-marketplace\superpowers\5.1.0\hooks\hooks.json
+2026-06-11T03:39:37.087Z [DEBUG] Read hooks.json for plugin claude-mem (enabled=true): C:\Users\Administrator\.claude\plugins\cache\thedotmack\claude-mem\13.5.6\hooks\hooks.json
+2026-06-11T03:39:37.088Z [DEBUG] Read hooks.json for plugin double-shot-latte (enabled=true): C:\Users\Administrator\.claude\plugins\cache\superpowers-marketplace\double-shot-latte\1.2.0\hooks\hooks.json
+2026-06-11T03:39:37.089Z [DEBUG] Plugin episodic-memory has no entry.skills defined
+2026-06-11T03:39:37.090Z [DEBUG] Plugin superpowers has no entry.skills defined
+2026-06-11T03:39:37.091Z [DEBUG] Plugin double-shot-latte has no entry.skills defined
+2026-06-11T03:39:37.092Z [DEBUG] Found 11 plugins (11 enabled, 0 disabled)
+2026-06-11T03:39:37.093Z [DEBUG] Total plugin workflows loaded: 0
+2026-06-11T03:39:37.253Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-06-11T03:39:37.255Z [DEBUG] [STARTUP] Commands and agents loaded in 1ms
+2026-06-11T03:39:37.256Z [DEBUG] Skipping startup prefetches, last ran 1781149177s ago
+2026-06-11T03:39:37.257Z [DEBUG] [STARTUP] MCP configs resolved in 0ms (awaited at +324ms)
+2026-06-11T03:39:37.259Z [DEBUG] Cleared CA certificates cache
+2026-06-11T03:39:37.259Z [DEBUG] Cleared mTLS configuration cache
+2026-06-11T03:39:37.260Z [DEBUG] Cleared proxy agent cache
+2026-06-11T03:39:37.260Z [DEBUG] CA certs: stores=bundled,system, extraCertsPath=undefined
+2026-06-11T03:39:37.260Z [DEBUG] CA certs: Loaded 145 bundled root certificates
+2026-06-11T03:39:37.261Z [DEBUG] CA certs: Loaded 84 system CA certificates
+2026-06-11T03:39:37.261Z [DEBUG] mTLS: Creating HTTPS agent with custom certificates
+2026-06-11T03:39:37.264Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-06-11T03:39:37.265Z [DEBUG] [MCP] --mcp-config servers running fully async (nonblocking)
+2026-06-11T03:39:37.265Z [DEBUG] [MCP] claude.ai connectors running fully async (nonblocking)
+2026-06-11T03:39:37.266Z [DEBUG] [Perfetto] initializePerfettoTracing called, env value: undefined
+2026-06-11T03:39:37.266Z [DEBUG] [3P telemetry] isTelemetryEnabled=false (CLAUDE_CODE_ENABLE_TELEMETRY=undefined)
+2026-06-11T03:39:37.287Z [DEBUG] [auto-mode] verifyAutoModeGateAccess: enabledState=opt-in disabledBySettings=false model=deepseek-v4-pro[1m] modelSupported=true disableFastModeBreakerFires=false carouselAvailable=true canEnterAuto=true
+2026-06-11T03:39:37.298Z [DEBUG] [ScheduledTasks] scheduler start() — enabled=false, hasTasks=false
+2026-06-11T03:39:37.307Z [WARN] [3P telemetry] Event dropped (no event logger initialized): plugin_loaded
+2026-06-11T03:39:37.340Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-06-11T03:39:37.344Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-06-11T03:39:37.348Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.172.2e1; cc_entrypoint=sdk-cli; cch=00000;
+2026-06-11T03:39:37.349Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-06-11T03:39:37.350Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-06-11T03:39:37.351Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-06-11T03:39:37.351Z [DEBUG] [API:auth] OAuth token check starting
+2026-06-11T03:39:37.354Z [DEBUG] [API:auth] OAuth token check complete
+2026-06-11T03:39:37.359Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-06-11T03:39:37.360Z [DEBUG] [API:timing] dispatching to firstParty model=deepseek-v4-pro[1m]
+2026-06-11T03:39:37.362Z [DEBUG] [API REQUEST] /anthropic/v1/messages source=sdk
+2026-06-11T03:39:37.547Z [DEBUG] Stream started - received first chunk
+2026-06-11T03:39:37.548Z [DEBUG] [API:timing] first byte after 188ms
+2026-06-11T03:39:41.043Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-06-11T03:39:41.049Z [DEBUG] Metrics export disabled by organization setting
+2026-06-11T03:39:41.049Z [DEBUG] BigQuery metrics exporter flush complete
+2026-06-11T03:39:41.050Z [DEBUG] BigQuery metrics exporter flush complete
+2026-06-11T03:39:41.050Z [DEBUG] BigQuery metrics exporter shutdown complete
+2026-06-11T03:39:41.444Z [ERROR] 1P event logging: 86 events failed to export (status=403, code=ERR_BAD_REQUEST, Request failed with status code 403)
+2026-06-11T03:39:41.444Z [ERROR] [3P telemetry] OTEL diag error: {"message":"Failed to export 86 events (status=403, code=ERR_BAD_REQUEST, Request failed with status code 403)","originalLine":"285","originalColumn":"1756","line":"285","column":"1756","sourceURL":"B:/~BUN/root/src/entrypoints/cli.js","stack":"Error: Failed to export 86 events (status=403, code=ERR_BAD_REQUEST, Request failed with status code 403)\n    at doExport (B:/~BUN/root/src/entrypoints/cli.js:285:1756)\n    at processTicksAndRejections (native:7:39)","name":"Error"}
