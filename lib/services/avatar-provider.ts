@@ -17,34 +17,6 @@ export interface AvatarProvider {
   }>;
 }
 
-interface MockProviderOptions {
-  avatarId?: string;
-  voiceId?: string;
-  failTalkingHead?: boolean;
-}
-
-export function createMockAvatarProvider(options: MockProviderOptions = {}): AvatarProvider {
-  return {
-    name: "mock-avatar",
-    async createAvatar() {
-      return {
-        providerAvatarId: options.avatarId ?? createId("provider_avatar"),
-        providerVoiceId: options.voiceId ?? createId("provider_voice")
-      };
-    },
-    async generateTalkingHead() {
-      if (options.failTalkingHead) {
-        throw new Error("Mock provider talking-head generation failed");
-      }
-
-      return {
-        videoAssetId: createId("avatar_video"),
-        durationSeconds: 15
-      };
-    }
-  };
-}
-
 export async function createAvatarProfile(input: {
   ownerId: string;
   storeId: string;
@@ -124,3 +96,6 @@ export async function requestAvatarTalkingHead(input: {
     };
   }
 }
+
+export { createMockProvider } from "@/lib/services/providers/mock";
+export { createProviderFromEnv } from "@/lib/services/providers/index";

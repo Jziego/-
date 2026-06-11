@@ -1,4 +1,4 @@
-import { createMockAvatarProvider, createAvatarProfile } from "@/lib/services/avatar-provider";
+import { createProviderFromEnv, createAvatarProfile } from "@/lib/services/avatar-provider";
 import { getAvatarRepository, getAssetRepository, getStoreRepository } from "@/lib/repositories";
 import { nowIso } from "@/lib/ids";
 import type { ProcessorFn } from "./index";
@@ -46,7 +46,7 @@ export const avatarGenerationProcessor: ProcessorFn = async (job) => {
   }
 
   // Create a new avatar profile via the mock provider
-  const provider = createMockAvatarProvider();
+  const provider = createProviderFromEnv();
 
   // Get store context for the avatar
   const assetId = payload.trainingVideoAssetId;

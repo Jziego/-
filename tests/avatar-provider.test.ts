@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   createAvatarProfile,
-  createMockAvatarProvider,
   requestAvatarTalkingHead
 } from "@/lib/services/avatar-provider";
+import { createMockProvider } from "@/lib/services/providers/mock";
 
 describe("avatar provider abstraction", () => {
   it("requires explicit likeness and voice consent before creating an avatar", async () => {
-    const provider = createMockAvatarProvider();
+    const provider = createMockProvider();
 
     await expect(
       createAvatarProfile({
@@ -21,7 +21,7 @@ describe("avatar provider abstraction", () => {
   });
 
   it("stores third-party identifiers without coupling render projects to a vendor", async () => {
-    const provider = createMockAvatarProvider({
+    const provider = createMockProvider({
       avatarId: "heygen-avatar-1",
       voiceId: "heygen-voice-1"
     });
@@ -41,7 +41,7 @@ describe("avatar provider abstraction", () => {
   });
 
   it("falls back to TTS voiceover when talking-head generation fails", async () => {
-    const provider = createMockAvatarProvider({ failTalkingHead: true });
+    const provider = createMockProvider({ failTalkingHead: true });
 
     const result = await requestAvatarTalkingHead({
       provider,

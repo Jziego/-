@@ -1,7 +1,7 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { getAvatarRepository } from "@/lib/repositories";
 import { demoOwnerId } from "@/lib/runtime-store";
-import { createAvatarProfile, createMockAvatarProvider } from "@/lib/services/avatar-provider";
+import { createAvatarProfile, createProviderFromEnv } from "@/lib/services/avatar-provider";
 
 export async function GET() {
   const avatars = await getAvatarRepository().listByOwner(demoOwnerId);
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       storeId: body.storeId ?? "",
       trainingVideoAssetId: body.trainingVideoAssetId ?? "",
       consentAccepted: Boolean(body.consentAccepted),
-      provider: createMockAvatarProvider()
+      provider: createProviderFromEnv()
     });
 
     const saved = await getAvatarRepository().create(avatar);

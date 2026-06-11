@@ -29,3 +29,17 @@ export function hasRedis(): boolean {
 export function getRedisUrl(): string | undefined {
   return process.env.REDIS_URL?.trim() || undefined;
 }
+
+export function getAvatarProviderName(): string | undefined {
+  return process.env.AVATAR_PROVIDER?.trim() || undefined;
+}
+
+export function getAvatarProviderApiKey(): string | undefined {
+  return process.env.AVATAR_PROVIDER_API_KEY?.trim() || undefined;
+}
+
+export function hasAvatarProvider(): boolean {
+  const name = getAvatarProviderName();
+  const key = getAvatarProviderApiKey();
+  return Boolean(name && name !== "mock-avatar" && key);
+}

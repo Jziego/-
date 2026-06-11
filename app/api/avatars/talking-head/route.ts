@@ -1,6 +1,6 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { getAvatarRepository } from "@/lib/repositories";
-import { createMockAvatarProvider, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
+import { createProviderFromEnv, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   }
 
   const result = await requestAvatarTalkingHead({
-    provider: createMockAvatarProvider({ failTalkingHead: body.forceFallback }),
+    provider: createProviderFromEnv(),
     avatarProfileId: avatar.id,
     providerAvatarId: avatar.providerAvatarId,
     providerVoiceId: avatar.providerVoiceId,
