@@ -275,6 +275,20 @@ export function toJobInput(job: Job) {
   };
 }
 
+export function toVideoOutputInput(output: VideoOutput) {
+  return {
+    id: output.id,
+    ownerId: output.ownerId,
+    renderProjectId: output.renderProjectId,
+    storageKey: output.storageKey,
+    coverStorageKey: output.coverStorageKey ?? null,
+    aspectRatio: output.aspectRatio,
+    durationSeconds: output.durationSeconds,
+    status: output.status,
+    createdAt: new Date(output.createdAt)
+  };
+}
+
 export function toVideoOutput(row: PrismaVideoOutput): VideoOutput {
   return {
     id: row.id,

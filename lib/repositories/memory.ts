@@ -124,8 +124,26 @@ export class MemoryRenderRepository implements RenderRepository {
     return getRuntimeState().renderProjects.find((project) => project.id === id) ?? null;
   }
 
+  async createOutput(output: VideoOutput): Promise<VideoOutput> {
+    getRuntimeState().outputs.push(output);
+    return output;
+  }
+
+  async findOutputById(id: string): Promise<VideoOutput | null> {
+    return getRuntimeState().outputs.find((output) => output.id === id) ?? null;
+  }
+
   async listOutputsByOwner(ownerId: string): Promise<VideoOutput[]> {
     return getRuntimeState().outputs.filter((output) => output.ownerId === ownerId);
+  }
+
+  async updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject> {
+    const state = getRuntimeState();
+    const index = state.renderProjects.findIndex((p) => p.id === id);
+    if (index < 0) throw new Error(`RenderProject not found: ${id}`);
+    const updated = { ...state.renderProjects[index], ...data };
+    state.renderProjects[index] = updated;
+    return updated;
   }
 }
 

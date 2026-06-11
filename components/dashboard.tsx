@@ -29,6 +29,7 @@ import {
   saveStoreDraftStep
 } from "@/lib/draft-storage";
 import { createId, nowIso } from "@/lib/ids";
+import { useJobProgressSSE } from "@/lib/use-job-progress";
 import type { Asset, AssetAnalysis, AvatarProfile, Job, MarketingPurpose, ScriptDraft, StoreProfile } from "@/lib/types";
 
 type StoreFormValues = {
@@ -294,6 +295,10 @@ export function Dashboard() {
     }
   });
 
+  // SSE real-time progress for active jobs
+  const activeJobs = localJobs ?? serverJobs;
+  const jobProgressSSE = useJobProgressSSE(activeJobs);
+
   const { data: serverScripts = [] } = useQuery({
     queryKey: ["script-drafts"],
     queryFn: fetchScriptDrafts
@@ -314,6 +319,16 @@ export function Dashboard() {
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null)
       : null);
   const jobs = localJobs ?? serverJobs;
+
+  // Merge SSE real-time progress into the job list for display
+  const jobsWithProgress = useMemo(() => {
+    if (jobProgressSSE.size === 0) return jobs;
+    return jobs.map((job) => {
+      const sseState = jobProgressSSE.get(job.id);
+      if (!sseState) return job;
+      return { ...job, status: sseState.status, progress: sseState.progress, error: sseState.error ?? job.error };
+    });
+  }, [jobs, jobProgressSSE]);
   const {
     control,
     register,
@@ -981,8 +996,8 @@ export function Dashboard() {
           </div>
         </div>
         <div className="timeline">
-          {(jobs.length
-            ? jobs.map((job) => ({
+          {(jobsWithProgress.length
+            ? jobsWithProgress.map((job) => ({
                 id: job.id,
                 title: jobTypeLabels[job.type] ?? "视频任务",
                 status: jobStatusLabels[job.status] ?? "准备中",

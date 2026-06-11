@@ -44,7 +44,10 @@ export interface RenderRepository {
   listProjectsByOwner(ownerId: string): Promise<RenderProject[]>;
   createProject(project: RenderProject): Promise<RenderProject>;
   findProjectById(id: string): Promise<RenderProject | null>;
+  createOutput(output: VideoOutput): Promise<VideoOutput>;
+  findOutputById(id: string): Promise<VideoOutput | null>;
   listOutputsByOwner(ownerId: string): Promise<VideoOutput[]>;
+  updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject>;
 }
 
 export interface JobRepository {

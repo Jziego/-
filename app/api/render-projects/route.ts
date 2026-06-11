@@ -1,6 +1,6 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { hasRedis } from "@/lib/env";
-import { createBullQueue, toQueuePayload } from "@/lib/queue";
+import { createBullQueue, createFlowProducer, toFlowJobs, toQueuePayload } from "@/lib/queue";
 import {
   getAvatarRepository,
   getJobRepository,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/repositories";
 import { demoOwnerId } from "@/lib/runtime-store";
 import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib/services/render-pipeline";
+import { nowIso } from "@/lib/ids";
 import type { AspectRatio, RenderProject } from "@/lib/types";
 
 export async function GET() {
@@ -22,30 +23,35 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Request body must be valid JSON", 400);
+  }
 
   if (!body.scriptDraftId) {
     return jsonError("scriptDraftId is required", 400);
   }
 
-  const scriptDraft = await getScriptRepository().findById(body.scriptDraftId);
+  const scriptDraft = await getScriptRepository().findById(body.scriptDraftId as string);
 
   if (!scriptDraft) {
     return jsonError("Script draft not found", 404);
   }
 
   const avatarProfile = body.avatarProfileId
-    ? (await getAvatarRepository().findById(body.avatarProfileId)) ?? undefined
+    ? (await getAvatarRepository().findById(body.avatarProfileId as string)) ?? undefined
     : undefined;
   const project = createRenderProject({
-    ownerId: body.ownerId ?? scriptDraft.ownerId,
+    ownerId: (body.ownerId as string) ?? scriptDraft.ownerId,
     storeId: scriptDraft.storeId,
     scriptDraft,
-    selectedAssetIds: body.selectedAssetIds ?? [],
+    selectedAssetIds: (body.selectedAssetIds as string[]) ?? [],
     avatarProfile,
-    aspectRatio: (body.aspectRatio ?? "9:16") as AspectRatio,
-    subtitleStyle: (body.subtitleStyle ?? "bold_bottom") as RenderProject["subtitleStyle"],
-    bgmTrackId: body.bgmTrackId
+    aspectRatio: (body.aspectRatio as AspectRatio) ?? "9:16",
+    subtitleStyle: ((body.subtitleStyle as RenderProject["subtitleStyle"]) ?? "bold_bottom"),
+    bgmTrackId: body.bgmTrackId as string | undefined
   });
 
   const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatarProfile) });
@@ -56,23 +62,115 @@ export async function POST(request: Request) {
   });
   const jobs = [...plannedJobs, fallbackJob];
 
+  // Step 1: Persist project and jobs to DB
   await getRenderRepository().createProject(project);
   await getJobRepository().createMany(jobs);
 
-  // Enqueue jobs to Redis/BullMQ (best-effort — data consistency hardening in step 2)
+  // Step 2: Enqueue to Redis/BullMQ with data consistency hardening
   if (hasRedis()) {
-    const enqueueResults: { jobId: string; ok: boolean }[] = [];
-    for (const job of jobs) {
-      try {
-        const queue = createBullQueue(job.type);
-        const { data, opts } = toQueuePayload(job);
-        await queue.add(job.id, data, opts);
-        enqueueResults.push({ jobId: job.id, ok: true });
-      } catch (err) {
-        enqueueResults.push({ jobId: job.id, ok: false });
+    const enqueueResults: { jobId: string; ok: boolean; error?: string }[] = [];
+    const failedJobIds: string[] = [];
+    const now = nowIso();
+
+    try {
+      const flowProducer = createFlowProducer();
+      const flowJobs = toFlowJobs(jobs);
+
+      for (const flowJob of flowJobs) {
+        try {
+          await flowProducer.add(flowJob);
+          // Mark this job and all its children as enqueued
+          enqueueResults.push({ jobId: flowJob.name, ok: true });
+          if (flowJob.children) {
+            for (const child of flowJob.children) {
+              enqueueResults.push({ jobId: child.name, ok: true });
+            }
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : "Unknown enqueue error";
+          enqueueResults.push({ jobId: flowJob.name, ok: false, error: errorMsg });
+          failedJobIds.push(flowJob.name);
+          if (flowJob.children) {
+            for (const child of flowJob.children) {
+              enqueueResults.push({ jobId: child.name, ok: false, error: `Parent flow failed: ${errorMsg}` });
+              failedJobIds.push(child.name);
+            }
+          }
+        }
       }
+
+      // Consistency: mark failed enqueues in DB
+      for (const jobId of failedJobIds) {
+        try {
+          await getJobRepository().update(jobId, {
+            status: "failed",
+            error: "Failed to enqueue to Redis",
+            updatedAt: now
+          });
+        } catch {
+          // Best-effort DB update
+        }
+      }
+
+      // Update render project status based on enqueue results
+      if (failedJobIds.length > 0) {
+        try {
+          await getRenderRepository().updateProject(project.id, {
+            status: "failed",
+            updatedAt: now
+          });
+        } catch {
+          // Best-effort
+        }
+      } else {
+        try {
+          await getRenderRepository().updateProject(project.id, {
+            status: "processing",
+            updatedAt: now
+          });
+        } catch {
+          // Best-effort
+        }
+      }
+
+      // Clean up FlowProducer
+      try { await flowProducer.close(); } catch { /* ignore */ }
+
+      return jsonOk(
+        {
+          project: { ...project, status: failedJobIds.length > 0 ? "failed" : "processing" },
+          jobs,
+          enqueueResults
+        },
+        failedJobIds.length > 0 ? 201 : 201
+      );
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Redis unavailable";
+
+      // Mark all jobs as failed since we couldn't enqueue
+      for (const job of jobs) {
+        try {
+          await getJobRepository().update(job.id, {
+            status: "failed",
+            error: errorMsg,
+            updatedAt: now
+          });
+        } catch {
+          // Best-effort
+        }
+      }
+
+      try {
+        await getRenderRepository().updateProject(project.id, {
+          status: "failed",
+          updatedAt: now
+        });
+      } catch {
+        // Best-effort
+      }
+
+      return jsonOk({ project: { ...project, status: "failed" }, jobs, enqueued: false, error: errorMsg }, 201);
     }
-    return jsonOk({ project, jobs, enqueueResults }, 201);
   }
 
   return jsonOk({ project, jobs, enqueued: false }, 201);

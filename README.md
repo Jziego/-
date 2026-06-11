@@ -93,7 +93,13 @@ When `APP_MODE=production` and object storage env vars are missing, upload APIs 
    - `REDIS_URL` (Phase 3+)
    - `OBJECT_STORAGE_*` — see [Production — Cloudflare R2](#production--cloudflare-r2-on-zeabur) above
 4. Deploy from this repository. `zbpack.json` runs `prisma migrate deploy` before `next start`.
-5. Run `npm run db:seed` once against the production database (or rely on seed in your deploy pipeline).
+5. **Add a second "Worker" service** to the same Zeabur project:
+   - Service type: **Docker** (use `worker/Dockerfile`)
+   - Or: **Node.js** with root directory `.` and start command `npx tsx worker/index.ts`
+   - The worker shares the same codebase and connects to the same PostgreSQL + Redis plugins
+   - Required env vars: `DATABASE_URL`, `REDIS_URL` (same as web service)
+   - The worker does not serve HTTP — it only consumes BullMQ jobs
+6. Run `npm run db:seed` once against the production database (or rely on seed in your deploy pipeline).
 
 ## Verification
 
@@ -113,3 +119,7 @@ npm run build
 - S3-compatible object storage (MinIO locally, Cloudflare R2 in production) with presigned browser uploads.
 - Service-layer fallbacks for unavailable asset analysis, AI copy generation, talking-head generation and full render failure.
 - BullMQ queue payload helpers and object storage URL helpers for production integration points.
+- Independent Worker service (`worker/`) with BullMQ processors for asset analysis, avatar generation, video render and slideshow fallback.
+- FlowProducer-based job dependency chain: avatar generation → video render.
+- SSE real-time progress streaming (`GET /api/jobs/[id]/progress`) for live job status in the Dashboard.
+- Data consistency hardening: enqueue failures mark jobs as failed in DB; worker writes VideoOutput on render completion.

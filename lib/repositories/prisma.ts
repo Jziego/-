@@ -15,7 +15,8 @@ import {
   toScriptDraftInput,
   toStoreProfile,
   toStoreProfileInput,
-  toVideoOutput
+  toVideoOutput,
+  toVideoOutputInput
 } from "@/lib/repositories/mappers";
 import type {
   AssetRepository,
@@ -178,9 +179,31 @@ export class PrismaRenderRepository implements RenderRepository {
     return row ? toRenderProject(row) : null;
   }
 
+  async createOutput(output: VideoOutput): Promise<VideoOutput> {
+    const row = await this.prisma.videoOutput.create({ data: toVideoOutputInput(output) });
+    return toVideoOutput(row);
+  }
+
+  async findOutputById(id: string): Promise<VideoOutput | null> {
+    const row = await this.prisma.videoOutput.findUnique({ where: { id } });
+    return row ? toVideoOutput(row) : null;
+  }
+
   async listOutputsByOwner(ownerId: string): Promise<VideoOutput[]> {
     const rows = await this.prisma.videoOutput.findMany({ where: { ownerId } });
     return rows.map(toVideoOutput);
+  }
+
+  async updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject> {
+    const prismaData: Record<string, unknown> = {};
+    if (data.status !== undefined) prismaData.status = data.status;
+    if (data.updatedAt !== undefined) prismaData.updatedAt = new Date(data.updatedAt);
+
+    const row = await this.prisma.renderProject.update({
+      where: { id },
+      data: prismaData
+    });
+    return toRenderProject(row);
   }
 }
 

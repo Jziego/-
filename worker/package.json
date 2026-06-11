@@ -2,6 +2,11 @@
   "name": "ai-video-assistant-worker",
   "private": true,
   "type": "module",
+  "scripts": {
+    "dev": "tsx index.ts",
+    "build": "tsc --noEmit",
+    "start": "node --import tsx index.ts"
+  },
   "dependencies": {
     "bullmq": "^5.78.0",
     "ioredis": "^5.11.0"
