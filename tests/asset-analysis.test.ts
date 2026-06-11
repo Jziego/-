@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { classifyAsset, createUploadIntent } from "@/lib/services/assets";
 import * as storage from "@/lib/storage";
+import * as aiClient from "@/lib/services/ai-client";
 import type { Asset, StoreProfile } from "@/lib/types";
 
 const store: StoreProfile = {
@@ -42,6 +43,14 @@ describe("asset upload and analysis", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(storage, "createPresignedPutUrl").mockResolvedValue("https://signed.example/upload");
+    // Default: AI available with mock response
+    vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      businessTags: ["新品推荐", "门店环境"],
+      keywords: ["可颂", "烘焙", "下午茶"],
+      recommendedUses: ["new_product", "store_traffic"],
+      reasoning: "烘焙店新品可颂，门店环境适合下午茶消费场景",
+    });
   });
 
   it("creates direct-to-object-storage upload intents without exposing provider secrets", async () => {
@@ -61,18 +70,36 @@ describe("asset upload and analysis", () => {
     expect(intent.expiresInSeconds).toBeGreaterThan(0);
   });
 
-  it("combines visual tags, speech keywords and store industry rules", async () => {
+  it("uses AI classification when available", async () => {
     const analysis = await classifyAsset({
       asset,
       store,
-      visualLabels: ["bakery", "croissant", "person"],
-      transcript: "今天的可颂刚出炉，下午茶很适合"
+      visualLabels: ["croissant", "bakery"],
+      transcript: "今天的可颂刚出炉，下午茶很适合",
     });
 
-    expect(analysis.visualTags).toContain("croissant");
-    expect(analysis.keywords).toContain("可颂");
+    expect(aiClient.chatCompletionJSON).toHaveBeenCalled();
     expect(analysis.businessTags).toContain("新品推荐");
+    expect(analysis.keywords).toContain("可颂");
     expect(analysis.recommendedUses).toContain("new_product");
+    // AI mode should have higher confidence than unavailable mode
+    expect(analysis.confidence).toBeGreaterThan(0.5);
+  });
+
+  it("falls back to rule engine when AI fails", async () => {
+    vi.spyOn(aiClient, "chatCompletionJSON").mockRejectedValue(new Error("API timeout"));
+
+    const analysis = await classifyAsset({
+      asset,
+      store,
+      visualLabels: ["croissant"],
+      transcript: "可颂刚出炉",
+    });
+
+    // Rule engine still detects keywords from hardcoded candidates
+    expect(analysis.keywords).toContain("可颂");
+    // Rule engine still infers business tags from industry + filename
+    expect(analysis.businessTags).toContain("新品推荐");
   });
 
   it("falls back to filename and manual tag suggestions when automated analysis is unavailable", async () => {
@@ -80,11 +107,13 @@ describe("asset upload and analysis", () => {
       asset,
       store,
       manualTags: ["门店环境"],
-      analysisUnavailable: true
+      analysisUnavailable: true,
     });
 
     expect(analysis.confidence).toBeLessThan(0.5);
     expect(analysis.businessTags).toContain("门店环境");
     expect(analysis.recommendedUses).toContain("store_traffic");
+    // analysisUnavailable should skip AI entirely
+    expect(aiClient.chatCompletionJSON).not.toHaveBeenCalled();
   });
 });

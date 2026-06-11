@@ -1,4 +1,5 @@
 import { createId, nowIso } from "@/lib/ids";
+import { hasAI, chatCompletionJSON } from "@/lib/services/ai-client";
 import {
   ALLOWED_MIME_PREFIXES,
   MAX_UPLOAD_BYTES,
@@ -32,6 +33,54 @@ interface ClassifyAssetInput {
   transcript?: string;
   manualTags?: string[];
   analysisUnavailable?: boolean;
+}
+
+interface AIClassifyResponse {
+  businessTags: string[];
+  keywords: string[];
+  recommendedUses: MarketingPurpose[];
+  reasoning: string;
+}
+
+// ── AI prompts ──────────────────────────────────────────────────────────────
+
+const CLASSIFY_SYSTEM_PROMPT = `你是为本地商家短视频素材打标签的内容分析助手。
+根据门店信息、素材文件名、视觉标签和语音转写文本，推断素材的业务标签、关键词和推荐营销用途。
+
+规则：
+- businessTags: 2-4个中文业务标签，如"新品推荐"、"门店环境"、"促销活动"、"口碑推荐"、"招聘"等
+- keywords: 3-6个与素材内容相关的中文关键词
+- recommendedUses: 从以下用途中选择1-3个最合适的：
+  store_traffic（引流到店）、new_product（新品推荐）、promotion（促销活动）、
+  holiday（节日营销）、testimonial（口碑推荐）、recruiting（招聘）
+- reasoning: 一句话解释你的判断依据`;
+
+const CLASSIFY_SCHEMA = `{
+  "businessTags": ["标签1", "标签2"],
+  "keywords": ["关键词1", "关键词2"],
+  "recommendedUses": ["new_product", "store_traffic"],
+  "reasoning": "判断依据"
+}`;
+
+function buildClassifyUserPrompt(input: ClassifyAssetInput, visualTags: string[]): string {
+  const store = input.store;
+  const lines = [
+    "【门店信息】",
+    `店名：${store.name}`,
+    `行业：${store.industry}`,
+    `主推产品：${store.mainProducts.join("、")}`,
+    `卖点：${store.sellingPoints.join("、")}`,
+    `品牌调性：${store.brandTone}`,
+    `当前活动：${store.promotions?.join("、") || "无"}`,
+    "",
+    "【素材信息】",
+    `文件名：${input.asset.originalFilename}`,
+    `媒体类型：${input.asset.type}`,
+    `视觉标签：${visualTags.join("、") || "无"}`,
+    input.transcript ? `语音转写：${input.transcript}` : null,
+    input.manualTags?.length ? `手动标注：${input.manualTags.join("、")}` : null,
+  ].filter(Boolean);
+  return lines.join("\n");
 }
 
 const purposeByBusinessTag: Record<string, MarketingPurpose> = {
@@ -71,31 +120,81 @@ export async function createUploadIntent(input: UploadIntentInput): Promise<Uplo
   };
 }
 
+export async function classifyAssetWithAI(
+  input: ClassifyAssetInput,
+  visualTags: string[],
+): Promise<Pick<AssetAnalysis, "businessTags" | "keywords" | "recommendedUses">> {
+  const userPrompt = buildClassifyUserPrompt(input, visualTags);
+  const result = await chatCompletionJSON<AIClassifyResponse>(
+    CLASSIFY_SYSTEM_PROMPT,
+    userPrompt,
+    { schemaDescription: CLASSIFY_SCHEMA, temperature: 0.3, maxTokens: 800 },
+  );
+
+  if (!result) {
+    throw new Error("AI returned empty classification result");
+  }
+
+  const businessTags = unique([
+    ...(input.manualTags ?? []),
+    ...(Array.isArray(result.businessTags) ? result.businessTags.map(String) : []),
+  ]);
+
+  const transcriptKeywords = input.store.mainProducts.filter((product) =>
+    `${input.transcript ?? ""} ${input.asset.originalFilename}`.includes(product),
+  );
+  const keywords = unique([
+    ...transcriptKeywords,
+    ...(Array.isArray(result.keywords) ? result.keywords.map(String) : []),
+  ]);
+
+  const validUses: MarketingPurpose[] = [
+    "store_traffic", "new_product", "promotion", "holiday", "testimonial", "recruiting",
+  ];
+  const recommendedUses = unique(
+    (Array.isArray(result.recommendedUses) ? result.recommendedUses : [])
+      .map(String)
+      .filter((u): u is MarketingPurpose => validUses.includes(u as MarketingPurpose)),
+  );
+
+  return {
+    businessTags: businessTags.slice(0, 6),
+    keywords: keywords.slice(0, 8),
+    recommendedUses: recommendedUses.length > 0 ? recommendedUses : ["store_traffic"],
+  };
+}
+
 export async function classifyAsset(input: ClassifyAssetInput): Promise<AssetAnalysis> {
   const visualTags = input.analysisUnavailable
     ? inferTagsFromFilename(input.asset.originalFilename)
     : unique([...(input.visualLabels ?? []), ...inferTagsFromFilename(input.asset.originalFilename)]);
 
-  const keywords = unique([
-    ...extractBusinessKeywords(input.transcript ?? ""),
-    ...input.store.mainProducts.filter((product) =>
-      `${input.transcript ?? ""} ${input.asset.originalFilename}`.includes(product)
-    )
-  ]);
+  // ── Business tags, keywords, recommended uses ──
+  let businessTags: string[];
+  let keywords: string[];
+  let recommendedUses: MarketingPurpose[];
 
-  const businessTags = unique([
-    ...(input.manualTags ?? []),
-    ...inferBusinessTags({
-      industry: input.store.industry,
-      visualTags,
-      transcript: input.transcript,
-      filename: input.asset.originalFilename
-    })
-  ]);
-
-  const recommendedUses = unique(
-    businessTags.map((tag) => purposeByBusinessTag[tag]).filter(Boolean)
-  ) as MarketingPurpose[];
+  if (!input.analysisUnavailable && hasAI()) {
+    try {
+      const aiResult = await classifyAssetWithAI(input, visualTags);
+      businessTags = aiResult.businessTags;
+      keywords = aiResult.keywords;
+      recommendedUses = aiResult.recommendedUses;
+    } catch (error) {
+      console.warn(
+        `[assets] AI classification failed, falling back to rules: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      const fallback = ruleBasedClassify(input, visualTags);
+      businessTags = fallback.businessTags;
+      keywords = fallback.keywords;
+      recommendedUses = fallback.recommendedUses;
+    }
+  } else {
+    const fallback = ruleBasedClassify(input, visualTags);
+    businessTags = fallback.businessTags;
+    keywords = fallback.keywords;
+    recommendedUses = fallback.recommendedUses;
+  }
 
   return {
     id: createId("analysis"),
@@ -108,6 +207,34 @@ export async function classifyAsset(input: ClassifyAssetInput): Promise<AssetAna
     recommendedUses: recommendedUses.length > 0 ? recommendedUses : ["store_traffic"],
     createdAt: nowIso()
   };
+}
+
+function ruleBasedClassify(
+  input: ClassifyAssetInput,
+  visualTags: string[],
+): Pick<AssetAnalysis, "businessTags" | "keywords" | "recommendedUses"> {
+  const keywords = unique([
+    ...extractBusinessKeywords(input.transcript ?? ""),
+    ...input.store.mainProducts.filter((product) =>
+      `${input.transcript ?? ""} ${input.asset.originalFilename}`.includes(product),
+    ),
+  ]);
+
+  const businessTags = unique([
+    ...(input.manualTags ?? []),
+    ...inferBusinessTags({
+      industry: input.store.industry,
+      visualTags,
+      transcript: input.transcript,
+      filename: input.asset.originalFilename,
+    }),
+  ]);
+
+  const recommendedUses = unique(
+    businessTags.map((tag) => purposeByBusinessTag[tag]).filter(Boolean),
+  ) as MarketingPurpose[];
+
+  return { businessTags, keywords, recommendedUses };
 }
 
 function inferTagsFromFilename(filename: string): string[] {
