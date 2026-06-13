@@ -59,18 +59,26 @@ import EmailProvider from "next-auth/providers/email";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { Resend } from "resend";
 import { getPrisma } from "@/lib/prisma";
+import { getResendApiKey, getEmailFrom } from "@/lib/env";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(getResendApiKey());
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(getPrisma()),
+  adapter: {
+    ...PrismaAdapter(getPrisma()),
+    createUser: async (data) => {
+      return getPrisma().user.create({
+        data: { ...data, plan: "free", quotaRemaining: 10 },
+      });
+    },
+  },
   providers: [
     EmailProvider({
-      server: {}, // 空 → 使用 Resend
-      from: process.env.EMAIL_FROM ?? "AI短视频助手 <noreply@resend.dev>",
+      server: {},
+      from: getEmailFrom(),
       sendVerificationRequest: async ({ identifier: email, url }) => {
         await resend.emails.send({
-          from: process.env.EMAIL_FROM ?? "AI短视频助手 <noreply@resend.dev>",
+          from: getEmailFrom(),
           to: email,
           subject: "登录 AI 短视频助手",
           html: `<p>点击下方链接登录：</p><p><a href="${url}">${url}</a></p><p>链接 24 小时内有效。</p>`,
@@ -110,6 +118,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 - `AUTH_URL` 生产必须与用户实际访问的域名完全一致（含 https、是否带 www）
 - 本地开发 Resend 可用 `onboarding@resend.dev` 发件地址（仅能发到 Resend 账号邮箱）
 
+**`lib/env.ts` 新增 accessor（遵循项目约定，不直接读 `process.env`）：**
+
+```ts
+export function getAuthSecret(): string | undefined {
+  return process.env.AUTH_SECRET?.trim() || undefined;
+}
+export function getAuthUrl(): string | undefined {
+  return process.env.AUTH_URL?.trim() || undefined;
+}
+export function getResendApiKey(): string | undefined {
+  return process.env.RESEND_API_KEY?.trim() || undefined;
+}
+export function getEmailFrom(): string {
+  return process.env.EMAIL_FROM?.trim() || "AI短视频助手 <noreply@resend.dev>";
+}
+```
+
+`auth.ts` 中应使用这些 accessor 而非直接读 `process.env`。
+
 ### 2d. Magic Link 流程
 
 ```
@@ -131,19 +158,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
 ### 2e. 新用户初始化
 
-Auth.js `signIn` callback 中处理：
-
-```ts
-callbacks: {
-  async signIn({ user }) {
-    // 新用户首次登录时设置默认值
-    // adapter 已通过 PrismaAdapter 创建 User，此处补默认值
-    return true;
-  },
-}
-```
-
-由于 PrismaAdapter 通过 `createUser` 创建用户，需在 auth.ts 中用 adapter 覆盖 `createUser`：
+PrismaAdapter 通过 `createUser` 创建用户。需在 auth.ts 中覆盖 adapter 的 `createUser` 方法，为新用户注入默认 `plan` 和 `quotaRemaining`：
 
 ```ts
 adapter: {
@@ -590,7 +605,7 @@ export function jsonQuotaError(plan: string): Response {
 |------|------|-------|---------------|---------------|
 | `APP_MODE=demo` | 放行（回退 demoOwnerId） | 不扣 | 登录限流生效 | 跳过 |
 | `APP_MODE=production` | 强制登录 | 正常扣减 | 登录限流生效 | 正常执行 |
-| `!DATABASE_URL` | ❌ Auth 不可用 | 跳过 | 正常工作 | 正常工作 |
+| `!DATABASE_URL` | JWT 验签仍可用；新登录/写 User 不可用 | 跳过 | 正常工作 | 正常工作 |
 | `!REDIS_URL` + dev | — | — | 内存 fallback | 内存 fallback |
 | `!REDIS_URL` + prod | — | — | 放行 + warn | 放行 + warn |
 
@@ -623,7 +638,8 @@ export function jsonQuotaError(plan: string): Response {
 | 5 | lib/auth-helpers.ts (requireAuth / getOwnerId) | 3 |
 | 6 | /login 页面 + Server Action | 3, 5 |
 | 7 | 全量 API route 切 ownerId 来源（去 demoOwnerId 硬编码） | 5 |
-| 8 | IDOR 修复：资源归属校验 | 5 |
+|   | 涉及文件：`app/api/store-profiles/route.ts`、`app/api/assets/route.ts`、`app/api/assets/upload-intent/route.ts`、`app/api/assets/confirm/route.ts`、`app/api/assets/analyze/route.ts`、`app/api/avatars/route.ts`、`app/api/script-drafts/route.ts`、`app/api/render-projects/route.ts`、`app/api/jobs/route.ts` | |
+| 8 | IDOR 修复：资源归属校验（按 ID 操作资源时校验 `resource.ownerId === await getOwnerId()`） | 5 |
 | 9 | lib/quota.ts + render-projects 集成 | 7 |
 | 10 | lib/rate-limit.ts + 集成 | 7 |
 | 11 | lib/api-response.ts 扩展（jsonQuotaError / jsonRateLimited） | 9, 10 |
