@@ -1,5 +1,6 @@
-import { jsonError, jsonOk } from "@/lib/api-response";
+import { jsonError, jsonOk, jsonQuotaError } from "@/lib/api-response";
 import { hasRedis } from "@/lib/env";
+import { consumeQuota, QuotaExhaustedError } from "@/lib/quota";
 import { createBullQueue, createFlowProducer, toFlowJobs, toQueuePayload } from "@/lib/queue";
 import {
   getAvatarRepository,
@@ -47,6 +48,17 @@ export async function POST(request: Request) {
   if (scriptDraft.ownerId !== ownerId) {
     return jsonError("Script draft not found", 404);
   }
+
+  // Quota consumption — throws QuotaExhaustedError if exhausted (402)
+  try {
+    await consumeQuota(ownerId);
+  } catch (error) {
+    if (error instanceof QuotaExhaustedError) {
+      return jsonQuotaError(error.plan);
+    }
+    throw error;
+  }
+
   const avatarProfile = body.avatarProfileId
     ? (await getAvatarRepository().findById(body.avatarProfileId as string)) ?? undefined
     : undefined;
