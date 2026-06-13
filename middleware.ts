@@ -1,11 +1,10 @@
 import { auth } from "@/auth";
+import { getAppMode } from "@/lib/env";
 import { NextResponse } from "next/server";
-
-const isDemo = process.env.APP_MODE !== "production";
 
 export default auth((req) => {
   // demo: allow all traffic, ownerId is determined by getOwnerId() in routes
-  if (isDemo) return NextResponse.next();
+  if (getAppMode() === "demo") return NextResponse.next();
 
   const { pathname } = req.nextUrl;
 

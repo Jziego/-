@@ -1,5 +1,5 @@
 import { createId, nowIso } from "@/lib/ids";
-import { hasAI, chatCompletionJSON } from "@/lib/services/ai-client";
+import { hasAI, chatCompletionJSON, sanitizePromptField } from "@/lib/services/ai-client";
 import type { AssetAnalysis, MarketingPurpose, Platform, ScriptDraft, ScriptScene, StoreProfile } from "@/lib/types";
 
 // ── Public input types ─────────────────────────────────────────────────────
@@ -102,14 +102,14 @@ function buildUserPrompt(input: ScriptDraftInput): string {
 
   const lines = [
     `【门店信息】`,
-    `店名：${store.name}`,
-    `行业：${store.industry}`,
-    `位置：${store.location ?? "未填写"}`,
-    `主推产品：${store.mainProducts.join("、") || "未填写"}`,
-    `卖点：${store.sellingPoints.join("、") || "未填写"}`,
-    `目标客群：${store.targetCustomers.join("、") || "未填写"}`,
-    `品牌调性：${store.brandTone}`,
-    store.promotions?.length ? `当前活动：${store.promotions.join("、")}` : null,
+    `店名：${sanitizePromptField(store.name, 100)}`,
+    `行业：${sanitizePromptField(store.industry, 50)}`,
+    `位置：${sanitizePromptField(store.location ?? "未填写", 100)}`,
+    `主推产品：${store.mainProducts.map((p) => sanitizePromptField(p, 60)).join("、") || "未填写"}`,
+    `卖点：${store.sellingPoints.map((p) => sanitizePromptField(p, 80)).join("、") || "未填写"}`,
+    `目标客群：${store.targetCustomers.map((c) => sanitizePromptField(c, 40)).join("、") || "未填写"}`,
+    `品牌调性：${sanitizePromptField(store.brandTone, 100)}`,
+    store.promotions?.length ? `当前活动：${store.promotions.map((p) => sanitizePromptField(p, 80)).join("、")}` : null,
     ``,
     `【素材标签】${hints.length ? hints.join("、") : "无特定标签"}`,
     ``,

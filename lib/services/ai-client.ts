@@ -25,6 +25,32 @@ export function getAIModel(): string {
   return getModel();
 }
 
+// ── Prompt sanitization ────────────────────────────────────────────────────
+
+/**
+ * Sanitize a user-supplied value before injecting it into an AI prompt.
+ * Mitigates prompt injection by stripping delimiters and truncating.
+ *
+ * This is defense-in-depth — it raises the bar but is not a guarantee.
+ * System prompts are server-authored constants, never user-supplied.
+ */
+export function sanitizePromptField(value: unknown, maxLength = 200): string {
+  let s = String(value ?? "");
+
+  // Strip markdown code fences and blockquote markers
+  s = s.replace(/```/g, "");
+  s = s.replace(/"""/g, "");
+  s = s.replace(/^[ \t]*[#>]+[ \t]*/gm, "");
+
+  // Strip control characters (keep common whitespace and printable Unicode)
+  s = s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+
+  // Collapse multiple consecutive newlines
+  s = s.replace(/\n{3,}/g, "\n\n");
+
+  return s.slice(0, maxLength).trim();
+}
+
 // ── Client singleton ───────────────────────────────────────────────────────
 
 let _client: OpenAI | null = null;

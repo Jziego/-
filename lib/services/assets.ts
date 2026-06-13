@@ -1,5 +1,5 @@
 import { createId, nowIso } from "@/lib/ids";
-import { hasAI, chatCompletionJSON } from "@/lib/services/ai-client";
+import { hasAI, chatCompletionJSON, sanitizePromptField } from "@/lib/services/ai-client";
 import {
   ALLOWED_MIME_PREFIXES,
   MAX_UPLOAD_BYTES,
@@ -66,19 +66,19 @@ function buildClassifyUserPrompt(input: ClassifyAssetInput, visualTags: string[]
   const store = input.store;
   const lines = [
     "【门店信息】",
-    `店名：${store.name}`,
-    `行业：${store.industry}`,
-    `主推产品：${store.mainProducts.join("、")}`,
-    `卖点：${store.sellingPoints.join("、")}`,
-    `品牌调性：${store.brandTone}`,
-    `当前活动：${store.promotions?.join("、") || "无"}`,
+    `店名：${sanitizePromptField(store.name, 100)}`,
+    `行业：${sanitizePromptField(store.industry, 50)}`,
+    `主推产品：${store.mainProducts.map((p) => sanitizePromptField(p, 60)).join("、")}`,
+    `卖点：${store.sellingPoints.map((p) => sanitizePromptField(p, 80)).join("、")}`,
+    `品牌调性：${sanitizePromptField(store.brandTone, 100)}`,
+    `当前活动：${store.promotions?.map((p) => sanitizePromptField(p, 80)).join("、") || "无"}`,
     "",
     "【素材信息】",
-    `文件名：${input.asset.originalFilename}`,
-    `媒体类型：${input.asset.type}`,
-    `视觉标签：${visualTags.join("、") || "无"}`,
-    input.transcript ? `语音转写：${input.transcript}` : null,
-    input.manualTags?.length ? `手动标注：${input.manualTags.join("、")}` : null,
+    `文件名：${sanitizePromptField(input.asset.originalFilename, 150)}`,
+    `媒体类型：${sanitizePromptField(input.asset.type, 30)}`,
+    `视觉标签：${visualTags.map((t) => sanitizePromptField(t, 40)).join("、") || "无"}`,
+    input.transcript ? `语音转写：${sanitizePromptField(input.transcript, 500)}` : null,
+    input.manualTags?.length ? `手动标注：${input.manualTags.map((t) => sanitizePromptField(t, 40)).join("、")}` : null,
   ].filter(Boolean);
   return lines.join("\n");
 }
@@ -104,7 +104,22 @@ export async function createUploadIntent(input: UploadIntentInput): Promise<Uplo
   }
 
   const assetId = createId("asset");
-  const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
+  // Sanitize filename: allow only alphanumeric, dots, dashes, underscores.
+  // Prevent path traversal and reserved names.
+  let safeName = input.filename
+    .replace(/[\\/]/g, "-")               // directory separators → dash
+    .replace(/\.{2,}/g, "")               // remove ".." path traversal
+    .replace(/[^a-zA-Z0-9._-]/g, "-")     // everything else unsafe → dash
+    .replace(/^-+/, "")                   // strip leading dashes
+    .replace(/^\.+/, "")                  // strip leading dots (hidden files)
+    .replace(/-{2,}/g, "-")              // collapse repeated dashes
+    .toLowerCase()
+    .slice(0, 128);                       // max filename length
+
+  // Fallback if sanitization resulted in an empty name
+  if (!safeName || safeName === ".ext") {
+    safeName = "upload";
+  }
   const storageKey = `stores/${input.storeId}/assets/${assetId}-${safeName}`;
   const uploadUrl = await createPresignedPutUrl(storageKey, input.contentType);
 
