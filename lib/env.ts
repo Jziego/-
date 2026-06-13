@@ -29,3 +29,19 @@ export function hasRedis(): boolean {
 export function getRedisUrl(): string | undefined {
   return process.env.REDIS_URL?.trim() || undefined;
 }
+
+export function getAuthSecret(): string | undefined {
+  return process.env.AUTH_SECRET?.trim() || undefined;
+}
+
+export function getAuthUrl(): string | undefined {
+  return process.env.AUTH_URL?.trim() || undefined;
+}
+
+export function getResendApiKey(): string | undefined {
+  return process.env.RESEND_API_KEY?.trim() || undefined;
+}
+
+export function getEmailFrom(): string {
+  return process.env.EMAIL_FROM?.trim() || "AI短视频助手 <noreply@resend.dev>";
+}
