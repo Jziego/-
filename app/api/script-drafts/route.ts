@@ -1,11 +1,11 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { getAssetAnalysisRepository, getScriptRepository, getStoreRepository } from "@/lib/repositories";
-import { demoOwnerId } from "@/lib/runtime-store";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { createScriptDraft, createTemplateScriptDraft } from "@/lib/services/script-engine";
 import type { MarketingPurpose, Platform } from "@/lib/types";
 
 export async function GET() {
-  const scripts = await getScriptRepository().listByOwner(demoOwnerId);
+  const scripts = await getScriptRepository().listByOwner(await getOwnerId());
   return jsonOk({ scripts });
 }
 
@@ -14,6 +14,12 @@ export async function POST(request: Request) {
   const store = await getStoreRepository().findById(body.storeId);
 
   if (!store) {
+    return jsonError("Store profile not found", 404);
+  }
+
+  const ownerId = await getOwnerId();
+  // IDOR guard
+  if (store.ownerId !== ownerId) {
     return jsonError("Store profile not found", 404);
   }
 

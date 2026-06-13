@@ -2,7 +2,7 @@ import { jsonError, jsonOk } from "@/lib/api-response";
 import { hasObjectStorage } from "@/lib/env";
 import { nowIso } from "@/lib/ids";
 import { getAssetRepository, getStoreRepository } from "@/lib/repositories";
-import { demoOwnerId } from "@/lib/runtime-store";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { confirmAssetUploadSchema } from "@/lib/schemas";
 import { MAX_UPLOAD_BYTES, headObject } from "@/lib/storage";
 
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   }
 
   const input = parsed.data;
-  const ownerId = input.ownerId ?? demoOwnerId;
+  const ownerId = await getOwnerId();
   const expectedPrefix = `stores/${input.storeId}/assets/${input.assetId}-`;
 
   if (!input.storageKey.startsWith(expectedPrefix)) {

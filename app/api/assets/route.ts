@@ -1,11 +1,11 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { createId, nowIso } from "@/lib/ids";
 import { getAssetRepository } from "@/lib/repositories";
-import { demoOwnerId } from "@/lib/runtime-store";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { assetSchema } from "@/lib/schemas";
 
 export async function GET() {
-  const assets = await getAssetRepository().listByOwner(demoOwnerId);
+  const assets = await getAssetRepository().listByOwner(await getOwnerId());
   return jsonOk({ assets });
 }
 
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const parsed = assetSchema.safeParse({
     ...body,
     id: body.id ?? createId("asset"),
-    ownerId: body.ownerId ?? demoOwnerId,
+    ownerId: await getOwnerId(),
     tags: body.tags ?? [],
     businessTags: body.businessTags ?? [],
     status: body.status ?? "uploaded",

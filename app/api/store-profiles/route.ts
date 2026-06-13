@@ -4,7 +4,7 @@ import { createId, nowIso } from "@/lib/ids";
 
 import { getStoreRepository } from "@/lib/repositories";
 
-import { demoOwnerId } from "@/lib/runtime-store";
+import { getOwnerId } from "@/lib/auth-helpers";
 
 import { storeProfileSchema } from "@/lib/schemas";
 
@@ -12,7 +12,7 @@ import { storeProfileSchema } from "@/lib/schemas";
 
 export async function GET() {
   try {
-    const stores = await getStoreRepository().listByOwner(demoOwnerId);
+    const stores = await getStoreRepository().listByOwner(await getOwnerId());
     return jsonOk({ stores });
   } catch {
     return jsonError("Failed to list store profiles", 500);
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
     id: body.id ?? createId("store"),
 
-    ownerId: body.ownerId ?? demoOwnerId,
+    ownerId: await getOwnerId(),
 
     createdAt: body.createdAt ?? now,
 

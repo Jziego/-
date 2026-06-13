@@ -7,17 +7,18 @@ import {
   getRenderRepository,
   getScriptRepository
 } from "@/lib/repositories";
-import { demoOwnerId } from "@/lib/runtime-store";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib/services/render-pipeline";
 import { nowIso } from "@/lib/ids";
 import type { AspectRatio, RenderProject } from "@/lib/types";
 
 export async function GET() {
   const renderRepo = getRenderRepository();
+  const ownerId = await getOwnerId();
   const [renderProjects, jobs, outputs] = await Promise.all([
-    renderRepo.listProjectsByOwner(demoOwnerId),
-    getJobRepository().listByOwner(demoOwnerId),
-    renderRepo.listOutputsByOwner(demoOwnerId)
+    renderRepo.listProjectsByOwner(ownerId),
+    getJobRepository().listByOwner(ownerId),
+    renderRepo.listOutputsByOwner(ownerId)
   ]);
   return jsonOk({ renderProjects, jobs, outputs });
 }
@@ -40,11 +41,12 @@ export async function POST(request: Request) {
     return jsonError("Script draft not found", 404);
   }
 
+  const ownerId = await getOwnerId();
   const avatarProfile = body.avatarProfileId
     ? (await getAvatarRepository().findById(body.avatarProfileId as string)) ?? undefined
     : undefined;
   const project = createRenderProject({
-    ownerId: (body.ownerId as string) ?? scriptDraft.ownerId,
+    ownerId,
     storeId: scriptDraft.storeId,
     scriptDraft,
     selectedAssetIds: (body.selectedAssetIds as string[]) ?? [],

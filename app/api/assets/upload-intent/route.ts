@@ -1,4 +1,5 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { hasObjectStorage } from "@/lib/env";
 import { createUploadIntent } from "@/lib/services/assets";
 
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
 
   try {
     const intent = await createUploadIntent({
-      ownerId: body.ownerId ?? "demo_user",
+      ownerId: await getOwnerId(),
       storeId: body.storeId,
       filename: body.filename,
       contentType: body.contentType,

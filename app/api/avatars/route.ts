@@ -1,10 +1,10 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { getAvatarRepository } from "@/lib/repositories";
-import { demoOwnerId } from "@/lib/runtime-store";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { createAvatarProfile, createMockAvatarProvider } from "@/lib/services/avatar-provider";
 
 export async function GET() {
-  const avatars = await getAvatarRepository().listByOwner(demoOwnerId);
+  const avatars = await getAvatarRepository().listByOwner(await getOwnerId());
   return jsonOk({ avatars });
 }
 
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
   try {
     const avatar = await createAvatarProfile({
-      ownerId: body.ownerId ?? demoOwnerId,
+      ownerId: await getOwnerId(),
       storeId: body.storeId ?? "",
       trainingVideoAssetId: body.trainingVideoAssetId ?? "",
       consentAccepted: Boolean(body.consentAccepted),
