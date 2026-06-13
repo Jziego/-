@@ -45,3 +45,17 @@ export function getResendApiKey(): string | undefined {
 export function getEmailFrom(): string {
   return process.env.EMAIL_FROM?.trim() || "AI短视频助手 <noreply@resend.dev>";
 }
+
+export function getAvatarProviderName(): string | undefined {
+  return process.env.AVATAR_PROVIDER?.trim() || undefined;
+}
+
+export function getAvatarProviderApiKey(): string | undefined {
+  return process.env.AVATAR_PROVIDER_API_KEY?.trim() || undefined;
+}
+
+export function hasAvatarProvider(): boolean {
+  const name = getAvatarProviderName();
+  const key = getAvatarProviderApiKey();
+  return Boolean(name && name !== "mock-avatar" && key);
+}
