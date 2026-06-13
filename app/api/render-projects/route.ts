@@ -35,13 +35,18 @@ export async function POST(request: Request) {
     return jsonError("scriptDraftId is required", 400);
   }
 
+  const ownerId = await getOwnerId();
+
   const scriptDraft = await getScriptRepository().findById(body.scriptDraftId as string);
 
   if (!scriptDraft) {
     return jsonError("Script draft not found", 404);
   }
 
-  const ownerId = await getOwnerId();
+  // IDOR guard: scriptDraft must belong to the authenticated user
+  if (scriptDraft.ownerId !== ownerId) {
+    return jsonError("Script draft not found", 404);
+  }
   const avatarProfile = body.avatarProfileId
     ? (await getAvatarRepository().findById(body.avatarProfileId as string)) ?? undefined
     : undefined;

@@ -31,6 +31,11 @@ export async function POST(request: Request) {
     return jsonError("Store not found", 404);
   }
 
+  // IDOR guard: store must belong to the authenticated user
+  if (store.ownerId !== ownerId) {
+    return jsonError("Store not found", 404);
+  }
+
   const existing = await getAssetRepository().findById(input.assetId);
   if (existing) {
     return jsonError("Asset already confirmed", 409);
