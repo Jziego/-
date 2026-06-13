@@ -6,7 +6,11 @@ import type { AdapterUser } from "@auth/core/adapters";
 import { getPrisma } from "@/lib/prisma";
 import { getResendApiKey, getEmailFrom } from "@/lib/env";
 
-const resend = new Resend(getResendApiKey());
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (!_resend) _resend = new Resend(getResendApiKey());
+  return _resend;
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: {
@@ -22,7 +26,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       server: {},
       from: getEmailFrom(),
       sendVerificationRequest: async ({ identifier: email, url }) => {
-        await resend.emails.send({
+        await getResend().emails.send({
           from: getEmailFrom(),
           to: email,
           subject: "登录 AI 短视频助手",

@@ -1,8 +1,9 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function VerifyPage() {
+function VerifyContent() {
   const searchParams = useSearchParams();
   const email = searchParams.get("email") ?? "";
 
@@ -22,5 +23,13 @@ export default function VerifyPage() {
         </a>
       </div>
     </main>
+  );
+}
+
+export default function VerifyPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">加载中...</div>}>
+      <VerifyContent />
+    </Suspense>
   );
 }
