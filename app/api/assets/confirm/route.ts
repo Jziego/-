@@ -1,8 +1,9 @@
-import { jsonError, jsonOk } from "@/lib/api-response";
+import { jsonError, jsonOk, jsonRateLimited } from "@/lib/api-response";
+import { rateLimitApi } from "@/lib/rate-limit";
 import { hasObjectStorage } from "@/lib/env";
 import { nowIso } from "@/lib/ids";
 import { getAssetRepository, getStoreRepository } from "@/lib/repositories";
-import { demoOwnerId } from "@/lib/runtime-store";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { confirmAssetUploadSchema } from "@/lib/schemas";
 import { MAX_UPLOAD_BYTES, headObject } from "@/lib/storage";
 
@@ -19,7 +20,9 @@ export async function POST(request: Request) {
   }
 
   const input = parsed.data;
-  const ownerId = input.ownerId ?? demoOwnerId;
+  const ownerId = await getOwnerId();
+  const rl = await rateLimitApi(ownerId, request.method);
+  if (!rl.allowed) return jsonRateLimited(rl);
   const expectedPrefix = `stores/${input.storeId}/assets/${input.assetId}-`;
 
   if (!input.storageKey.startsWith(expectedPrefix)) {
@@ -28,6 +31,11 @@ export async function POST(request: Request) {
 
   const store = await getStoreRepository().findById(input.storeId);
   if (!store) {
+    return jsonError("Store not found", 404);
+  }
+
+  // IDOR guard: store must belong to the authenticated user
+  if (store.ownerId !== ownerId) {
     return jsonError("Store not found", 404);
   }
 

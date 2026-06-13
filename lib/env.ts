@@ -30,16 +30,18 @@ export function getRedisUrl(): string | undefined {
   return process.env.REDIS_URL?.trim() || undefined;
 }
 
-export function getAvatarProviderName(): string | undefined {
-  return process.env.AVATAR_PROVIDER?.trim() || undefined;
+export function getAuthSecret(): string | undefined {
+  return process.env.AUTH_SECRET?.trim() || undefined;
 }
 
-export function getAvatarProviderApiKey(): string | undefined {
-  return process.env.AVATAR_PROVIDER_API_KEY?.trim() || undefined;
+export function getAuthUrl(): string | undefined {
+  return process.env.AUTH_URL?.trim() || undefined;
 }
 
-export function hasAvatarProvider(): boolean {
-  const name = getAvatarProviderName();
-  const key = getAvatarProviderApiKey();
-  return Boolean(name && name !== "mock-avatar" && key);
+export function getResendApiKey(): string | undefined {
+  return process.env.RESEND_API_KEY?.trim() || undefined;
+}
+
+export function getEmailFrom(): string {
+  return process.env.EMAIL_FROM?.trim() || "AI短视频助手 <noreply@resend.dev>";
 }

@@ -1,5 +1,7 @@
-import { jsonError, jsonOk } from "@/lib/api-response";
+import { jsonError, jsonOk, jsonQuotaError, jsonRateLimited } from "@/lib/api-response";
+import { rateLimitApi } from "@/lib/rate-limit";
 import { hasRedis } from "@/lib/env";
+import { consumeQuota, QuotaExhaustedError } from "@/lib/quota";
 import { createBullQueue, createFlowProducer, toFlowJobs, toQueuePayload } from "@/lib/queue";
 import {
   getAvatarRepository,
@@ -7,17 +9,20 @@ import {
   getRenderRepository,
   getScriptRepository
 } from "@/lib/repositories";
-import { demoOwnerId } from "@/lib/runtime-store";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib/services/render-pipeline";
 import { nowIso } from "@/lib/ids";
 import type { AspectRatio, RenderProject } from "@/lib/types";
 
 export async function GET() {
   const renderRepo = getRenderRepository();
+  const ownerId = await getOwnerId();
+  const rl = await rateLimitApi(ownerId, "GET");
+  if (!rl.allowed) return jsonRateLimited(rl);
   const [renderProjects, jobs, outputs] = await Promise.all([
-    renderRepo.listProjectsByOwner(demoOwnerId),
-    getJobRepository().listByOwner(demoOwnerId),
-    renderRepo.listOutputsByOwner(demoOwnerId)
+    renderRepo.listProjectsByOwner(ownerId),
+    getJobRepository().listByOwner(ownerId),
+    renderRepo.listOutputsByOwner(ownerId)
   ]);
   return jsonOk({ renderProjects, jobs, outputs });
 }
@@ -34,17 +39,37 @@ export async function POST(request: Request) {
     return jsonError("scriptDraftId is required", 400);
   }
 
+  const ownerId = await getOwnerId();
+
+  const rl = await rateLimitApi(ownerId, request.method);
+  if (!rl.allowed) return jsonRateLimited(rl);
+
   const scriptDraft = await getScriptRepository().findById(body.scriptDraftId as string);
 
   if (!scriptDraft) {
     return jsonError("Script draft not found", 404);
   }
 
+  // IDOR guard: scriptDraft must belong to the authenticated user
+  if (scriptDraft.ownerId !== ownerId) {
+    return jsonError("Script draft not found", 404);
+  }
+
+  // Quota consumption — throws QuotaExhaustedError if exhausted (402)
+  try {
+    await consumeQuota(ownerId);
+  } catch (error) {
+    if (error instanceof QuotaExhaustedError) {
+      return jsonQuotaError(error.plan);
+    }
+    throw error;
+  }
+
   const avatarProfile = body.avatarProfileId
     ? (await getAvatarRepository().findById(body.avatarProfileId as string)) ?? undefined
     : undefined;
   const project = createRenderProject({
-    ownerId: (body.ownerId as string) ?? scriptDraft.ownerId,
+    ownerId,
     storeId: scriptDraft.storeId,
     scriptDraft,
     selectedAssetIds: (body.selectedAssetIds as string[]) ?? [],

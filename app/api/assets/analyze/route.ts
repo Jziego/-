@@ -1,4 +1,6 @@
-import { jsonError, jsonOk } from "@/lib/api-response";
+import { jsonError, jsonOk, jsonRateLimited } from "@/lib/api-response";
+import { rateLimitApi } from "@/lib/rate-limit";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { getAssetAnalysisRepository, getAssetRepository, getStoreRepository } from "@/lib/repositories";
 import { classifyAsset } from "@/lib/services/assets";
 
@@ -8,6 +10,14 @@ export async function POST(request: Request) {
   const store = await getStoreRepository().findById(body.storeId);
 
   if (!asset || !store) {
+    return jsonError("Asset or store not found", 404);
+  }
+
+  const ownerId = await getOwnerId();
+  const rl = await rateLimitApi(ownerId, request.method);
+  if (!rl.allowed) return jsonRateLimited(rl);
+  // IDOR guard: asset and store must belong to the requesting user
+  if (asset.ownerId !== ownerId || store.ownerId !== ownerId) {
     return jsonError("Asset or store not found", 404);
   }
 

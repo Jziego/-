@@ -1,11 +1,15 @@
-import { jsonError, jsonOk } from "@/lib/api-response";
+import { jsonError, jsonOk, jsonRateLimited } from "@/lib/api-response";
+import { rateLimitApi } from "@/lib/rate-limit";
 import { getAssetAnalysisRepository, getScriptRepository, getStoreRepository } from "@/lib/repositories";
-import { demoOwnerId } from "@/lib/runtime-store";
+import { getOwnerId } from "@/lib/auth-helpers";
 import { createScriptDraft, createTemplateScriptDraft } from "@/lib/services/script-engine";
 import type { MarketingPurpose, Platform } from "@/lib/types";
 
 export async function GET() {
-  const scripts = await getScriptRepository().listByOwner(demoOwnerId);
+  const ownerId = await getOwnerId();
+  const rl = await rateLimitApi(ownerId, "GET");
+  if (!rl.allowed) return jsonRateLimited(rl);
+  const scripts = await getScriptRepository().listByOwner(ownerId);
   return jsonOk({ scripts });
 }
 
@@ -14,6 +18,14 @@ export async function POST(request: Request) {
   const store = await getStoreRepository().findById(body.storeId);
 
   if (!store) {
+    return jsonError("Store profile not found", 404);
+  }
+
+  const ownerId = await getOwnerId();
+  const rl = await rateLimitApi(ownerId, request.method);
+  if (!rl.allowed) return jsonRateLimited(rl);
+  // IDOR guard
+  if (store.ownerId !== ownerId) {
     return jsonError("Store profile not found", 404);
   }
 
