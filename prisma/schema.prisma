@@ -13,6 +13,7 @@ model User {
   image          String?
   plan           String          @default("free")
   quotaRemaining Int             @default(10)
+  lastQuotaReset DateTime?
   createdAt      DateTime        @default(now())
   stores         StoreProfile[]
   assets         Asset[]
