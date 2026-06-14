@@ -4,7 +4,8 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { Resend } from "resend";
 import type { AdapterUser } from "@auth/core/adapters";
 import { getPrisma } from "@/lib/prisma";
-import { getResendApiKey, getEmailFrom } from "@/lib/env";
+import { getResendApiKey, getEmailFrom, hasWechatProvider, getWechatAppId, getWechatAppSecret } from "@/lib/env";
+import { WeChatProvider } from "@/lib/auth/wechat-provider";
 
 let _resend: Resend | null = null;
 function getResend(): Resend {
@@ -34,6 +35,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
       },
     }),
+    // Conditionally register WeChat provider
+    ...(hasWechatProvider()
+      ? [
+          WeChatProvider({
+            clientId: getWechatAppId()!,
+            clientSecret: getWechatAppSecret()!,
+          }),
+        ]
+      : []),
   ],
   session: { strategy: "jwt" },
   pages: {
