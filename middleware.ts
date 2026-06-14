@@ -38,7 +38,7 @@ function getClientIpFromHeaders(request: Request): string {
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
-export default auth((req) => {
+export default auth(async (req) => {
   // demo: allow all traffic
   if (getAppMode() === "demo") return NextResponse.next();
 
@@ -66,11 +66,33 @@ export default auth((req) => {
     }
   }
 
-  // API routes: return 401 if not authenticated
+  // API routes: auth + blacklist check
   if (pathname.startsWith("/api/")) {
     if (!req.auth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // JWT blacklist check (session revocation)
+    // Wrapped in try/catch because isSessionRevoked uses ioredis which may
+    // not be available in Edge runtime — fail-open is safe here.
+    const jti = (req.auth.user as any)?.jti as string | undefined;
+    if (jti) {
+      try {
+        const { isSessionRevoked } = await import("@/lib/session-blacklist");
+        const revoked = await isSessionRevoked(jti);
+        if (revoked) {
+          const response = NextResponse.json(
+            { error: "Session revoked", code: "session_revoked" },
+            { status: 401 },
+          );
+          response.cookies.delete("authjs.session-token");
+          return response;
+        }
+      } catch {
+        // ioredis unavailable in Edge runtime — fail-open
+      }
+    }
+
     return NextResponse.next();
   }
 
@@ -79,6 +101,22 @@ export default auth((req) => {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // JWT blacklist check for page routes
+  const jti = (req.auth.user as any)?.jti as string | undefined;
+  if (jti) {
+    try {
+      const { isSessionRevoked } = await import("@/lib/session-blacklist");
+      const revoked = await isSessionRevoked(jti);
+      if (revoked) {
+        const response = NextResponse.redirect(new URL("/login", req.url));
+        response.cookies.delete("authjs.session-token");
+        return response;
+      }
+    } catch {
+      // ioredis unavailable in Edge — fail-open
+    }
   }
 
   return NextResponse.next();
