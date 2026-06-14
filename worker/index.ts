@@ -1,4 +1,4 @@
-import { Worker } from "bullmq";
+import { Worker, Queue } from "bullmq";
 import { getRedisUrl } from "@/lib/env";
 import { getJobRepository, getRenderRepository } from "@/lib/repositories";
 import { queueNames } from "@/lib/queue";
@@ -6,6 +6,7 @@ import { registerProcessor, getProcessor } from "@/worker/processors/index";
 import { assetAnalysisProcessor } from "@/worker/processors/asset-analysis";
 import { avatarGenerationProcessor } from "@/worker/processors/avatar-generation";
 import { videoRenderProcessor } from "@/worker/processors/video-render";
+import { quotaResetProcessor } from "@/worker/processors/quota-reset";
 import { nowIso } from "@/lib/ids";
 import type { JobType } from "@/lib/types";
 
@@ -15,6 +16,7 @@ registerProcessor("avatar_generation", avatarGenerationProcessor);
 registerProcessor("video_render", videoRenderProcessor);
 registerProcessor("slideshow_render", videoRenderProcessor); // slideshow uses same render pipeline
 registerProcessor("subtitle_generation", videoRenderProcessor); // placeholder for now
+registerProcessor("quota_monthly_reset", quotaResetProcessor);
 
 const connection = getRedisUrl()
   ? { url: getRedisUrl()! }
@@ -140,8 +142,40 @@ const jobTypes: JobType[] = [
   "avatar_generation",
   "video_render",
   "slideshow_render",
-  "subtitle_generation"
+  "subtitle_generation",
+  "quota_monthly_reset"
 ];
+
+// ── Cron: Schedule monthly quota reset ──────────────────────────────────────
+
+async function scheduleQuotaReset() {
+  const cronQueue = new Queue(queueNames.quota_monthly_reset, { connection });
+  await cronQueue.add(
+    "quota-monthly-reset",
+    { task: "quota_monthly_reset" },
+    {
+      repeat: { pattern: "0 0 1 * *" }, // 1st of every month at 00:00 UTC
+      jobId: "quota-monthly-reset", // deduplicate
+    },
+  );
+  console.log("[cron] Scheduled monthly quota reset (0 0 1 * *)");
+
+  if (process.env.RUN_QUOTA_RESET_ON_STARTUP === "1") {
+    await cronQueue.add(
+      "quota-monthly-reset-immediate",
+      { task: "quota_monthly_reset" },
+      {},
+    );
+    console.log("[cron] Triggered immediate quota reset (RUN_QUOTA_RESET_ON_STARTUP=1)");
+  }
+
+  return cronQueue;
+}
+
+let cronQueue: Queue | null = null;
+scheduleQuotaReset().then((q) => { cronQueue = q; }).catch((err) => {
+  console.error("[cron] Failed to schedule quota reset:", err.message);
+});
 
 const workers = jobTypes.map(createWorker);
 
@@ -151,6 +185,7 @@ console.log(`Worker started with ${workers.length} queues: ${jobTypes.map((t) =>
 async function shutdown() {
   console.log("Shutting down workers...");
   await Promise.all(workers.map((w) => w.close()));
+  if (cronQueue) await cronQueue.close();
   process.exit(0);
 }
 
