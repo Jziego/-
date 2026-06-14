@@ -59,3 +59,21 @@ export function hasAvatarProvider(): boolean {
   const key = getAvatarProviderApiKey();
   return Boolean(name && name !== "mock-avatar" && key);
 }
+
+// ── Sentry ───────────────────────────────────────────────────────────────────
+
+export function getSentryDsn(): string | undefined {
+  return process.env.SENTRY_DSN?.trim() || undefined;
+}
+
+export function getSentryOrg(): string | undefined {
+  return process.env.SENTRY_ORG?.trim() || undefined;
+}
+
+export function getSentryProject(): string | undefined {
+  return process.env.SENTRY_PROJECT?.trim() || undefined;
+}
+
+export function getSentryAuthToken(): string | undefined {
+  return process.env.SENTRY_AUTH_TOKEN?.trim() || undefined;
+}
