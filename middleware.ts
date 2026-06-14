@@ -2,8 +2,44 @@ import { auth } from "@/auth";
 import { getAppMode } from "@/lib/env";
 import { NextResponse } from "next/server";
 
+// ── In-memory IP rate limiter (Edge-safe) ────────────────────────────────────
+
+const IP_RATE_LIMIT_WINDOW = 60_000; // 60 seconds
+const IP_RATE_LIMIT_MAX = 60;        // 60 requests per window
+
+const ipStore = new Map<string, { count: number; reset: number }>();
+
+// Purge expired IP entries every 60s
+if (typeof setInterval !== "undefined") {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of ipStore) {
+      if (entry.reset <= now) ipStore.delete(key);
+    }
+  }, 60_000);
+}
+
+function checkIpRateLimit(ip: string): { allowed: boolean } {
+  const now = Date.now();
+  const entry = ipStore.get(ip);
+  if (!entry || entry.reset <= now) {
+    ipStore.set(ip, { count: 1, reset: now + IP_RATE_LIMIT_WINDOW });
+    return { allowed: true };
+  }
+  entry.count++;
+  return { allowed: entry.count <= IP_RATE_LIMIT_MAX };
+}
+
+function getClientIpFromHeaders(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]!.trim() || "unknown";
+  return request.headers.get("x-real-ip") ?? "unknown";
+}
+
+// ── Middleware ────────────────────────────────────────────────────────────────
+
 export default auth((req) => {
-  // demo: allow all traffic, ownerId is determined by getOwnerId() in routes
+  // demo: allow all traffic
   if (getAppMode() === "demo") return NextResponse.next();
 
   const { pathname } = req.nextUrl;
@@ -16,6 +52,18 @@ export default auth((req) => {
     pathname.startsWith("/_next")
   ) {
     return NextResponse.next();
+  }
+
+  // IP-based rate limit for API routes (before auth, coarse protection)
+  if (pathname.startsWith("/api/")) {
+    const ip = getClientIpFromHeaders(req as unknown as Request);
+    const ipCheck = checkIpRateLimit(ip);
+    if (!ipCheck.allowed) {
+      return NextResponse.json(
+        { error: "rate_limited", message: "Too many requests" },
+        { status: 429 },
+      );
+    }
   }
 
   // API routes: return 401 if not authenticated
