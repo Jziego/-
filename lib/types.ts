@@ -27,7 +27,8 @@ export type JobType =
   | "avatar_generation"
   | "video_render"
   | "slideshow_render"
-  | "subtitle_generation";
+  | "subtitle_generation"
+  | "quota_monthly_reset";
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
 

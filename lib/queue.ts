@@ -6,7 +6,8 @@ export const queueNames: Record<JobType, string> = {
   avatar_generation: "avatar-generation",
   video_render: "video-render",
   slideshow_render: "slideshow-render",
-  subtitle_generation: "subtitle-generation"
+  subtitle_generation: "subtitle-generation",
+  quota_monthly_reset: "cron-quota-reset",
 };
 
 function getConnection() {
