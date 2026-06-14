@@ -1,7 +1,8 @@
 "use server";
 
 import { rateLimitLogin, getClientIp } from "@/lib/rate-limit";
-import { signIn } from "@/auth";
+import { auth, signIn, signOut } from "@/auth";
+import { revokeSession } from "@/lib/session-blacklist";
 import { headers } from "next/headers";
 
 export async function sendMagicLink(email: string) {
@@ -20,4 +21,17 @@ export async function sendMagicLink(email: string) {
 
   await signIn("email", { email, redirectTo: "/login/verify" });
   return { success: true, message: "若邮箱存在，我们会发送邮件" };
+}
+
+/**
+ * Sign out the current user and revoke their JWT session.
+ * Uses the jti (JWT ID) embedded in the session token.
+ */
+export async function signOutWithRevocation() {
+  const session = await auth();
+  if (session?.user?.jti) {
+    // Revoke the current JWT. TTL: 7 days (NextAuth default max session).
+    await revokeSession(session.user.jti, 7 * 86400);
+  }
+  await signOut({ redirectTo: "/login" });
 }
