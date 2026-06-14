@@ -20,22 +20,35 @@ interface WeChatProfile {
  *
  * Docs: https://developers.weixin.qq.com/doc/oplatform/Website_App/WeChat_Login/Wechat_Login.html
  */
+/** Fetch with a configurable timeout (default 10s). */
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs = 10_000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function WeChatProvider<P extends WeChatProfile>(
   config: OAuthUserConfig<P>,
 ): OAuthConfig<P> {
-  const appId = process.env.WECHAT_APP_ID!;
-  const appSecret = process.env.WECHAT_APP_SECRET!;
-
+  // Use config values populated by auth.ts (via lib/env.ts helpers).
+  // Never read process.env directly — keep a single source of truth for env access.
   return {
     id: "wechat",
     name: "微信",
     type: "oauth",
-    clientId: appId,
-    clientSecret: appSecret,
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
     authorization: {
       url: "https://open.weixin.qq.com/connect/qrconnect",
       params: {
-        appid: appId,
+        appid: config.clientId,
         response_type: "code",
         scope: "snsapi_login",
       },
@@ -50,7 +63,7 @@ export function WeChatProvider<P extends WeChatProfile>(
         url.searchParams.set("code", params.code as string);
         url.searchParams.set("grant_type", "authorization_code");
 
-        const res = await fetch(url.toString());
+        const res = await fetchWithTimeout(url.toString());
         const json = await res.json() as Record<string, unknown>;
 
         if (json.errcode && (json.errcode as number) !== 0) {
@@ -68,7 +81,7 @@ export function WeChatProvider<P extends WeChatProfile>(
         url.searchParams.set("access_token", tokens.access_token as string);
         url.searchParams.set("openid", tokens.openid as string);
 
-        const res = await fetch(url.toString());
+        const res = await fetchWithTimeout(url.toString());
         const json = await res.json() as Record<string, unknown>;
 
         if (json.errcode && (json.errcode as number) !== 0) {

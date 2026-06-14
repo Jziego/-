@@ -2,7 +2,25 @@ import { auth } from "@/auth";
 import { getAppMode } from "@/lib/env";
 import { NextResponse } from "next/server";
 
-// ── In-memory IP rate limiter (Edge-safe) ────────────────────────────────────
+// ── In-memory IP rate limiter (coarse, per-instance) ─────────────────────────
+//
+// IMPORTANT LIMITATIONS (by design — this is a first line of defense, not the
+// primary rate limiter; per-route L2 limits in lib/rate-limit.ts provide the
+// authoritative enforcement):
+//
+// 1. Per-instance, not global: the Map lives in process memory. In multi-instance
+//    deployments (serverless, edge, or multi-container), each instance has its
+//    own counter. A malicious client routed across N instances gets N× the limit.
+//    The per-route rate limiter (Redis-backed) catches what this misses.
+//
+// 2. Edge Runtime caveat: setInterval is unavailable in Edge, so expired entries
+//    are only evicted on access (checkIpRateLimit's `entry.reset <= now` branch).
+//    This means the Map grows unbounded in pure Edge deployments; the per-route
+//    rate limiter and Cloudflare's own DDoS protection mitigate this.
+//
+// 3. IP spoofing: x-forwarded-for can be forged if not behind a trusted proxy.
+//    Cloudflare sets this header reliably; if deployed elsewhere, ensure a
+//    trusted proxy layer strips client-supplied x-forwarded-for headers.
 
 const IP_RATE_LIMIT_WINDOW = 60_000; // 60 seconds
 const IP_RATE_LIMIT_MAX = 60;        // 60 requests per window

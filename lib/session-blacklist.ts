@@ -5,7 +5,14 @@ let _redis: Redis | null = null;
 
 function getRedis(): Redis | null {
   if (_redis) return _redis;
-  if (hasRedis()) _redis = new Redis(getRedisUrl()!);
+  if (hasRedis()) {
+    _redis = new Redis(getRedisUrl()!, {
+      enableOfflineQueue: false,   // fail-fast: don't queue commands when disconnected
+      maxRetriesPerRequest: 1,     // retry once, then throw
+      connectTimeout: 3000,        // 3s connection timeout
+      lazyConnect: true,           // defer connection until first command
+    });
+  }
   return _redis;
 }
 

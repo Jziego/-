@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { getSentryOrg, getSentryProject, getSentryAuthToken, getSentryDsn } from "@/lib/env";
 
 function parseAllowedDevOrigins(): string[] {
   const raw = process.env.DEV_ALLOWED_ORIGINS ?? "192.168.5.9";
@@ -44,16 +45,16 @@ const nextConfig: NextConfig = {
 };
 
 const sentryConfig = withSentryConfig(nextConfig, {
-  org: process.env.SENTRY_ORG ?? "",
-  project: process.env.SENTRY_PROJECT ?? "",
+  org: getSentryOrg() ?? "",
+  project: getSentryProject() ?? "",
   silent: !process.env.CI,
-  authToken: process.env.SENTRY_AUTH_TOKEN,
+  authToken: getSentryAuthToken(),
   sourcemaps: {
     disable: !process.env.CI,
   },
 });
 
-export default process.env.SENTRY_DSN ? sentryConfig : nextConfig;
+export default getSentryDsn() ? sentryConfig : nextConfig;
 
 if (process.env.NODE_ENV === "development") {
   void import("@opennextjs/cloudflare").then(({ initOpenNextCloudflareForDev }) => {

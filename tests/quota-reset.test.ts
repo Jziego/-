@@ -31,6 +31,7 @@ describe("quotaResetProcessor", () => {
     vi.mocked(hasDatabase).mockReturnValue(true);
     vi.mocked(getPrisma).mockReturnValue({
       user: { updateMany: mockUpdateMany },
+      $transaction: vi.fn((queries: Promise<any>[]) => Promise.all(queries)),
     } as any);
 
     const result = await quotaResetProcessor({
@@ -61,6 +62,7 @@ describe("quotaResetProcessor", () => {
     vi.mocked(hasDatabase).mockReturnValue(true);
     vi.mocked(getPrisma).mockReturnValue({
       user: { updateMany: mockUpdateMany },
+      $transaction: vi.fn((queries: Promise<any>[]) => Promise.all(queries)),
     } as any);
 
     const result = await quotaResetProcessor({
