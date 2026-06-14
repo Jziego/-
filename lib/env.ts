@@ -77,3 +77,17 @@ export function getSentryProject(): string | undefined {
 export function getSentryAuthToken(): string | undefined {
   return process.env.SENTRY_AUTH_TOKEN?.trim() || undefined;
 }
+
+// ── WeChat OAuth ─────────────────────────────────────────────────────────────
+
+export function getWechatAppId(): string | undefined {
+  return process.env.WECHAT_APP_ID?.trim() || undefined;
+}
+
+export function getWechatAppSecret(): string | undefined {
+  return process.env.WECHAT_APP_SECRET?.trim() || undefined;
+}
+
+export function hasWechatProvider(): boolean {
+  return Boolean(getWechatAppId() && getWechatAppSecret());
+}
