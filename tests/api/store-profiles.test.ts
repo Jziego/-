@@ -38,7 +38,7 @@ describe("store-profiles API", () => {
     const created = await createResponse.json();
     expect(created.store.name).toBe("测试小店");
 
-    const listResponse = await GET();
+    const listResponse = await GET(new Request("http://localhost/api/store-profiles"));
     const listed = await listResponse.json();
     expect(listed.stores).toHaveLength(1);
     expect(listed.stores[0]?.id).toBe(created.store.id);

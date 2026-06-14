@@ -1,5 +1,5 @@
-import { jsonError, jsonOk, jsonQuotaError, jsonRateLimited } from "@/lib/api-response";
-import { rateLimitApi } from "@/lib/rate-limit";
+import { jsonError, jsonOk, jsonQuotaError } from "@/lib/api-response";
+import { applyRateLimit } from "@/lib/rate-limit";
 import { hasRedis } from "@/lib/env";
 import { consumeQuota, QuotaExhaustedError } from "@/lib/quota";
 import { createBullQueue, createFlowProducer, toFlowJobs, toQueuePayload } from "@/lib/queue";
@@ -14,11 +14,11 @@ import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib
 import { nowIso } from "@/lib/ids";
 import type { AspectRatio, RenderProject } from "@/lib/types";
 
-export async function GET() {
+export async function GET(request: Request) {
   const renderRepo = getRenderRepository();
   const ownerId = await getOwnerId();
-  const rl = await rateLimitApi(ownerId, "GET");
-  if (!rl.allowed) return jsonRateLimited(rl);
+  const limited = await applyRateLimit(request, ownerId);
+  if (limited) return limited;
   const [renderProjects, jobs, outputs] = await Promise.all([
     renderRepo.listProjectsByOwner(ownerId),
     getJobRepository().listByOwner(ownerId),
@@ -41,8 +41,8 @@ export async function POST(request: Request) {
 
   const ownerId = await getOwnerId();
 
-  const rl = await rateLimitApi(ownerId, request.method);
-  if (!rl.allowed) return jsonRateLimited(rl);
+  const limited = await applyRateLimit(request, ownerId);
+  if (limited) return limited;
 
   const scriptDraft = await getScriptRepository().findById(body.scriptDraftId as string);
 

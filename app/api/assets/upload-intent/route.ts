@@ -1,5 +1,5 @@
-import { jsonError, jsonOk, jsonRateLimited } from "@/lib/api-response";
-import { rateLimitApi } from "@/lib/rate-limit";
+import { jsonError, jsonOk } from "@/lib/api-response";
+import { applyRateLimit } from "@/lib/rate-limit";
 import { getOwnerId } from "@/lib/auth-helpers";
 import { hasObjectStorage } from "@/lib/env";
 import { createUploadIntent } from "@/lib/services/assets";
@@ -17,8 +17,8 @@ export async function POST(request: Request) {
 
   try {
     const ownerId = await getOwnerId();
-    const rl = await rateLimitApi(ownerId, request.method);
-    if (!rl.allowed) return jsonRateLimited(rl);
+    const limited = await applyRateLimit(request, ownerId);
+    if (limited) return limited;
     const intent = await createUploadIntent({
       ownerId,
       storeId: body.storeId,

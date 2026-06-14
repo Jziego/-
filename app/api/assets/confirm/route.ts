@@ -1,5 +1,5 @@
-import { jsonError, jsonOk, jsonRateLimited } from "@/lib/api-response";
-import { rateLimitApi } from "@/lib/rate-limit";
+import { jsonError, jsonOk } from "@/lib/api-response";
+import { applyRateLimit } from "@/lib/rate-limit";
 import { hasObjectStorage } from "@/lib/env";
 import { nowIso } from "@/lib/ids";
 import { getAssetRepository, getStoreRepository } from "@/lib/repositories";
@@ -21,8 +21,8 @@ export async function POST(request: Request) {
 
   const input = parsed.data;
   const ownerId = await getOwnerId();
-  const rl = await rateLimitApi(ownerId, request.method);
-  if (!rl.allowed) return jsonRateLimited(rl);
+  const limited = await applyRateLimit(request, ownerId);
+  if (limited) return limited;
   const expectedPrefix = `stores/${input.storeId}/assets/${input.assetId}-`;
 
   if (!input.storageKey.startsWith(expectedPrefix)) {

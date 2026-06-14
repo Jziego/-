@@ -207,7 +207,7 @@ describe("GET /api/render-projects", () => {
   });
 
   it("returns empty lists when no projects exist", async () => {
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/render-projects"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.renderProjects).toEqual([]);
@@ -228,7 +228,7 @@ describe("GET /api/render-projects", () => {
     });
     await POST(req);
 
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/render-projects"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.renderProjects.length).toBe(1);

@@ -51,7 +51,7 @@ describe("API error handling", () => {
       findById: vi.fn()
     });
 
-    const response = await listStoreProfiles();
+    const response = await listStoreProfiles(new Request("http://localhost/api/store-profiles"));
     const body = await response.json();
 
     expect(response.status).toBe(500);
