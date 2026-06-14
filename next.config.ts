@@ -17,12 +17,18 @@ function parseAllowedDevOrigins(): string[] {
 }
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg"],
+  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg", "ioredis"],
   env: {
     NEXT_PUBLIC_APP_MODE: process.env.APP_MODE ?? "demo"
   },
   allowedDevOrigins: parseAllowedDevOrigins(),
-  webpack: (config) => {
+  webpack: (config, { nextRuntime }) => {
+    // ioredis uses Node.js builtins (net, tls, diagnostics_channel) that are
+    // unavailable in Edge runtime. Externalize it so the dynamic import in
+    // middleware.ts can fail gracefully at runtime (try/catch handles this).
+    if (nextRuntime === "edge") {
+      config.externals = [...(config.externals || []), "ioredis"];
+    }
     config.resolve.alias = {
       ...config.resolve.alias,
       nodemailer: false,
