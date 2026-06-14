@@ -23,6 +23,10 @@ export async function sendMagicLink(email: string) {
   return { success: true, message: "若邮箱存在，我们会发送邮件" };
 }
 
+export async function signInWithWeChat() {
+  await signIn("wechat", { redirectTo: "/" });
+}
+
 /**
  * Sign out the current user and revoke their JWT session.
  * Uses the jti (JWT ID) embedded in the session token.
