@@ -41,13 +41,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     verifyRequest: "/login/verify",
   },
   callbacks: {
-    jwt({ token, user }) {
-      if (user) token.sub = user.id;
+    jwt({ token, user, trigger }) {
+      if (user) {
+        token.sub = user.id;
+      }
+      // Inject jti on sign-in or if missing (e.g., token refresh)
+      if (trigger === "signIn" || !token.jti) {
+        token.jti = crypto.randomUUID();
+      }
       return token;
     },
     session({ session, token }) {
       if (session.user) {
         session.user.id = token.sub!;
+        session.user.jti = token.jti;
       }
       return session;
     },
