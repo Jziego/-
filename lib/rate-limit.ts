@@ -171,6 +171,38 @@ export async function rateLimitApi(
   return checkLimit(`api:${key}`, config);
 }
 
+// ── Convenience helper for API routes ────────────────────────────────────────
+
+/**
+ * Apply L2 API rate limit and return a 429 response if exceeded.
+ * Returns null if the request is allowed (caller should continue).
+ *
+ * Usage in API routes:
+ *   const limited = await applyRateLimit(request, ownerId);
+ *   if (limited) return limited;
+ */
+export async function applyRateLimit(
+  request: Request,
+  ownerId: string,
+): Promise<Response | null> {
+  const rl = await rateLimitApi(ownerId, request.method);
+  if (!rl.allowed) {
+    const retryAfter = Math.max(0, rl.reset - Math.floor(Date.now() / 1000));
+    return Response.json(
+      { error: "rate_limited", retryAfter },
+      {
+        status: 429,
+        headers: {
+          "X-RateLimit-Remaining": String(rl.remaining),
+          "X-RateLimit-Reset": String(rl.reset),
+          "Retry-After": String(retryAfter),
+        },
+      },
+    );
+  }
+  return null;
+}
+
 // ── Response headers ───────────────────────────────────────────────────────
 
 /**
