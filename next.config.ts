@@ -55,9 +55,3 @@ const sentryConfig = withSentryConfig(nextConfig, {
 });
 
 export default getSentryDsn() ? sentryConfig : nextConfig;
-
-if (process.env.NODE_ENV === "development") {
-  void import("@opennextjs/cloudflare").then(({ initOpenNextCloudflareForDev }) => {
-    initOpenNextCloudflareForDev();
-  });
-}

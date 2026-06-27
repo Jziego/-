@@ -90,7 +90,6 @@ postgresql://postgres:postgres@localhost:5432/ai_video_assistant
 |------|------|----------------|
 | Redis MCP | BullMQ 队列调试 | 本地 `REDIS_URL`（默认 `redis://localhost:6379`）；可选用 `@modelcontextprotocol/server-redis` 等 |
 | Sentry MCP | 生产错误追踪 | 项目未集成 Sentry DSN，暂跳过 |
-| Cloudflare MCP | Workers 部署/日志 | Cloudflare API Token + Account ID（`wrangler` 部署用） |
 
 缺少凭据时不要硬编码；向维护者索取后再写入用户级 `mcp.json`。
 
