@@ -27,6 +27,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       server: {},
       from: getEmailFrom(),
       sendVerificationRequest: async ({ identifier: email, url }) => {
+        if (!getResendApiKey()) {
+          // Dev fallback: log the verification URL when Resend is not configured.
+          // In production, set RESEND_API_KEY to send real magic-link emails.
+          console.log(`[auth] magic-link dev fallback (no RESEND_API_KEY): ${email} → ${url}`);
+          return;
+        }
         await getResend().emails.send({
           from: getEmailFrom(),
           to: email,
