@@ -171,6 +171,25 @@ export async function rateLimitApi(
   return checkLimit(`api:${key}`, config);
 }
 
+// ── IP-based middleware rate limit (L0) ─────────────────────────────────────
+
+const IP_LIMIT_CONFIG: RateLimitConfig = { windowSeconds: 60, maxRequests: 60 };
+
+/**
+ * L0: IP-based rate limit for middleware (coarse, pre-auth, multi-instance safe).
+ * Uses the same Redis/memory backend as L2 — multi-instance safe when Redis is
+ * configured. Called only when APP_MODE !== "demo" (middleware short-circuits
+ * in demo mode before reaching this).
+ */
+export async function rateLimitByIp(ip: string): Promise<RateLimitResult> {
+  return checkLimit(`ip:${ip}`, IP_LIMIT_CONFIG);
+}
+
+/** Reset the in-memory store (for testing only). */
+export function _resetMemoryStore(): void {
+  memoryStore.clear();
+}
+
 // ── Convenience helper for API routes ────────────────────────────────────────
 
 /**

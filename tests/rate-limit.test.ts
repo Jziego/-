@@ -71,3 +71,33 @@ describe("ratelimitHeaders", () => {
     expect(Number(headers["Retry-After"])).toBeLessThanOrEqual(30);
   });
 });
+
+describe("rateLimitByIp", () => {
+  it("enforces maxRequests via in-memory backend when Redis absent", async () => {
+    vi.stubEnv("APP_MODE", "demo");
+    vi.stubEnv("REDIS_URL", "");
+    const { rateLimitByIp, _resetMemoryStore } = await import("@/lib/rate-limit");
+    _resetMemoryStore();
+    const ip = "203.0.113.7";
+    for (let i = 0; i < 60; i++) {
+      const r = await rateLimitByIp(ip);
+      expect(r.allowed).toBe(true);
+    }
+    const blocked = await rateLimitByIp(ip);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.remaining).toBe(0);
+    vi.unstubAllEnvs();
+  });
+
+  it("disables limiting in production without Redis (fail-open)", async () => {
+    vi.stubEnv("APP_MODE", "production");
+    vi.stubEnv("REDIS_URL", "");
+    const { rateLimitByIp } = await import("@/lib/rate-limit");
+    const ip = "203.0.113.8";
+    for (let i = 0; i < 100; i++) {
+      const r = await rateLimitByIp(ip);
+      expect(r.allowed).toBe(true);
+    }
+    vi.unstubAllEnvs();
+  });
+});
