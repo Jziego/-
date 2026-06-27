@@ -22,6 +22,7 @@ vi.mock("ioredis", () => ({
   }),
 }));
 
+import { Redis } from "ioredis";
 import { revokeSession, isSessionRevoked, _resetRedis } from "@/lib/session-blacklist";
 import { hasRedis, getRedisUrl } from "@/lib/env";
 
@@ -68,5 +69,23 @@ describe("session-blacklist", () => {
     const result = await isSessionRevoked("revoked-jti");
     expect(result).toBe(true);
     expect(mockRedis.exists).toHaveBeenCalledWith("revoked:revoked-jti");
+  });
+
+  // Regression: lazyConnect:true + enableOfflineQueue:false rejects the first
+  // command in a cold process (the very command that triggers the connection),
+  // which fail-opens the JWT blacklist check on the first authenticated request
+  // after every process restart. The Redis client must NOT use that combo.
+  it("Redis client is cold-start safe (no lazyConnect + enableOfflineQueue:false)", async () => {
+    vi.mocked(hasRedis).mockReturnValue(true);
+    vi.mocked(getRedisUrl).mockReturnValue("redis://localhost:6379");
+
+    await isSessionRevoked("cold-start-jti"); // triggers new Redis(url, options)
+
+    const calls = vi.mocked(Redis).mock.calls as unknown[][];
+    const opts = calls.at(-1)?.[1] as
+      | { lazyConnect?: boolean; enableOfflineQueue?: boolean }
+      | undefined;
+    expect(opts?.lazyConnect).not.toBe(true);
+    expect(opts?.enableOfflineQueue).not.toBe(false);
   });
 });

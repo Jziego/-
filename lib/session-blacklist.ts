@@ -6,11 +6,17 @@ let _redis: Redis | null = null;
 function getRedis(): Redis | null {
   if (_redis) return _redis;
   if (hasRedis()) {
+    // Auto-connect (lazyConnect defaults to false) and allow the offline queue
+    // (defaults to true) so the first command in a cold process is queued and
+    // flushed once the connection establishes. The previous lazyConnect:true +
+    // enableOfflineQueue:false combo rejected the very first command (the one
+    // that triggers the connection), fail-opening the JWT blacklist check on
+    // the first authenticated request after every process restart.
+    // maxRetriesPerRequest + connectTimeout keep the middleware hot path
+    // fail-fast when Redis is actually down.
     _redis = new Redis(getRedisUrl()!, {
-      enableOfflineQueue: false,   // fail-fast: don't queue commands when disconnected
-      maxRetriesPerRequest: 1,     // retry once, then throw
-      connectTimeout: 3000,        // 3s connection timeout
-      lazyConnect: true,           // defer connection until first command
+      maxRetriesPerRequest: 1,
+      connectTimeout: 3000,
     });
   }
   return _redis;
