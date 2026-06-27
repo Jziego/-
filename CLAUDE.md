@@ -10,7 +10,7 @@ with optional AI avatar (HeyGen) voiceover.
 - **Data:** PostgreSQL + Prisma 7, Redis + BullMQ
 - **AI:** OpenAI-compatible API (`OPENAI_BASE_URL`), HeyGen avatar provider
 - **Storage:** AWS S3-compatible object storage
-- **Deploy:** Cloudflare via `@opennextjs/cloudflare`
+- **Deploy:** Zeabur (Node.js `next start` + Worker)
 - **Package manager:** npm
 
 ## Directory Map
