@@ -127,10 +127,33 @@ R2 bucket → Settings → CORS Policy，允许 web 域名直传 PUT、预检 OP
 4. 绑定域名，把 `https://<your-app>.zeabur.app` 回填到 `AUTH_URL` 与 R2 CORS `AllowedOrigins`。
 
 ### 4.2 worker 服务（第二个服务）
-1. 同项目下添加第二个服务 → 选同一 Git 仓库 → **构建类型选 Dockerfile**，路径指向 `worker/Dockerfile`。
-2. 注入与 web 相同的 `DATABASE_URL`、`REDIS_URL`、`APP_MODE=production`、`OPENAI_*`、`AVATAR_*`、`OBJECT_STORAGE_*`（可选 `RUN_QUOTA_RESET_ON_STARTUP`）。
-3. worker 不需要公网域名；Zeabur 会按 `worker/Dockerfile` 的 `HEALTHCHECK`（`pgrep -f worker/index.ts`）做健康检查。
-4. 首次部署后查 worker 日志，确认出现 `Worker started with 6 queues: ...` 与各队列 `Worker ready`。
+
+Zeabur 新版 UI 无独立 Build Type / Dockerfile Path 字段，worker 用 Settings → Source 区域的 inline Dockerfile 内容框覆盖默认构建。
+
+1. 同项目下添加第二个服务 → 选同一 Git 仓库 → **Root Directory 留空**（= 项目根）。
+2. 进入服务 → **Settings** tab → **Source** 区域 → 「Overriding the default Dockerfile used for Zeabur agent or redeployment.」下方的文本框，粘贴 `worker/Dockerfile` 的**完整内容**：
+   ```dockerfile
+   FROM node:20-alpine AS base
+   WORKDIR /app
+   RUN apk add --no-cache openssl
+   COPY package.json package-lock.json* ./
+   COPY prisma/ ./prisma/
+   RUN npm ci
+   RUN npx prisma generate
+   COPY . .
+   EXPOSE 3001
+   HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+     CMD pgrep -f "worker/index.ts" || exit 1
+   CMD ["npx", "tsx", "worker/index.ts"]
+   ```
+   - ⚠️ **不要**填 `worker/Dockerfile` 路径字符串 —— 该框是 inline 内容框，填路径会被当作 Dockerfile 文件内容解析，报 `dockerfile parse error on line 1: unknown instruction: worker/Dockerfile`。
+   - 缺点：仓库 `worker/Dockerfile` 改动后需手动同步到该框（Zeabur 不支持「子目录 Dockerfile 路径 + 项目根上下文」的代码层配置，见下方注）。
+3. **Startup Command** 留空（Dockerfile 的 `CMD` 已指定 `npx tsx worker/index.ts`）。
+4. 注入与 web 相同的 `DATABASE_URL`、`REDIS_URL`、`APP_MODE=production`、`OPENAI_*`、`AVATAR_*`、`OBJECT_STORAGE_*`（可选 `RUN_QUOTA_RESET_ON_STARTUP`）。
+5. worker 不需要公网域名；Zeabur 按 Dockerfile 的 `HEALTHCHECK`（`pgrep -f worker/index.ts`）做健康检查。
+6. 首次部署后查 worker 日志，确认出现 `Worker started with 6 queues: ...` 与各队列 `Worker ready`。
+
+> **注：为什么不用 zbpack.json 代码层配置？** zbpack 支持 `dockerfile.path` 字段（[源码](https://github.com/zeabur/zbpack) `internal/dockerfile/finder.go`），但路径相对 Root Directory 且不支持 `..` 穿越上下文（afero 虚拟 FS 隔离）。若在项目根 `zbpack.json` 加 `dockerfile.path: worker/Dockerfile`，会覆盖 web 的 `build_command`（zbpack 中 dockerfile.path 优先于 build_command），web 也会被 worker Dockerfile 构建，破坏 web。worker Root Directory 设 `worker/` 则上下文隔离，`COPY prisma/` / `COPY lib/` 失败。故当前只能用 Dashboard inline 内容框；若要根除手动同步，需重构 worker 为自包含子目录（独立 package.json + 复制 prisma/lib）。
 
 ### 4.3 部署后自检
 - `prisma migrate deploy` 应无报错（4 个 migration 全部 applied）。
