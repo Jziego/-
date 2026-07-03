@@ -3,6 +3,7 @@ import { getRedisUrl } from "@/lib/env";
 import { getJobRepository, getRenderRepository } from "@/lib/repositories";
 import { queueNames } from "@/lib/queue";
 import { registerProcessor, getProcessor } from "@/worker/processors/index";
+import { finalizeProjectStatus } from "@/worker/finalize-project";
 import { assetAnalysisProcessor } from "@/worker/processors/asset-analysis";
 import { avatarGenerationProcessor } from "@/worker/processors/avatar-generation";
 import { videoRenderProcessor } from "@/worker/processors/video-render";
@@ -72,6 +73,16 @@ function createWorker(type: JobType): Worker {
         // Update best-effort
       }
 
+      // Finalize render project status once all project jobs are done
+      if (projectId) {
+        await finalizeProjectStatus(
+          jobRepo,
+          renderRepo,
+          projectId,
+          (job.data.ownerId as string) ?? "demo_user"
+        );
+      }
+
       console.log(`[${type}] Completed job ${jobId}`);
       return result;
     },
@@ -95,28 +106,14 @@ function createWorker(type: JobType): Worker {
       // Update best-effort
     }
 
-    // Update render project if all jobs for this project have failed
+    // Finalize render project status once all project jobs are done
     if (projectId) {
-      try {
-        const allJobs = await jobRepo.listByOwner(job.data.ownerId as string ?? "demo_user");
-        const projectJobs = allJobs.filter((j) => j.projectId === projectId);
-        const allDone = projectJobs.every((j) => j.status === "completed" || j.status === "failed");
-        const allFailed = projectJobs.every((j) => j.status === "failed");
-
-        if (allFailed) {
-          await renderRepo.updateProject(projectId, { status: "failed", updatedAt: nowIso() });
-        } else if (allDone) {
-          // Some completed, some failed — project is still "ready" if video_render succeeded
-          const hasCompletedRender = projectJobs.some(
-            (j) => (j.type === "video_render" || j.type === "slideshow_render") && j.status === "completed"
-          );
-          if (hasCompletedRender) {
-            await renderRepo.updateProject(projectId, { status: "ready", updatedAt: nowIso() });
-          }
-        }
-      } catch {
-        // Best-effort
-      }
+      await finalizeProjectStatus(
+        jobRepo,
+        renderRepo,
+        projectId,
+        (job.data.ownerId as string) ?? "demo_user"
+      );
     }
   });
 

@@ -1,5 +1,5 @@
 import { createId, nowIso } from "@/lib/ids";
-import { getRenderRepository, getJobRepository } from "@/lib/repositories";
+import { getRenderRepository } from "@/lib/repositories";
 import type { ProcessorFn } from "./index";
 import type { VideoOutput } from "@/lib/types";
 
@@ -34,21 +34,12 @@ export const videoRenderProcessor: ProcessorFn = async (job) => {
     createdAt: nowIso()
   };
 
-  // Persist VideoOutput to the repository
+  // Persist VideoOutput to the repository.
+  // RenderProject status → "ready" is handled centrally by finalizeProjectStatus()
+  // in worker/index.ts after all project jobs finish. Setting it here would race
+  // with concurrent jobs re-setting "processing" (the bug this centralization fixes).
   try {
     await getRenderRepository().createOutput(output);
-
-    // Update the render project status to "ready"
-    if (projectId) {
-      try {
-        await getRenderRepository().updateProject(projectId, {
-          status: "ready",
-          updatedAt: nowIso()
-        });
-      } catch {
-        // Project update is best-effort
-      }
-    }
   } catch (err) {
     console.error(`[video_render] Failed to persist VideoOutput: ${err instanceof Error ? err.message : String(err)}`);
     // Still return the output — the DB may not be available in dev
