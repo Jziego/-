@@ -6,7 +6,16 @@ import { videoRenderProcessor } from "@/worker/processors/video-render";
 import { getAssetRepository, getAssetAnalysisRepository, getStoreRepository, getRenderRepository, getAvatarRepository } from "@/lib/repositories";
 import { resetRuntimeStateForTests } from "@/lib/runtime-store";
 import { nowIso } from "@/lib/ids";
-import type { StoreProfile } from "@/lib/types";
+import type { StoreProfile, VideoOutput } from "@/lib/types";
+import type { Job as BullJob } from "bullmq";
+
+type AvatarResult = {
+  avatarProfileId: string;
+  provider: string;
+  trainingStatus: string;
+  fallbackMode: string;
+};
+type AnalysisResult = { analysisId: string };
 
 // Ensure tests use memory repositories even when DATABASE_URL is configured
 const savedDbUrl = process.env.DATABASE_URL;
@@ -61,8 +70,8 @@ describe("video render processor", () => {
       }
     };
 
-    const result = await videoRenderProcessor(mockJob as any);
-    const output = result as any;
+    const result = await videoRenderProcessor(mockJob as unknown as BullJob);
+    const output = result as unknown as VideoOutput;
 
     expect(output.id).toBeDefined();
     expect(output.id).toMatch(/^output_/);
@@ -89,7 +98,7 @@ describe("video render processor", () => {
       }
     };
 
-    await videoRenderProcessor(mockJob as any);
+    await videoRenderProcessor(mockJob as unknown as BullJob);
 
     const outputs = await getRenderRepository().listOutputsByOwner("demo_user");
     expect(outputs.length).toBe(1);
@@ -111,8 +120,8 @@ describe("video render processor", () => {
       }
     };
 
-    const result = await videoRenderProcessor(mockJob as any);
-    const output = result as any;
+    const result = await videoRenderProcessor(mockJob as unknown as BullJob);
+    const output = result as unknown as VideoOutput;
 
     expect(output).toBeDefined();
     expect(output.renderProjectId).toBe("");
@@ -142,8 +151,8 @@ describe("avatar generation processor", () => {
       }
     };
 
-    const result = await avatarGenerationProcessor(mockJob as any);
-    const avatarResult = result as any;
+    const result = await avatarGenerationProcessor(mockJob as unknown as BullJob);
+    const avatarResult = result as unknown as AvatarResult;
 
     expect(avatarResult.avatarProfileId).toBeDefined();
     expect(avatarResult.provider).toBe("mock-avatar");
@@ -185,8 +194,8 @@ describe("avatar generation processor", () => {
       }
     };
 
-    const result = await avatarGenerationProcessor(mockJob as any);
-    const avatarResult = result as any;
+    const result = await avatarGenerationProcessor(mockJob as unknown as BullJob);
+    const avatarResult = result as unknown as AvatarResult;
 
     expect(avatarResult.avatarProfileId).toBe("existing_avatar_1");
     expect(avatarResult.provider).toBe("mock-avatar");
@@ -248,8 +257,8 @@ describe("asset analysis processor", () => {
       }
     };
 
-    const result = await assetAnalysisProcessor(mockJob as any);
-    const analysisResult = result as any;
+    const result = await assetAnalysisProcessor(mockJob as unknown as BullJob);
+    const analysisResult = result as unknown as AnalysisResult;
 
     expect(analysisResult.analysisId).toBeDefined();
 
@@ -268,6 +277,6 @@ describe("asset analysis processor", () => {
       }
     };
 
-    await expect(assetAnalysisProcessor(mockJob as any)).rejects.toThrow("Asset not found");
+    await expect(assetAnalysisProcessor(mockJob as unknown as BullJob)).rejects.toThrow("Asset not found");
   });
 });

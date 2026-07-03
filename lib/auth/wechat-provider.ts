@@ -70,7 +70,7 @@ export function WeChatProvider<P extends WeChatProfile>(
           throw new Error(`WeChat token error [${json.errcode}]: ${json.errmsg}`);
         }
 
-        return { tokens: json as any };
+        return { tokens: json as Record<string, unknown> };
       },
     },
     userinfo: {
@@ -88,7 +88,7 @@ export function WeChatProvider<P extends WeChatProfile>(
           throw new Error(`WeChat userinfo error [${json.errcode}]: ${json.errmsg}`);
         }
 
-        return json as any;
+        return json as unknown as WeChatProfile;
       },
     },
     profile(profile: WeChatProfile) {

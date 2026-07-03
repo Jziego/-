@@ -369,7 +369,6 @@ export function Dashboard() {
       setStoreFormStep(storeFormSteps.length - 1);
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- gate draft persistence until API hydration is decided
     setStoreHydrationResolved(true);
   }, [draftReady, reset, storeHydrationResolved, stores, storesPending]);
 

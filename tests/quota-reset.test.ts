@@ -11,6 +11,7 @@ vi.mock("@/lib/env", () => ({
 import { quotaResetProcessor } from "@/worker/processors/quota-reset";
 import { getPrisma } from "@/lib/prisma";
 import { hasDatabase } from "@/lib/env";
+import type { Job as BullJob } from "bullmq";
 
 describe("quotaResetProcessor", () => {
   it("skips when no database is available", async () => {
@@ -18,7 +19,7 @@ describe("quotaResetProcessor", () => {
 
     const result = await quotaResetProcessor({
       data: {},
-    } as any);
+    } as unknown as BullJob);
 
     expect(result).toEqual({ usersReset: 0 });
   });
@@ -31,12 +32,12 @@ describe("quotaResetProcessor", () => {
     vi.mocked(hasDatabase).mockReturnValue(true);
     vi.mocked(getPrisma).mockReturnValue({
       user: { updateMany: mockUpdateMany },
-      $transaction: vi.fn((queries: Promise<any>[]) => Promise.all(queries)),
-    } as any);
+      $transaction: vi.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
+    } as unknown as NonNullable<ReturnType<typeof getPrisma>>);
 
     const result = await quotaResetProcessor({
       data: {},
-    } as any);
+    } as unknown as BullJob);
 
     expect(result.usersReset).toBe(4);
     expect(mockUpdateMany).toHaveBeenCalledTimes(2);
@@ -62,12 +63,12 @@ describe("quotaResetProcessor", () => {
     vi.mocked(hasDatabase).mockReturnValue(true);
     vi.mocked(getPrisma).mockReturnValue({
       user: { updateMany: mockUpdateMany },
-      $transaction: vi.fn((queries: Promise<any>[]) => Promise.all(queries)),
-    } as any);
+      $transaction: vi.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
+    } as unknown as NonNullable<ReturnType<typeof getPrisma>>);
 
     const result = await quotaResetProcessor({
       data: {},
-    } as any);
+    } as unknown as BullJob);
 
     // Enterprise users with quotaRemaining: -1 are excluded by `not: -1` filter
     expect(result.usersReset).toBe(0);

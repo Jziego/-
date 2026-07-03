@@ -17,27 +17,17 @@ interface JobProgressState {
 export function useJobProgressSSE(
   jobs: Pick<Job, "id" | "status" | "progress" | "error">[]
 ): Map<string, JobProgressState> {
-  const [progressMap, setProgressMap] = useState<Map<string, JobProgressState>>(new Map());
-  const sourcesRef = useRef<Map<string, EventSource>>(new Map());
-  const activeIds = jobs
-    .filter((j) => j.status === "queued" || j.status === "processing")
-    .map((j) => j.id);
-
-  useEffect(() => {
-    // Initialize local state from current job data
-    const next = new Map(progressMap);
+  const [progressMap, setProgressMap] = useState<Map<string, JobProgressState>>(() => {
+    // Seed local state from current job data on mount (lazy initializer avoids
+    // a synchronous setState-in-effect that would trigger cascading renders).
+    const next = new Map<string, JobProgressState>();
     for (const job of jobs) {
-      if (job.status === "queued" || job.status === "processing") {
-        const existing = next.get(job.id);
-        if (!existing || existing.progress !== job.progress || existing.status !== job.status) {
-          next.set(job.id, {
-            status: job.status as JobStatus,
-            progress: job.progress,
-            error: job.error
-          });
-        }
-      } else if (job.status === "completed" || job.status === "failed") {
-        // Reflect terminal state
+      if (
+        job.status === "queued" ||
+        job.status === "processing" ||
+        job.status === "completed" ||
+        job.status === "failed"
+      ) {
         next.set(job.id, {
           status: job.status as JobStatus,
           progress: job.progress,
@@ -45,10 +35,12 @@ export function useJobProgressSSE(
         });
       }
     }
-    setProgressMap(next);
-    // jobs and progressMap are intentionally excluded — we only want to seed on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return next;
+  });
+  const sourcesRef = useRef<Map<string, EventSource>>(new Map());
+  const activeIds = jobs
+    .filter((j) => j.status === "queued" || j.status === "processing")
+    .map((j) => j.id);
 
   useEffect(() => {
     const currentSources = sourcesRef.current;
