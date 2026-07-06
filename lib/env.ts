@@ -60,6 +60,26 @@ export function hasAvatarProvider(): boolean {
   return Boolean(name && name !== "mock-avatar" && key);
 }
 
+// ── HeyGen (avatar provider) tuning ──────────────────────────────────────────
+
+export function getHeygenAvatarTemplateId(): string | undefined {
+  return process.env.HEYGEN_AVATAR_TEMPLATE_ID?.trim() || undefined;
+}
+
+export function getHeygenVoiceId(): string | undefined {
+  return process.env.HEYGEN_VOICE_ID?.trim() || undefined;
+}
+
+export function getHeygenPollIntervalMs(): number {
+  const raw = Number(process.env.HEYGEN_POLL_INTERVAL_MS?.trim());
+  return Number.isFinite(raw) && raw > 0 ? raw : 5000;
+}
+
+export function getHeygenPollMaxAttempts(): number {
+  const raw = Number(process.env.HEYGEN_POLL_MAX_ATTEMPTS?.trim());
+  return Number.isFinite(raw) && raw > 0 ? raw : 60;
+}
+
 // ── Sentry ───────────────────────────────────────────────────────────────────
 
 export function getSentryDsn(): string | undefined {

@@ -78,6 +78,27 @@ export async function createPresignedPutUrl(
   return getSignedUrl(getS3Client(), command, { expiresIn });
 }
 
+/**
+ * Server-side upload of raw bytes (e.g. a downloaded rendered video) to object
+ * storage. Unlike {@link createPresignedPutUrl} (which is for browser uploads),
+ * this is used by the worker to persist provider-generated assets we fetch
+ * server-side so we own a non-expiring copy. Key must be opaque/UUID-based.
+ */
+export async function putObjectFromBuffer(
+  key: string,
+  body: Uint8Array,
+  contentType: string
+): Promise<void> {
+  await getS3Client().send(
+    new PutObjectCommand({
+      Bucket: getObjectStorageBucket(),
+      Key: key,
+      Body: body,
+      ContentType: contentType
+    })
+  );
+}
+
 export async function headObject(key: string): Promise<HeadObjectResult> {
   try {
     const response = await getS3Client().send(
