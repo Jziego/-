@@ -19,7 +19,10 @@ export async function sendMagicLink(email: string) {
     return { success: true, message: "若邮箱存在，我们会发送邮件" };
   }
 
-  await signIn("email", { email, redirectTo: "/login/verify" });
+  // redirectTo becomes the magic-link's callbackUrl, so the user lands on the
+  // dashboard (/) after clicking the link. The post-send "check your email"
+  // screen is governed independently by pages.verifyRequest in auth.ts.
+  await signIn("email", { email, redirectTo: "/" });
   return { success: true, message: "若邮箱存在，我们会发送邮件" };
 }
 

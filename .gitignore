@@ -11,3 +11,6 @@ dist/
 *.log
 *.tsbuildinfo
 prisma/dev.db
+
+# Playwright MCP browser automation artifacts (local screenshots/DOM captures)
+.playwright-mcp/

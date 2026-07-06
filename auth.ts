@@ -6,6 +6,7 @@ import type { AdapterUser } from "@auth/core/adapters";
 import { getPrisma } from "@/lib/prisma";
 import { getResendApiKey, getEmailFrom, hasWechatProvider, getWechatAppId, getWechatAppSecret } from "@/lib/env";
 import { WeChatProvider } from "@/lib/auth/wechat-provider";
+import { renderMagicLinkEmail } from "@/lib/auth/magic-link-email";
 
 let _resend: Resend | null = null;
 function getResend(): Resend {
@@ -37,7 +38,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           from: getEmailFrom(),
           to: email,
           subject: "登录 AI 短视频助手",
-          html: `<p>点击下方链接登录：</p><p><a href="${url}">${url}</a></p><p>链接 24 小时内有效。</p>`,
+          html: renderMagicLinkEmail(url),
         });
       },
     }),
