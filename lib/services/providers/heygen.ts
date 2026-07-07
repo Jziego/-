@@ -115,6 +115,77 @@ interface ResolvedAvatar {
   providerVoiceId?: string;
 }
 
+interface TalkingHeadInput {
+  providerAvatarId: string;
+  providerVoiceId?: string;
+  scriptText: string;
+}
+
+// ── Talking-head pipeline (split into stages for clarity + progress hooks) ──
+
+/** Stage 1: create the async video task, return its id. */
+async function createHeygenVideo(input: TalkingHeadInput): Promise<string> {
+  const createBody: Record<string, unknown> = {
+    type: "avatar",
+    avatar_id: input.providerAvatarId,
+    script: input.scriptText,
+    title: `avatar-${input.providerAvatarId}`,
+    resolution: "1080p",
+    aspect_ratio: "9:16",
+  };
+  if (input.providerVoiceId) {
+    createBody.voice_id = input.providerVoiceId;
+  }
+
+  const createRes = await heyGenRequest<HeyGenEnvelope<CreateVideoData>>(
+    "/v3/videos",
+    "POST",
+    createBody,
+  );
+  if (createRes.error) {
+    throw new Error(`HeyGen create failed: ${createRes.error.message}`);
+  }
+  const videoId = createRes.data?.video_id;
+  if (!videoId) {
+    throw new Error("HeyGen create returned no video_id");
+  }
+  return videoId;
+}
+
+/**
+ * Stage 2: poll until the video completes. Calls `onProgress(attempt, max)`
+ * before each poll so the worker can report progress. Throws on `failed`
+ * status or when `maxAttempts` is exhausted without completion.
+ */
+async function pollHeygenVideo(
+  videoId: string,
+  onProgress?: (attempt: number, maxAttempts: number) => void,
+): Promise<VideoStatusData> {
+  const intervalMs = getHeygenPollIntervalMs();
+  const maxAttempts = getHeygenPollMaxAttempts();
+  let status: VideoStatusData | undefined;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    onProgress?.(attempt + 1, maxAttempts);
+    if (attempt > 0) {
+      await sleep(intervalMs);
+    }
+    const pollRes = await heyGenRequest<HeyGenEnvelope<VideoStatusData>>(
+      `/v3/videos/${videoId}`,
+      "GET",
+    );
+    status = pollRes.data;
+    if (status?.status === "completed") {
+      return status;
+    }
+    if (status?.status === "failed") {
+      throw new Error(
+        `HeyGen video generation failed: ${status.failure_message ?? "unknown error"}`,
+      );
+    }
+  }
+  throw new Error(`HeyGen video generation timed out after ${maxAttempts} attempts`);
+}
+
 // ── Provider ────────────────────────────────────────────────────────────────
 
 export function createHeyGenProvider(): AvatarProvider {
@@ -134,67 +205,14 @@ export function createHeyGenProvider(): AvatarProvider {
       return resolvePublicAvatar();
     },
 
-    async generateTalkingHead(input: {
-      providerAvatarId: string;
-      providerVoiceId?: string;
-      scriptText: string;
-    }) {
-      // 1. Create the video (async) via v3.
-      const createBody: Record<string, unknown> = {
-        type: "avatar",
-        avatar_id: input.providerAvatarId,
-        script: input.scriptText,
-        title: `avatar-${input.providerAvatarId}`,
-        resolution: "1080p",
-        aspect_ratio: "9:16",
-      };
-      if (input.providerVoiceId) {
-        createBody.voice_id = input.providerVoiceId;
+    async generateTalkingHead(input: TalkingHeadInput, onProgress?) {
+      const videoId = await createHeygenVideo(input);
+      const status = await pollHeygenVideo(videoId, onProgress);
+      if (!status.video_url) {
+        throw new Error("HeyGen completed but returned no video_url");
       }
 
-      const createRes = await heyGenRequest<HeyGenEnvelope<CreateVideoData>>(
-        "/v3/videos",
-        "POST",
-        createBody,
-      );
-      if (createRes.error) {
-        throw new Error(`HeyGen create failed: ${createRes.error.message}`);
-      }
-      const videoId = createRes.data?.video_id;
-      if (!videoId) {
-        throw new Error("HeyGen create returned no video_id");
-      }
-
-      // 2. Poll for completion (async rendering).
-      const intervalMs = getHeygenPollIntervalMs();
-      const maxAttempts = getHeygenPollMaxAttempts();
-      let status: VideoStatusData | undefined;
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        if (attempt > 0) {
-          await sleep(intervalMs);
-        }
-        const pollRes = await heyGenRequest<HeyGenEnvelope<VideoStatusData>>(
-          `/v3/videos/${videoId}`,
-          "GET",
-        );
-        status = pollRes.data;
-        if (status?.status === "completed") {
-          break;
-        }
-        if (status?.status === "failed") {
-          throw new Error(
-            `HeyGen video generation failed: ${status.failure_message ?? "unknown error"}`,
-          );
-        }
-      }
-
-      if (status?.status !== "completed" || !status.video_url) {
-        throw new Error(
-          `HeyGen video generation timed out after ${maxAttempts} attempts`,
-        );
-      }
-
-      // 3. Download the rendered mp4 and persist a non-expiring copy in our R2.
+      // Stage 3: download the rendered mp4 and persist a non-expiring copy in our R2.
       const bytes = await downloadVideoBytes(status.video_url);
       const storageKey = `avatars/${videoId}.mp4`;
       await putObjectFromBuffer(storageKey, bytes, "video/mp4");

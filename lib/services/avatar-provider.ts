@@ -7,11 +7,14 @@ export interface AvatarProvider {
     providerAvatarId: string;
     providerVoiceId?: string;
   }>;
-  generateTalkingHead(input: {
-    providerAvatarId: string;
-    providerVoiceId?: string;
-    scriptText: string;
-  }): Promise<{
+  generateTalkingHead(
+    input: {
+      providerAvatarId: string;
+      providerVoiceId?: string;
+      scriptText: string;
+    },
+    onProgress?: (attempt: number, maxAttempts: number) => void,
+  ): Promise<{
     videoAssetId: string;
     durationSeconds: number;
   }>;
@@ -32,7 +35,10 @@ export function createMockAvatarProvider(options: MockProviderOptions = {}): Ava
         providerVoiceId: options.voiceId ?? createId("provider_voice")
       };
     },
-    async generateTalkingHead() {
+    async generateTalkingHead(
+      _input: { providerAvatarId: string; providerVoiceId?: string; scriptText: string },
+      _onProgress?: (attempt: number, maxAttempts: number) => void,
+    ) {
       if (options.failTalkingHead) {
         throw new Error("Mock provider talking-head generation failed");
       }
@@ -83,46 +89,28 @@ export async function requestAvatarTalkingHead(input: {
   providerAvatarId: string;
   providerVoiceId?: string;
   scriptText: string;
-  allowFallback: boolean;
-}): Promise<
-  | {
-      mode: "talking_head";
-      avatarProfileId: string;
-      videoAssetId: string;
-      durationSeconds: number;
-    }
-  | {
-      mode: "tts_voiceover";
-      avatarProfileId: string;
-      audioAssetId: string;
-      reason: string;
-    }
-> {
-  try {
-    const result = await input.provider.generateTalkingHead({
+  onProgress?: (attempt: number, maxAttempts: number) => void;
+}): Promise<{
+  mode: "talking_head";
+  avatarProfileId: string;
+  videoAssetId: string;
+  durationSeconds: number;
+}> {
+  const result = await input.provider.generateTalkingHead(
+    {
       providerAvatarId: input.providerAvatarId,
       providerVoiceId: input.providerVoiceId,
       scriptText: input.scriptText
-    });
+    },
+    input.onProgress
+  );
 
-    return {
-      mode: "talking_head",
-      avatarProfileId: input.avatarProfileId,
-      videoAssetId: result.videoAssetId,
-      durationSeconds: result.durationSeconds
-    };
-  } catch (error) {
-    if (!input.allowFallback) {
-      throw error;
-    }
-
-    return {
-      mode: "tts_voiceover",
-      avatarProfileId: input.avatarProfileId,
-      audioAssetId: createId("tts"),
-      reason: error instanceof Error ? error.message : "avatar_generation_failed"
-    };
-  }
+  return {
+    mode: "talking_head",
+    avatarProfileId: input.avatarProfileId,
+    videoAssetId: result.videoAssetId,
+    durationSeconds: result.durationSeconds
+  };
 }
 
 export { createProviderFromEnv } from "./providers";

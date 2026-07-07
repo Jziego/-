@@ -161,4 +161,29 @@ describe("heygen provider", () => {
       provider.generateTalkingHead({ providerAvatarId: "bad_id", scriptText: "test" }),
     ).rejects.toThrow("Invalid avatar_id");
   });
+
+  it("invokes onProgress during polling with (attempt, maxAttempts)", async () => {
+    vi.stubEnv("HEYGEN_POLL_MAX_ATTEMPTS", "5");
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ data: { video_id: "vid_p" } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { status: "processing" } }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { status: "completed", video_url: "https://cdn/x.mp4", duration: 5 } }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2]), { status: 200 }));
+
+    const onProgress = vi.fn();
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    await createHeyGenProvider().generateTalkingHead(
+      { providerAvatarId: "a", scriptText: "x" },
+      onProgress,
+    );
+
+    expect(onProgress).toHaveBeenCalled();
+    // every call passes the configured maxAttempts as the 2nd arg
+    for (const call of onProgress.mock.calls) {
+      expect(call[1]).toBe(5);
+    }
+    expect(onProgress.mock.calls[0][0]).toBeGreaterThanOrEqual(1);
+  });
 });

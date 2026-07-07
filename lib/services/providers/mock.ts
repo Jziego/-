@@ -16,7 +16,10 @@ export function createMockProvider(options: MockProviderOptions = {}): AvatarPro
         providerVoiceId: options.voiceId ?? createId("provider_voice"),
       };
     },
-    async generateTalkingHead() {
+    async generateTalkingHead(
+      _input: { providerAvatarId: string; providerVoiceId?: string; scriptText: string },
+      _onProgress?: (attempt: number, maxAttempts: number) => void,
+    ) {
       if (options.failTalkingHead) {
         throw new Error("Mock provider talking-head generation failed");
       }

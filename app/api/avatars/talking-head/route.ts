@@ -15,8 +15,7 @@ export async function POST(request: Request) {
     avatarProfileId: avatar.id,
     providerAvatarId: avatar.providerAvatarId,
     providerVoiceId: avatar.providerVoiceId,
-    scriptText: body.scriptText,
-    allowFallback: true
+    scriptText: body.scriptText
   });
 
   return jsonOk({ result }, 201);

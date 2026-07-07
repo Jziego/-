@@ -40,23 +40,32 @@ describe("avatar provider abstraction", () => {
     expect(avatar.trainingStatus).toBe("processing");
   });
 
-  it("falls back to TTS voiceover when talking-head generation fails", async () => {
-    const provider = createMockProvider({ failTalkingHead: true });
+  it("returns talking_head mode with the provider storage key on success", async () => {
+    const provider = createMockProvider();
 
     const result = await requestAvatarTalkingHead({
       provider,
       avatarProfileId: "avatar_1",
       providerAvatarId: "external_avatar",
       providerVoiceId: "external_voice",
-      scriptText: "今天来店里尝尝刚出炉的招牌蛋糕",
-      allowFallback: true
+      scriptText: "今天来店里尝尝刚出炉的招牌蛋糕"
     });
 
-    expect(result.mode).toBe("tts_voiceover");
-    expect(result).not.toHaveProperty("videoAssetId");
-    if (result.mode !== "tts_voiceover") {
-      throw new Error("Expected avatar generation to fall back to TTS");
-    }
-    expect(result.audioAssetId).toMatch(/^tts_/);
+    expect(result.mode).toBe("talking_head");
+    expect(result.videoAssetId).toMatch(/^avatar_video/);
+    expect(result.durationSeconds).toBe(15);
+  });
+
+  it("throws when talking-head generation fails (no fake fallback — b3)", async () => {
+    const provider = createMockProvider({ failTalkingHead: true });
+
+    await expect(
+      requestAvatarTalkingHead({
+        provider,
+        avatarProfileId: "avatar_1",
+        providerAvatarId: "external_avatar",
+        scriptText: "今天来店里尝尝刚出炉的招牌蛋糕"
+      })
+    ).rejects.toThrow();
   });
 });
