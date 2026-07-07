@@ -37,8 +37,9 @@ export function planRenderJobs(input: { project: RenderProject; includeAvatar: b
   const jobs: Job[] = [];
 
   if (input.includeAvatar && input.project.avatarProfileId) {
+    const avatarJobId = createId("job");
     jobs.push({
-      id: createId("job"),
+      id: avatarJobId,
       ownerId: input.project.ownerId,
       projectId: input.project.id,
       type: "avatar_generation",
@@ -49,6 +50,25 @@ export function planRenderJobs(input: { project: RenderProject; includeAvatar: b
         fallbackMode: "tts_voiceover"
       },
       dependsOnJobIds: [],
+      createdAt: now,
+      updatedAt: now
+    });
+
+    // talking_head synthesizes the digital-human voiceover clip from the avatar
+    // profile + script voiceover. Depends on avatar_generation (profile provisioning).
+    // The processor resolves AvatarProfile + ScriptDraft at processing time.
+    jobs.push({
+      id: createId("job"),
+      ownerId: input.project.ownerId,
+      projectId: input.project.id,
+      type: "talking_head",
+      status: "queued",
+      progress: 0,
+      payload: {
+        avatarProfileId: input.project.avatarProfileId,
+        scriptDraftId: input.project.scriptDraftId
+      },
+      dependsOnJobIds: [avatarJobId],
       createdAt: now,
       updatedAt: now
     });

@@ -64,7 +64,7 @@ describe("render pipeline", () => {
     expect(project.selectedAssetIds).toEqual(["asset_1", "asset_2"]);
   });
 
-  it("plans avatar generation before final rendering when a digital human is selected", () => {
+  it("plans avatar_generation -> talking_head -> video_render when a digital human is selected", () => {
     const project = createRenderProject({
       ownerId: "user_1",
       storeId: "store_1",
@@ -78,8 +78,43 @@ describe("render pipeline", () => {
 
     const jobs = planRenderJobs({ project, includeAvatar: true });
 
-    expect(jobs.map((job) => job.type)).toEqual(["avatar_generation", "video_render"]);
-    expect(jobs[1]?.dependsOnJobIds).toEqual([jobs[0]?.id]);
+    expect(jobs.map((job) => job.type)).toEqual([
+      "avatar_generation",
+      "talking_head",
+      "video_render"
+    ]);
+
+    const avatarJob = jobs.find((j) => j.type === "avatar_generation")!;
+    const talkingJob = jobs.find((j) => j.type === "talking_head")!;
+    const renderJob = jobs.find((j) => j.type === "video_render")!;
+
+    // talking_head depends on avatar_generation
+    expect(talkingJob.dependsOnJobIds).toEqual([avatarJob.id]);
+    // talking_head carries avatar + scriptDraft for the processor to resolve
+    expect(talkingJob.payload).toMatchObject({
+      avatarProfileId: "avatar_1",
+      scriptDraftId: "script_1"
+    });
+    // video_render depends on both prior jobs (runs last via FlowProducer children-first)
+    expect(renderJob.dependsOnJobIds).toEqual(
+      expect.arrayContaining([avatarJob.id, talkingJob.id])
+    );
+  });
+
+  it("omits avatar_generation and talking_head when includeAvatar is false", () => {
+    const project = createRenderProject({
+      ownerId: "user_1",
+      storeId: "store_1",
+      scriptDraft: script,
+      selectedAssetIds: ["asset_1"],
+      aspectRatio: "9:16",
+      subtitleStyle: "bold_bottom"
+    });
+
+    const jobs = planRenderJobs({ project, includeAvatar: false });
+
+    expect(jobs.map((job) => job.type)).toEqual(["video_render"]);
+    expect(jobs[0]?.dependsOnJobIds).toEqual([]);
   });
 
   it("falls back to a slideshow render when full video composition fails", () => {
