@@ -17,31 +17,17 @@ export const avatarGenerationProcessor: ProcessorFn = async (job) => {
   };
   const ownerId = (job.data.ownerId as string) ?? "demo_user";
 
-  // If an existing avatar profile ID was provided, look it up
+  // If an existing avatar profile ID was provided, look it up and confirm readiness.
   if (payload.avatarProfileId) {
-    const existing = await getAvatarRepository().findById(payload.avatarProfileId);
-    if (existing) {
-      // Mark as ready (mock training completes instantly)
-      const updated = await getAvatarRepository().findById(payload.avatarProfileId);
-      if (updated) {
-        // Avatar already exists — skip creation, just confirm readiness
-        try {
-          const avatar = await getAvatarRepository().findById(payload.avatarProfileId);
-          if (avatar) {
-            // Training is already "processing" from creation; we mark it ready here
-            // The avatar repository doesn't have an update method, so we emit the result
-            return {
-              avatarProfileId: avatar.id,
-              provider: avatar.provider,
-              providerAvatarId: avatar.providerAvatarId,
-              providerVoiceId: avatar.providerVoiceId,
-              trainingStatus: "ready" as const
-            };
-          }
-        } catch {
-          // Continue to create if lookup fails
-        }
-      }
+    const avatar = await getAvatarRepository().findById(payload.avatarProfileId);
+    if (avatar) {
+      return {
+        avatarProfileId: avatar.id,
+        provider: avatar.provider,
+        providerAvatarId: avatar.providerAvatarId,
+        providerVoiceId: avatar.providerVoiceId,
+        trainingStatus: "ready" as const
+      };
     }
   }
 

@@ -19,6 +19,16 @@ export const videoRenderProcessor: ProcessorFn = async (job) => {
   const projectId = job.data.projectId as string;
   const ownerId = (job.data.ownerId as string) ?? "demo_user";
 
+  // Seam for the real composite (Plan B): detect whether a talking-head product
+  // exists for this project. Mode C (presenter_broll) when present; asset_only
+  // degradation when absent. The placeholder render below ignores it for now.
+  const talkingHead = projectId
+    ? await getRenderRepository().findTalkingHeadOutputByProject(projectId)
+    : null;
+  if (talkingHead) {
+    console.log(`[video_render] talking-head product available: ${talkingHead.storageKey}`);
+  }
+
   // Simulate render delay
   await new Promise((resolve) => setTimeout(resolve, 500));
 
