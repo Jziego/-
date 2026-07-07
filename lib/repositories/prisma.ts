@@ -189,6 +189,14 @@ export class PrismaRenderRepository implements RenderRepository {
     return row ? toVideoOutput(row) : null;
   }
 
+  async findTalkingHeadOutputByProject(projectId: string): Promise<VideoOutput | null> {
+    const row = await this.prisma.videoOutput.findFirst({
+      where: { renderProjectId: projectId, kind: "talking_head" },
+      orderBy: { createdAt: "desc" }
+    });
+    return row ? toVideoOutput(row) : null;
+  }
+
   async listOutputsByOwner(ownerId: string): Promise<VideoOutput[]> {
     const rows = await this.prisma.videoOutput.findMany({ where: { ownerId } });
     return rows.map(toVideoOutput);

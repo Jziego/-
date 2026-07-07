@@ -153,14 +153,17 @@ export interface Job {
   updatedAt: string;
 }
 
+export type VideoOutputKind = "talking_head" | "final_composite" | "slideshow";
+
 export interface VideoOutput {
   id: string;
   ownerId: string;
-  renderProjectId: string;
+  renderProjectId: string | null;
   storageKey: string;
   coverStorageKey?: string;
   aspectRatio: AspectRatio;
   durationSeconds: number;
+  kind: VideoOutputKind;
   status: RenderStatus;
   createdAt: string;
 }

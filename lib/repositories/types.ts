@@ -46,6 +46,7 @@ export interface RenderRepository {
   findProjectById(id: string): Promise<RenderProject | null>;
   createOutput(output: VideoOutput): Promise<VideoOutput>;
   findOutputById(id: string): Promise<VideoOutput | null>;
+  findTalkingHeadOutputByProject(projectId: string): Promise<VideoOutput | null>;
   listOutputsByOwner(ownerId: string): Promise<VideoOutput[]>;
   updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject>;
 }

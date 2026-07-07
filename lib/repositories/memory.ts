@@ -133,6 +133,13 @@ export class MemoryRenderRepository implements RenderRepository {
     return getRuntimeState().outputs.find((output) => output.id === id) ?? null;
   }
 
+  async findTalkingHeadOutputByProject(projectId: string): Promise<VideoOutput | null> {
+    const matches = getRuntimeState()
+      .outputs.filter((o) => o.renderProjectId === projectId && o.kind === "talking_head")
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return matches[0] ?? null;
+  }
+
   async listOutputsByOwner(ownerId: string): Promise<VideoOutput[]> {
     return getRuntimeState().outputs.filter((output) => output.ownerId === ownerId);
   }

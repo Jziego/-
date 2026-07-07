@@ -25,11 +25,12 @@ export const videoRenderProcessor: ProcessorFn = async (job) => {
   const output: VideoOutput = {
     id: createId("output"),
     ownerId,
-    renderProjectId: projectId || "",
+    renderProjectId: projectId || null,
     storageKey: `renders/${projectId || "unknown"}/output-${createId("vid")}.mp4`,
     coverStorageKey: undefined,
     aspectRatio: (payload.aspectRatio as VideoOutput["aspectRatio"]) ?? "9:16",
     durationSeconds: 30,
+    kind: "final_composite",
     status: "ready",
     createdAt: nowIso()
   };

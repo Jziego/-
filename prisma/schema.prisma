@@ -189,12 +189,13 @@ model Job {
 model VideoOutput {
   id              String        @id
   ownerId         String
-  renderProjectId String
+  renderProjectId String?
   storageKey      String
   coverStorageKey String?
   aspectRatio     String
   durationSeconds Float
+  kind            String        @default("final_composite")
   status          String
   createdAt       DateTime      @default(now())
-  project         RenderProject @relation(fields: [renderProjectId], references: [id])
+  project         RenderProject? @relation(fields: [renderProjectId], references: [id])
 }

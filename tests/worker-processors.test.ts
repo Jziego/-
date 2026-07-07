@@ -124,7 +124,7 @@ describe("video render processor", () => {
     const output = result as unknown as VideoOutput;
 
     expect(output).toBeDefined();
-    expect(output.renderProjectId).toBe("");
+    expect(output.renderProjectId).toBe(null);
   });
 });
 

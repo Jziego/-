@@ -284,6 +284,7 @@ export function toVideoOutputInput(output: VideoOutput) {
     coverStorageKey: output.coverStorageKey ?? null,
     aspectRatio: output.aspectRatio,
     durationSeconds: output.durationSeconds,
+    kind: output.kind,
     status: output.status,
     createdAt: new Date(output.createdAt)
   };
@@ -293,11 +294,12 @@ export function toVideoOutput(row: PrismaVideoOutput): VideoOutput {
   return {
     id: row.id,
     ownerId: row.ownerId,
-    renderProjectId: row.renderProjectId,
+    renderProjectId: row.renderProjectId ?? null,
     storageKey: row.storageKey,
     coverStorageKey: row.coverStorageKey ?? undefined,
     aspectRatio: row.aspectRatio as VideoOutput["aspectRatio"],
     durationSeconds: row.durationSeconds,
+    kind: (row.kind as VideoOutput["kind"]) ?? "final_composite",
     status: row.status as VideoOutput["status"],
     createdAt: row.createdAt.toISOString()
   };
