@@ -6,6 +6,7 @@ import { registerProcessor, getProcessor } from "@/worker/processors/index";
 import { finalizeProjectStatus } from "@/worker/finalize-project";
 import { assetAnalysisProcessor } from "@/worker/processors/asset-analysis";
 import { avatarGenerationProcessor } from "@/worker/processors/avatar-generation";
+import { talkingHeadProcessor } from "@/worker/processors/talking-head";
 import { videoRenderProcessor } from "@/worker/processors/video-render";
 import { quotaResetProcessor } from "@/worker/processors/quota-reset";
 import { nowIso } from "@/lib/ids";
@@ -14,6 +15,7 @@ import type { JobType } from "@/lib/types";
 // Register processors
 registerProcessor("asset_analysis", assetAnalysisProcessor);
 registerProcessor("avatar_generation", avatarGenerationProcessor);
+registerProcessor("talking_head", talkingHeadProcessor);
 registerProcessor("video_render", videoRenderProcessor);
 registerProcessor("slideshow_render", videoRenderProcessor); // slideshow uses same render pipeline
 registerProcessor("subtitle_generation", videoRenderProcessor); // placeholder for now
@@ -137,6 +139,7 @@ function createWorker(type: JobType): Worker {
 const jobTypes: JobType[] = [
   "asset_analysis",
   "avatar_generation",
+  "talking_head",
   "video_render",
   "slideshow_render",
   "subtitle_generation",
