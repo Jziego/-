@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTimeline, resolveCompositionMode, buildAss, resolveSubtitlePreset } from "@/lib/services/video-compose";
+import { buildTimeline, resolveCompositionMode, buildAss, resolveSubtitlePreset, buildFilterGraph } from "@/lib/services/video-compose";
 import type { TimelineSegment } from "@/lib/services/video-compose";
 import type { Asset, ScriptScene, VideoOutput } from "@/lib/types";
 
@@ -69,5 +69,51 @@ describe("buildAss", () => {
     expect(resolveSubtitlePreset("bold_bottom")).toBe("bold_bottom");
     expect(resolveSubtitlePreset("unknown")).toBe("default");
     expect(resolveSubtitlePreset(undefined)).toBe("default");
+  });
+});
+
+describe("buildFilterGraph", () => {
+  const segs: TimelineSegment[] = [
+    { role: "presenter", startSec: 0, endSec: 4, durationSec: 4, sceneOrder: 1, text: "a", assetId: null },
+    { role: "broll", startSec: 4, endSec: 11, durationSec: 7, sceneOrder: 2, text: "b", assetId: "a1" }
+  ];
+
+  it("presenter_broll: trims talking-head for presenter, asset for broll, concats, burns subs, mixes bgm", () => {
+    const g = buildFilterGraph({
+      mode: "presenter_broll",
+      segments: segs,
+      assetInputIndex: { a1: 1 },
+      talkingHeadInputIndex: 0,
+      bgmInputIndex: 2,
+      assPath: "/tmp/subs.ass",
+      width: 1080,
+      height: 1920,
+      totalDurationSec: 11
+    });
+    expect(g.filterComplex).toContain("[0:v]trim=start=0:duration=4");
+    expect(g.filterComplex).toContain("[1:v]trim=duration=7");
+    expect(g.filterComplex).toContain("[v0][v1]concat=n=2:v=1:a=0[vcat]");
+    expect(g.filterComplex).toContain("subtitles=/tmp/subs.ass");
+    expect(g.filterComplex).toContain("amix=inputs=2");
+    expect(g.mapVideo).toBe("[vsub]");
+    expect(g.mapAudio).toBe("[aout]");
+  });
+
+  it("asset_only: no talking-head presenter trim, audio from bgm only", () => {
+    const g = buildFilterGraph({
+      mode: "asset_only",
+      segments: [
+        { role: "broll", startSec: 0, endSec: 5, durationSec: 5, sceneOrder: 1, text: "x", assetId: "a1" }
+      ],
+      assetInputIndex: { a1: 0 },
+      bgmInputIndex: 1,
+      assPath: "/tmp/subs.ass",
+      width: 1080,
+      height: 1920,
+      totalDurationSec: 5
+    });
+    expect(g.filterComplex).not.toContain("[0:v]trim=start=");
+    expect(g.filterComplex).toContain("[0:v]trim=duration=5");
+    expect(g.mapAudio).toBe("[abgm]");
   });
 });

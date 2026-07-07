@@ -142,3 +142,102 @@ export function buildAss(segments: TimelineSegment[], preset: SubtitleStylePrese
   );
   return [...header, ...dialogues].join("\n");
 }
+
+// ── ffmpeg filter_complex builder ──────────────────────────────────────────
+
+export interface FilterGraphResult {
+  filterComplex: string;
+  mapVideo: string;
+  mapAudio: string;
+}
+
+export interface BuildFilterGraphArgs {
+  mode: CompositionMode;
+  segments: TimelineSegment[];
+  /** assetId → ffmpeg input index (the runner downloads assets to local files). */
+  assetInputIndex: Record<string, number>;
+  /** input index of the talking-head mp4 (required for presenter_broll). */
+  talkingHeadInputIndex?: number;
+  /** input index of the BGM mp3, if any. */
+  bgmInputIndex?: number;
+  assPath: string;
+  width: number;
+  height: number;
+  totalDurationSec: number;
+}
+
+/**
+ * Build the ffmpeg `-filter_complex` string for Mode C (presenter full-frame +
+ * B-roll inserts) or asset_only. Each scene becomes a trimmed+scaled video
+ * segment; segments are concatenated, subtitles burned via the ASS file, and
+ * audio mixed (continuous talking-head voiceover + ducked BGM, or BGM-only).
+ *
+ * Note: image assets must be fed to ffmpeg with `-loop 1` (runner's job) so
+ * `trim=duration=D` produces frames; this builder is agnostic to image/video.
+ */
+export function buildFilterGraph(args: BuildFilterGraphArgs): FilterGraphResult {
+  const { width, height, assPath, totalDurationSec } = args;
+  const parts: string[] = [];
+  const videoLabels: string[] = [];
+
+  // Returns a scaled+padded chain. `inPrefix` is the source-label prefix
+  // INCLUDING the trailing comma that connects into `scale` (e.g. "[0:v]trim=...,").
+  const scaledChain = (inPrefix: string, outLabel: string): string =>
+    `${inPrefix}scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30${outLabel}`;
+
+  args.segments.forEach((seg, i) => {
+    const outLabel = `[v${i}]`;
+    if (
+      seg.role === "presenter" &&
+      args.mode === "presenter_broll" &&
+      args.talkingHeadInputIndex !== undefined
+    ) {
+      // Trim the talking-head video to this scene's window.
+      parts.push(
+        scaledChain(
+          `[${args.talkingHeadInputIndex}:v]trim=start=${seg.startSec}:duration=${seg.durationSec},setpts=PTS-STARTPTS,`,
+          outLabel
+        )
+      );
+    } else {
+      const idx = seg.assetId != null ? args.assetInputIndex[seg.assetId] : undefined;
+      if (idx === undefined) {
+        // No asset resolved — black color source keeps concat consistent.
+        parts.push(`color=c=black:s=${width}x${height}:d=${seg.durationSec},fps=30${outLabel}`);
+      } else {
+        parts.push(
+          scaledChain(`[${idx}:v]trim=duration=${seg.durationSec},setpts=PTS-STARTPTS,`, outLabel)
+        );
+      }
+    }
+    videoLabels.push(outLabel);
+  });
+
+  // Concat all video segments, then burn subtitles.
+  parts.push(`${videoLabels.join("")}concat=n=${videoLabels.length}:v=1:a=0[vcat]`);
+  parts.push(`[vcat]subtitles=${assPath}[vsub]`);
+
+  // Audio: presenter_broll uses continuous talking-head voiceover (+ducked BGM);
+  // asset_only uses BGM only (or silent track if no BGM).
+  if (args.mode === "presenter_broll" && args.talkingHeadInputIndex !== undefined) {
+    parts.push(
+      `[${args.talkingHeadInputIndex}:a]atrim=duration=${totalDurationSec},apad,aresample=async=1[avoice]`
+    );
+    if (args.bgmInputIndex !== undefined) {
+      parts.push(`[${args.bgmInputIndex}:a]volume=-20dB,atrim=duration=${totalDurationSec}[abgm]`);
+      parts.push(`[avoice][abgm]amix=inputs=2:duration=first:dropout_transition=0[aout]`);
+      return { filterComplex: parts.join(";"), mapVideo: "[vsub]", mapAudio: "[aout]" };
+    }
+    return { filterComplex: parts.join(";"), mapVideo: "[vsub]", mapAudio: "[avoice]" };
+  }
+
+  if (args.bgmInputIndex !== undefined) {
+    parts.push(`[${args.bgmInputIndex}:a]volume=-12dB,atrim=duration=${totalDurationSec}[abgm]`);
+    return { filterComplex: parts.join(";"), mapVideo: "[vsub]", mapAudio: "[abgm]" };
+  }
+
+  parts.push(
+    `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration=${totalDurationSec}[aout]`
+  );
+  return { filterComplex: parts.join(";"), mapVideo: "[vsub]", mapAudio: "[aout]" };
+}
