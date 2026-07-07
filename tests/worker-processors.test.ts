@@ -1,12 +1,13 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { registerProcessor, getProcessor } from "@/worker/processors/index";
 import { assetAnalysisProcessor } from "@/worker/processors/asset-analysis";
 import { avatarGenerationProcessor } from "@/worker/processors/avatar-generation";
-import { videoRenderProcessor } from "@/worker/processors/video-render";
-import { getAssetRepository, getAssetAnalysisRepository, getStoreRepository, getRenderRepository, getAvatarRepository } from "@/lib/repositories";
+import { videoRenderProcessor, processVideoRender } from "@/worker/processors/video-render";
+import { getAssetRepository, getAssetAnalysisRepository, getStoreRepository, getRenderRepository, getAvatarRepository, getScriptRepository, getBgmTrackRepository } from "@/lib/repositories";
 import { resetRuntimeStateForTests } from "@/lib/runtime-store";
 import { nowIso } from "@/lib/ids";
-import type { StoreProfile, VideoOutput } from "@/lib/types";
+import type { RenderProject, ScriptDraft, StoreProfile, VideoOutput } from "@/lib/types";
+import type { CompositionMode } from "@/lib/services/video-compose";
 import type { Job as BullJob } from "bullmq";
 
 type AvatarResult = {
@@ -55,76 +56,125 @@ describe("video render processor", () => {
     if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl;
   });
 
-  it("returns a VideoOutput with the expected shape", async () => {
-    const mockJob = {
-      data: {
-        jobId: "test-job-1",
-        projectId: "test-project-1",
+  async function seedProject(opts: { withTalkingHead?: boolean } = {}): Promise<string> {
+    const now = nowIso();
+    const draft: ScriptDraft = {
+      id: "draft_vr",
+      ownerId: "demo_user",
+      storeId: "store_1",
+      purpose: "promotion",
+      platform: "douyin",
+      title: "t",
+      hook: "h",
+      scenes: [
+        { order: 1, text: "开场", durationSeconds: 4, assetHints: [], role: "presenter" },
+        { order: 2, text: "产品", durationSeconds: 6, assetHints: [], role: "broll" }
+      ],
+      voiceover: "v",
+      captions: [],
+      cta: "c",
+      generationMode: "ai",
+      complianceWarnings: [],
+      createdAt: now
+    };
+    await getScriptRepository().create(draft);
+    const project: RenderProject = {
+      id: "proj_vr",
+      ownerId: "demo_user",
+      storeId: "store_1",
+      scriptDraftId: draft.id,
+      selectedAssetIds: [],
+      avatarProfileId: undefined,
+      purpose: "promotion",
+      aspectRatio: "9:16",
+      subtitleStyle: "bold_bottom",
+      bgmTrackId: undefined,
+      status: "processing",
+      createdAt: now,
+      updatedAt: now
+    };
+    await getRenderRepository().createProject(project);
+    if (opts.withTalkingHead) {
+      await getRenderRepository().createOutput({
+        id: "out_th",
         ownerId: "demo_user",
-        payload: {
-          aspectRatio: "9:16",
-          subtitleStyle: "bold_bottom",
-          bgmTrackId: "bgm_warm"
-        },
-        dependsOnJobIds: []
+        renderProjectId: project.id,
+        storageKey: "avatars/th.mp4",
+        aspectRatio: "9:16",
+        durationSeconds: 10,
+        kind: "talking_head",
+        status: "ready",
+        createdAt: now
+      });
+    }
+    return project.id;
+  }
+
+  function depsWithFakeComposite(capture: { mode?: CompositionMode; totalDuration?: number } = {}) {
+    return {
+      renderRepository: getRenderRepository(),
+      scriptRepository: getScriptRepository(),
+      assetRepository: getAssetRepository(),
+      bgmTrackRepository: getBgmTrackRepository(),
+      renderComposite: async (input: {
+        mode: CompositionMode;
+        totalDurationSec: number;
+        projectId: string;
+        onProgress: (pct: number) => void;
+      }) => {
+        capture.mode = input.mode;
+        capture.totalDuration = input.totalDurationSec;
+        input.onProgress(50);
+        return {
+          storageKey: `renders/${input.projectId}/output-fake.mp4`,
+          durationSeconds: input.totalDurationSec
+        };
       }
     };
+  }
 
-    const result = await videoRenderProcessor(mockJob as unknown as BullJob);
-    const output = result as unknown as VideoOutput;
+  it("writes a kind=final_composite VideoOutput and reports progress (asset_only)", async () => {
+    const projectId = await seedProject();
+    const updateProgress = vi.fn();
+    const mockJob = {
+      data: { jobId: "j1", projectId, ownerId: "demo_user", payload: { aspectRatio: "9:16", subtitleStyle: "bold_bottom" }, dependsOnJobIds: [] },
+      updateProgress
+    };
+    const capture: { mode?: CompositionMode; totalDuration?: number } = {};
+    const output = await processVideoRender(
+      mockJob as unknown as BullJob,
+      depsWithFakeComposite(capture) as never
+    );
 
-    expect(output.id).toBeDefined();
-    expect(output.id).toMatch(/^output_/);
-    expect(output.renderProjectId).toBe("test-project-1");
+    expect(output.kind).toBe("final_composite");
+    expect(output.renderProjectId).toBe(projectId);
     expect(output.storageKey).toContain("renders/");
-    expect(output.storageKey).toMatch(/\.mp4$/);
-    expect(output.aspectRatio).toBe("9:16");
-    expect(output.durationSeconds).toBe(30);
-    expect(output.status).toBe("ready");
-    expect(output.createdAt).toBeDefined();
+    expect(capture.mode).toBe("asset_only"); // no talking-head product
+    expect(capture.totalDuration).toBe(10); // 4 + 6
+    expect(updateProgress).toHaveBeenCalled();
+    const persisted = await getRenderRepository().findOutputById(output.id);
+    expect(persisted?.kind).toBe("final_composite");
   });
 
-  it("persists VideoOutput to the repository", async () => {
+  it("uses presenter_broll mode when a talking-head product exists", async () => {
+    const projectId = await seedProject({ withTalkingHead: true });
+    const capture: { mode?: CompositionMode } = {};
     const mockJob = {
-      data: {
-        jobId: "test-job-2",
-        projectId: "test-project-2",
-        ownerId: "demo_user",
-        payload: {
-          aspectRatio: "16:9",
-          subtitleStyle: "clean_center"
-        },
-        dependsOnJobIds: []
-      }
+      data: { jobId: "j2", projectId, ownerId: "demo_user", payload: { aspectRatio: "9:16", subtitleStyle: "bold_bottom" }, dependsOnJobIds: [] },
+      updateProgress: vi.fn()
     };
-
-    await videoRenderProcessor(mockJob as unknown as BullJob);
-
-    const outputs = await getRenderRepository().listOutputsByOwner("demo_user");
-    expect(outputs.length).toBe(1);
-    expect(outputs[0]?.renderProjectId).toBe("test-project-2");
-    expect(outputs[0]?.aspectRatio).toBe("16:9");
-    expect(outputs[0]?.status).toBe("ready");
+    await processVideoRender(mockJob as unknown as BullJob, depsWithFakeComposite(capture) as never);
+    expect(capture.mode).toBe("presenter_broll");
   });
 
-  it("handles missing projectId gracefully", async () => {
+  it("throws when projectId is missing", async () => {
     const mockJob = {
-      data: {
-        jobId: "test-job-3",
-        ownerId: "demo_user",
-        payload: {
-          aspectRatio: "1:1",
-          subtitleStyle: "brand_card"
-        },
-        dependsOnJobIds: []
-      }
+      data: { jobId: "j3", ownerId: "demo_user", payload: {}, dependsOnJobIds: [] },
+      updateProgress: vi.fn()
     };
-
-    const result = await videoRenderProcessor(mockJob as unknown as BullJob);
-    const output = result as unknown as VideoOutput;
-
-    expect(output).toBeDefined();
-    expect(output.renderProjectId).toBe(null);
+    await expect(
+      processVideoRender(mockJob as unknown as BullJob, depsWithFakeComposite() as never)
+    ).rejects.toThrow(/projectId/);
   });
 });
 

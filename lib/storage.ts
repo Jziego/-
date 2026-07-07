@@ -1,4 +1,4 @@
-import { HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
@@ -97,6 +97,18 @@ export async function putObjectFromBuffer(
       ContentType: contentType
     })
   );
+}
+
+/**
+ * Download an object's bytes (worker uses this to fetch talking-head clips,
+ * source assets, and BGM from R2 to a local tmp dir for ffmpeg).
+ */
+export async function getObjectToBuffer(key: string): Promise<Uint8Array> {
+  const response = await getS3Client().send(
+    new GetObjectCommand({ Bucket: getObjectStorageBucket(), Key: key })
+  );
+  if (!response.Body) return new Uint8Array();
+  return new Uint8Array(await response.Body.transformToByteArray());
 }
 
 export async function headObject(key: string): Promise<HeadObjectResult> {
