@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib/services/render-pipeline";
+import { createRenderProject, planRenderJobs } from "@/lib/services/render-pipeline";
 import type { AvatarProfile, ScriptDraft } from "@/lib/types";
 
 const script: ScriptDraft = {
@@ -117,17 +117,5 @@ describe("render pipeline", () => {
 
     expect(jobs.map((job) => job.type)).toEqual(["video_render"]);
     expect(jobs[0]?.dependsOnJobIds).toEqual([]);
-  });
-
-  it("falls back to a slideshow render when full video composition fails", () => {
-    const recovered = recoverRenderFailure({
-      projectId: "render_1",
-      ownerId: "user_1",
-      reason: "ffmpeg_timeout"
-    });
-
-    expect(recovered.type).toBe("slideshow_render");
-    expect(recovered.status).toBe("queued");
-    expect(recovered.payload.fallbackReason).toBe("ffmpeg_timeout");
   });
 });

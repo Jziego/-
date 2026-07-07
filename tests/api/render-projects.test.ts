@@ -111,7 +111,7 @@ describe("POST /api/render-projects", () => {
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(202);
     const body = await res.json();
 
     // jsonOk returns data directly, not wrapped in { data: ... }
@@ -159,13 +159,12 @@ describe("POST /api/render-projects", () => {
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(202);
     const body = await res.json();
 
     const jobTypes = body.jobs.map((j: { type: string }) => j.type);
     expect(jobTypes).toContain("avatar_generation");
     expect(jobTypes).toContain("video_render");
-    expect(jobTypes).toContain("slideshow_render"); // fallback job
 
     // video_render should depend on avatar_generation
     const videoJob = body.jobs.find((j: { type: string }) => j.type === "video_render");

@@ -65,11 +65,11 @@ describe("finalizeProjectStatus", () => {
     expect(project?.status).toBe("ready");
   });
 
-  it("sets project ready when all jobs completed and a slideshow_render succeeded", async () => {
+  it("sets project ready when all jobs completed and a video_render succeeded", async () => {
     await renderRepo.createProject(sampleProject({ status: "processing" }));
     await jobRepo.createMany([
       sampleJob({ id: "j1", type: "avatar_generation", status: "completed" }),
-      sampleJob({ id: "j2", type: "slideshow_render", status: "completed" }),
+      sampleJob({ id: "j2", type: "video_render", status: "completed" }),
     ]);
 
     await finalizeProjectStatus(jobRepo, renderRepo, PROJECT_ID, OWNER);

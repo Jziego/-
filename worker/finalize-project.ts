@@ -7,7 +7,7 @@ import { nowIso } from "@/lib/ids";
  * Called after each Job completes or fails. When every Job for the project has
  * reached a terminal state (completed/failed), the project status advances:
  *  - all failed → "failed"
- *  - at least one completed render Job (video_render/slideshow_render) → "ready"
+ *  - at least one completed render Job (video_render) → "ready"
  *  - otherwise (e.g. only avatar_generation completed, no render) → unchanged
  *
  * Single source of truth for project → ready/failed. Individual processors must
@@ -32,9 +32,7 @@ export async function finalizeProjectStatus(
 
     const allFailed = projectJobs.every((j) => j.status === "failed");
     const hasCompletedRender = projectJobs.some(
-      (j) =>
-        (j.type === "video_render" || j.type === "slideshow_render") &&
-        j.status === "completed"
+      (j) => j.type === "video_render" && j.status === "completed"
     );
 
     if (allFailed) {

@@ -6,7 +6,6 @@ export const queueNames: Record<JobType, string> = {
   avatar_generation: "avatar-generation",
   talking_head: "talking-head",
   video_render: "video-render",
-  slideshow_render: "slideshow-render",
   subtitle_generation: "subtitle-generation",
   quota_monthly_reset: "cron-quota-reset",
 };

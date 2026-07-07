@@ -10,7 +10,7 @@ import {
   getScriptRepository
 } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
-import { createRenderProject, planRenderJobs, recoverRenderFailure } from "@/lib/services/render-pipeline";
+import { createRenderProject, planRenderJobs } from "@/lib/services/render-pipeline";
 import { nowIso } from "@/lib/ids";
 import type { AspectRatio, RenderProject } from "@/lib/types";
 
@@ -80,12 +80,10 @@ export async function POST(request: Request) {
   });
 
   const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatarProfile) });
-  const fallbackJob = recoverRenderFailure({
-    projectId: project.id,
-    ownerId: project.ownerId,
-    reason: "ffmpeg_timeout"
-  });
-  const jobs = [...plannedJobs, fallbackJob];
+  // Degradation is inline: video_render falls back to asset_only when no
+  // talking-head product exists, so the old pre-enqueued slideshow fallback
+  // job (b5) is removed.
+  const jobs = plannedJobs;
 
   // Step 1: Persist project and jobs to DB
   await getRenderRepository().createProject(project);
@@ -167,7 +165,7 @@ export async function POST(request: Request) {
           jobs,
           enqueueResults
         },
-        failedJobIds.length > 0 ? 201 : 201
+        202
       );
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Redis unavailable";
@@ -194,9 +192,9 @@ export async function POST(request: Request) {
         // Best-effort
       }
 
-      return jsonOk({ project: { ...project, status: "failed" }, jobs, enqueued: false, error: errorMsg }, 201);
+      return jsonOk({ project: { ...project, status: "failed" }, jobs, enqueued: false, error: errorMsg }, 202);
     }
   }
 
-  return jsonOk({ project, jobs, enqueued: false }, 201);
+  return jsonOk({ project, jobs, enqueued: false }, 202);
 }

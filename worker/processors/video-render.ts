@@ -27,13 +27,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-  Asset,
-  BgmTrack,
-  RenderProject,
-  ScriptDraft,
-  VideoOutput
-} from "@/lib/types";
+import type { Asset, BgmTrack, VideoOutput } from "@/lib/types";
 import type { ProcessorFn } from "./index";
 
 const RESOLUTIONS: Record<string, { w: number; h: number }> = {

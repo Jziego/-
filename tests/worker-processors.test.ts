@@ -27,7 +27,6 @@ describe("worker processor registry", () => {
     registerProcessor("asset_analysis", assetAnalysisProcessor);
     registerProcessor("avatar_generation", avatarGenerationProcessor);
     registerProcessor("video_render", videoRenderProcessor);
-    registerProcessor("slideshow_render", videoRenderProcessor);
   });
 
   afterEach(() => {
@@ -38,7 +37,6 @@ describe("worker processor registry", () => {
     expect(getProcessor("asset_analysis")).toBeDefined();
     expect(getProcessor("avatar_generation")).toBeDefined();
     expect(getProcessor("video_render")).toBeDefined();
-    expect(getProcessor("slideshow_render")).toBeDefined();
   });
 
   it("returns undefined for unknown types", () => {

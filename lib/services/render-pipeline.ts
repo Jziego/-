@@ -93,27 +93,3 @@ export function planRenderJobs(input: { project: RenderProject; includeAvatar: b
 
   return jobs;
 }
-
-export function recoverRenderFailure(input: {
-  projectId: string;
-  ownerId: string;
-  reason: string;
-}): Job {
-  const now = nowIso();
-
-  return {
-    id: createId("job"),
-    ownerId: input.ownerId,
-    projectId: input.projectId,
-    type: "slideshow_render",
-    status: "queued",
-    progress: 0,
-    payload: {
-      fallbackReason: input.reason,
-      strategy: "asset_slideshow_with_static_captions"
-    },
-    dependsOnJobIds: [],
-    createdAt: now,
-    updatedAt: now
-  };
-}

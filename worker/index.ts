@@ -17,7 +17,6 @@ registerProcessor("asset_analysis", assetAnalysisProcessor);
 registerProcessor("avatar_generation", avatarGenerationProcessor);
 registerProcessor("talking_head", talkingHeadProcessor);
 registerProcessor("video_render", videoRenderProcessor);
-registerProcessor("slideshow_render", videoRenderProcessor); // slideshow uses same render pipeline
 registerProcessor("subtitle_generation", videoRenderProcessor); // placeholder for now
 registerProcessor("quota_monthly_reset", quotaResetProcessor);
 
@@ -141,7 +140,6 @@ const jobTypes: JobType[] = [
   "avatar_generation",
   "talking_head",
   "video_render",
-  "slideshow_render",
   "subtitle_generation",
   "quota_monthly_reset"
 ];

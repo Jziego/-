@@ -135,7 +135,6 @@ const jobTypeLabels: Record<string, string> = {
   asset_analysis: "AI 识别素材",
   avatar_generation: "AI 形象训练",
   video_render: "视频合成中",
-  slideshow_render: "备用配音方案",
   subtitle_generation: "字幕生成"
 };
 
@@ -1006,7 +1005,7 @@ export function Dashboard() {
                 title: jobTypeLabels[job.type] ?? "视频任务",
                 status: jobStatusLabels[job.status] ?? "准备中",
                 tone: job.status,
-                detail: job.type === "slideshow_render" ? "备用方案已就绪，确保视频顺利生成。" : `进度 ${job.progress}%`
+                detail: `进度 ${job.progress}%`
               }))
             : [
                 {

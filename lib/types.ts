@@ -27,7 +27,6 @@ export type JobType =
   | "avatar_generation"
   | "talking_head"
   | "video_render"
-  | "slideshow_render"
   | "subtitle_generation"
   | "quota_monthly_reset";
 

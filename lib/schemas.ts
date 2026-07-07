@@ -134,7 +134,7 @@ export const jobSchema = z.object({
   id: z.string().min(1),
   ownerId: z.string().min(1),
   projectId: z.string().optional(),
-  type: z.enum(["asset_analysis", "avatar_generation", "video_render", "slideshow_render", "subtitle_generation"]),
+  type: z.enum(["asset_analysis", "avatar_generation", "talking_head", "video_render", "subtitle_generation"]),
   status: z.enum(["queued", "processing", "completed", "failed"]),
   progress: z.number().min(0).max(100),
   payload: z.record(z.string(), z.unknown()),
