@@ -41,7 +41,7 @@ function createTestScript(storeId: string): ScriptDraft {
     platform: "douyin",
     title: "测试脚本",
     hook: "测试开场",
-    scenes: [{ order: 1, text: "场景1", durationSeconds: 5, assetHints: [] }],
+    scenes: [{ order: 1, text: "场景1", durationSeconds: 5, assetHints: [], role: "presenter" }],
     voiceover: "测试配音",
     captions: ["测试字幕"],
     cta: "测试CTA",

@@ -2,6 +2,7 @@ import type {
   Asset,
   AssetAnalysis,
   AvatarProfile,
+  BgmTrack,
   Job,
   MarketingPurpose,
   RenderProject,
@@ -14,6 +15,7 @@ import type {
   Asset as PrismaAsset,
   AssetAnalysis as PrismaAssetAnalysis,
   AvatarProfile as PrismaAvatarProfile,
+  BgmTrack as PrismaBgmTrack,
   Job as PrismaJob,
   RenderProject as PrismaRenderProject,
   ScriptDraft as PrismaScriptDraft,
@@ -301,6 +303,28 @@ export function toVideoOutput(row: PrismaVideoOutput): VideoOutput {
     durationSeconds: row.durationSeconds,
     kind: (row.kind as VideoOutput["kind"]) ?? "final_composite",
     status: row.status as VideoOutput["status"],
+    createdAt: row.createdAt.toISOString()
+  };
+}
+
+export function toBgmTrackInput(track: BgmTrack) {
+  return {
+    id: track.id,
+    name: track.name,
+    storageKey: track.storageKey,
+    durationSeconds: track.durationSeconds,
+    category: track.category,
+    createdAt: new Date(track.createdAt)
+  };
+}
+
+export function toBgmTrack(row: PrismaBgmTrack): BgmTrack {
+  return {
+    id: row.id,
+    name: row.name,
+    storageKey: row.storageKey,
+    durationSeconds: row.durationSeconds,
+    category: row.category,
     createdAt: row.createdAt.toISOString()
   };
 }

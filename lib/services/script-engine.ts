@@ -1,6 +1,6 @@
 import { createId, nowIso } from "@/lib/ids";
 import { hasAI, chatCompletionJSON, sanitizePromptField } from "@/lib/services/ai-client";
-import type { AssetAnalysis, MarketingPurpose, Platform, ScriptDraft, ScriptScene, StoreProfile } from "@/lib/types";
+import type { AssetAnalysis, MarketingPurpose, Platform, SceneRole, ScriptDraft, ScriptScene, StoreProfile } from "@/lib/types";
 
 // ── Public input types ─────────────────────────────────────────────────────
 
@@ -29,6 +29,7 @@ interface AIScriptResponse {
     text: string;
     durationSeconds: number;
     assetHints: string[];
+    role?: string;
   }>;
   voiceover: string;
   captions: string[];
@@ -74,6 +75,7 @@ const SYSTEM_PROMPT = `你是为本地实体店创作短视频脚本的营销文
 - 结尾有明确的行动号召（CTA）
 - 每句配音控制在8-15个字，方便朗读
 - 分3-4个场景，每个场景标注需要的画面素材提示
+- 每个场景标注 role："presenter"=数字人口播镜头（开场/CTA 等真人出镜），"broll"=产品/环境空镜插播。开场和结尾优先 presenter，中间产品展示用 broll
 
 你会收到门店信息、素材分析结果、营销目的和发布平台，请根据这些信息创作脚本。`;
 
@@ -85,7 +87,8 @@ const SCHEMA_DESCRIPTION = `{
       "order": 1,
       "text": "场景描述",
       "durationSeconds": 4,
-      "assetHints": ["需要的画面素材标签"]
+      "assetHints": ["需要的画面素材标签"],
+      "role": "presenter"
     }
   ],
   "voiceover": "完整配音文案",
@@ -192,12 +195,21 @@ export async function createScriptDraftWithAI(
   const scenes: ScriptScene[] = (aiResponse.scenes?.length
     ? aiResponse.scenes
     : buildTemplateScenes(input.store, input.assetAnalyses)
-  ).map((s, i) => ({
-    order: s.order ?? i + 1,
-    text: String(s.text ?? ""),
-    durationSeconds: Number(s.durationSeconds) || 5,
-    assetHints: Array.isArray(s.assetHints) ? s.assetHints.map(String) : [],
-  }));
+  ).map((s, i, arr) => {
+    // Default: first and last scenes are presenter (hook/CTA), middle are broll.
+    const isEdge = i === 0 || i === arr.length - 1;
+    const role: SceneRole =
+      s.role === "presenter" ? "presenter"
+      : s.role === "broll" ? "broll"
+      : isEdge ? "presenter" : "broll";
+    return {
+      order: s.order ?? i + 1,
+      text: String(s.text ?? ""),
+      durationSeconds: Number(s.durationSeconds) || 5,
+      assetHints: Array.isArray(s.assetHints) ? s.assetHints.map(String) : [],
+      role,
+    };
+  });
 
   return buildDraft({
     store: input.store,
@@ -289,18 +301,21 @@ function buildTemplateScenes(
       text: `开场展示${store.name}门店或招牌`,
       durationSeconds: 4,
       assetHints: hints.length ? hints : ["门店环境"],
+      role: "presenter",
     },
     {
       order: 2,
       text: `展示${primaryProduct}和制作/服务过程`,
       durationSeconds: 7,
       assetHints: [primaryProduct, ...hints].slice(0, 3),
+      role: "broll",
     },
     {
       order: 3,
       text: "展示优惠、地址或到店 CTA",
       durationSeconds: 4,
       assetHints: ["促销", "到店引流"],
+      role: "presenter",
     },
   ];
 }

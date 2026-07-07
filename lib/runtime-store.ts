@@ -2,6 +2,7 @@ import type {
   Asset,
   AssetAnalysis,
   AvatarProfile,
+  BgmTrack,
   Job,
   RenderProject,
   ScriptDraft,
@@ -18,6 +19,7 @@ interface RuntimeState {
   renderProjects: RenderProject[];
   jobs: Job[];
   outputs: VideoOutput[];
+  bgmTracks: BgmTrack[];
 }
 
 const globalStore = globalThis as typeof globalThis & {
@@ -34,7 +36,8 @@ export function getRuntimeState(): RuntimeState {
       scripts: [],
       renderProjects: [],
       jobs: [],
-      outputs: []
+      outputs: [],
+      bgmTracks: []
     };
   }
 

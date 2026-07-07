@@ -3,6 +3,7 @@ import type {
   AssetRepository,
   AssetAnalysisRepository,
   AvatarRepository,
+  BgmTrackRepository,
   JobRepository,
   RenderRepository,
   ScriptRepository,
@@ -12,6 +13,7 @@ import type {
   Asset,
   AssetAnalysis,
   AvatarProfile,
+  BgmTrack,
   Job,
   RenderProject,
   ScriptDraft,
@@ -179,5 +181,22 @@ export class MemoryJobRepository implements JobRepository {
 
   async listByStatus(status: Job["status"]): Promise<Job[]> {
     return getRuntimeState().jobs.filter((job) => job.status === status);
+  }
+}
+
+export class MemoryBgmTrackRepository implements BgmTrackRepository {
+  async findById(id: string): Promise<BgmTrack | null> {
+    return getRuntimeState().bgmTracks.find((t) => t.id === id) ?? null;
+  }
+
+  async list(): Promise<BgmTrack[]> {
+    return [...getRuntimeState().bgmTracks].sort((a, b) =>
+      a.createdAt < b.createdAt ? -1 : 1,
+    );
+  }
+
+  async create(track: BgmTrack): Promise<BgmTrack> {
+    getRuntimeState().bgmTracks.push(track);
+    return track;
   }
 }

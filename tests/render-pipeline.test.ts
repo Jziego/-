@@ -15,13 +15,15 @@ const script: ScriptDraft = {
       order: 1,
       text: "展示门店和出炉画面",
       durationSeconds: 4,
-      assetHints: ["门店环境", "新品推荐"]
+      assetHints: ["门店环境", "新品推荐"],
+      role: "presenter"
     },
     {
       order: 2,
       text: "展示促销套餐",
       durationSeconds: 6,
-      assetHints: ["促销"]
+      assetHints: ["促销"],
+      role: "broll"
     }
   ],
   voiceover: "今天下午茶，来甜心烘焙带一份刚出炉的可颂。",

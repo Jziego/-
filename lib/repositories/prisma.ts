@@ -1,6 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
 import { ensureDemoUser } from "@/lib/demo-user";
 import {
+  toBgmTrack,
+  toBgmTrackInput,
   toAsset,
   toAssetAnalysis,
   toAssetAnalysisInput,
@@ -22,6 +24,7 @@ import type {
   AssetRepository,
   AssetAnalysisRepository,
   AvatarRepository,
+  BgmTrackRepository,
   JobRepository,
   RenderRepository,
   ScriptRepository,
@@ -31,6 +34,7 @@ import type {
   Asset,
   AssetAnalysis,
   AvatarProfile,
+  BgmTrack,
   Job,
   RenderProject,
   ScriptDraft,
@@ -252,5 +256,24 @@ export class PrismaJobRepository implements JobRepository {
   async listByStatus(status: Job["status"]): Promise<Job[]> {
     const rows = await this.prisma.job.findMany({ where: { status } });
     return rows.map(toJob);
+  }
+}
+
+export class PrismaBgmTrackRepository implements BgmTrackRepository {
+  constructor(private readonly prisma: PrismaClient) {}
+
+  async findById(id: string): Promise<BgmTrack | null> {
+    const row = await this.prisma.bgmTrack.findUnique({ where: { id } });
+    return row ? toBgmTrack(row) : null;
+  }
+
+  async list(): Promise<BgmTrack[]> {
+    const rows = await this.prisma.bgmTrack.findMany({ orderBy: { createdAt: "asc" } });
+    return rows.map(toBgmTrack);
+  }
+
+  async create(track: BgmTrack): Promise<BgmTrack> {
+    const row = await this.prisma.bgmTrack.create({ data: toBgmTrackInput(track) });
+    return toBgmTrack(row);
   }
 }

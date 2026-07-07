@@ -199,3 +199,12 @@ model VideoOutput {
   createdAt       DateTime      @default(now())
   project         RenderProject? @relation(fields: [renderProjectId], references: [id])
 }
+
+model BgmTrack {
+  id              String   @id
+  name            String
+  storageKey      String
+  durationSeconds Float
+  category        String   @default("general")
+  createdAt       DateTime @default(now())
+}

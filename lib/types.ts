@@ -99,11 +99,14 @@ export interface AvatarProfile {
   updatedAt: string;
 }
 
+export type SceneRole = "presenter" | "broll";
+
 export interface ScriptScene {
   order: number;
   text: string;
   durationSeconds: number;
   assetHints: string[];
+  role: SceneRole;
 }
 
 export interface ScriptDraft {
@@ -165,6 +168,15 @@ export interface VideoOutput {
   durationSeconds: number;
   kind: VideoOutputKind;
   status: RenderStatus;
+  createdAt: string;
+}
+
+export interface BgmTrack {
+  id: string;
+  name: string;
+  storageKey: string;
+  durationSeconds: number;
+  category: string;
   createdAt: string;
 }
 

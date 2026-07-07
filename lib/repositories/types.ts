@@ -2,6 +2,7 @@ import type {
   Asset,
   AssetAnalysis,
   AvatarProfile,
+  BgmTrack,
   Job,
   RenderProject,
   ScriptDraft,
@@ -57,4 +58,10 @@ export interface JobRepository {
   findById(id: string): Promise<Job | null>;
   update(id: string, data: Partial<Job>): Promise<Job>;
   listByStatus(status: Job["status"]): Promise<Job[]>;
+}
+
+export interface BgmTrackRepository {
+  findById(id: string): Promise<BgmTrack | null>;
+  list(): Promise<BgmTrack[]>;
+  create(track: BgmTrack): Promise<BgmTrack>;
 }

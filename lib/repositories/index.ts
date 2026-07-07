@@ -2,6 +2,7 @@ import {
   MemoryAssetAnalysisRepository,
   MemoryAssetRepository,
   MemoryAvatarRepository,
+  MemoryBgmTrackRepository,
   MemoryJobRepository,
   MemoryRenderRepository,
   MemoryScriptRepository,
@@ -11,6 +12,7 @@ import {
   PrismaAssetAnalysisRepository,
   PrismaAssetRepository,
   PrismaAvatarRepository,
+  PrismaBgmTrackRepository,
   PrismaJobRepository,
   PrismaRenderRepository,
   PrismaScriptRepository,
@@ -20,6 +22,7 @@ import type {
   AssetRepository,
   AssetAnalysisRepository,
   AvatarRepository,
+  BgmTrackRepository,
   JobRepository,
   RenderRepository,
   ScriptRepository,
@@ -31,6 +34,7 @@ export type {
   AssetRepository,
   AssetAnalysisRepository,
   AvatarRepository,
+  BgmTrackRepository,
   JobRepository,
   RenderRepository,
   ScriptRepository,
@@ -70,4 +74,9 @@ export function getRenderRepository(): RenderRepository {
 export function getJobRepository(): JobRepository {
   const prisma = getPrisma();
   return prisma ? new PrismaJobRepository(prisma) : new MemoryJobRepository();
+}
+
+export function getBgmTrackRepository(): BgmTrackRepository {
+  const prisma = getPrisma();
+  return prisma ? new PrismaBgmTrackRepository(prisma) : new MemoryBgmTrackRepository();
 }

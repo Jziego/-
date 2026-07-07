@@ -79,4 +79,15 @@ describe("script engine", () => {
     expect(draft.voiceover).not.toContain("最便宜");
     expect(draft.complianceWarnings).toContain("Removed forbidden words: 最便宜, 全网第一");
   });
+
+  it("assigns presenter to hook+cta scenes and broll to the product scene", () => {
+    const draft = createTemplateScriptDraft({
+      store,
+      assetAnalyses: analysis,
+      purpose: "promotion",
+      reason: "test"
+    });
+
+    expect(draft.scenes.map((s) => s.role)).toEqual(["presenter", "broll", "presenter"]);
+  });
 });
