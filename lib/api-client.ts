@@ -164,10 +164,9 @@ export async function createAvatarApi(input: {
 
 export async function requestTalkingHeadApi(input: {
   avatarProfileId: string;
-  scriptText: string;
-  forceFallback?: boolean;
-}) {
-  return api<{ result: unknown }>("/api/avatars/talking-head", {
+  scriptDraftId: string;
+}): Promise<{ jobId: string; status: string }> {
+  return api<{ jobId: string; status: string }>("/api/avatars/talking-head", {
     method: "POST",
     body: JSON.stringify(input)
   });

@@ -591,15 +591,20 @@ export function Dashboard() {
         trainingVideoAssetId: asset?.id ?? "asset_training_demo",
         consentAccepted: true
       });
-      await requestTalkingHeadApi({
-        avatarProfileId: profile.id,
-        scriptText: "今天来店里尝尝招牌产品",
-        forceFallback: true
-      });
-
       setLocalAvatar(profile);
       await queryClient.invalidateQueries({ queryKey: ["avatars"] });
-      setMessage("已提交：正在训练你的 AI 形象，完成后自动合成视频；若暂未就绪会自动启用备用配音，保证按时出片。");
+
+      if (!script) {
+        setMessage("AI 形象已创建。请先生成脚本，再合成数字人口播视频。");
+        return;
+      }
+
+      const th = await requestTalkingHeadApi({
+        avatarProfileId: profile.id,
+        scriptDraftId: script.id
+      });
+      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      setMessage(`已提交数字人口播任务（作业 ${th.jobId}），可在进度面板查看实时进度，完成后在产物中预览。`);
     } finally {
       setPendingAction(null);
     }
