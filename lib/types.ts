@@ -25,6 +25,7 @@ export type RenderStatus = "draft" | "queued" | "processing" | "ready" | "failed
 export type JobType =
   | "asset_analysis"
   | "avatar_generation"
+  | "talking_head"
   | "video_render"
   | "slideshow_render"
   | "subtitle_generation"

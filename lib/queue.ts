@@ -4,6 +4,7 @@ import type { Job, JobType } from "@/lib/types";
 export const queueNames: Record<JobType, string> = {
   asset_analysis: "asset-analysis",
   avatar_generation: "avatar-generation",
+  talking_head: "talking-head",
   video_render: "video-render",
   slideshow_render: "slideshow-render",
   subtitle_generation: "subtitle-generation",
@@ -47,62 +48,53 @@ export function toQueuePayload(job: Job) {
 
 /**
  * Build a BullMQ FlowProducer job tree from a flat list of jobs.
- * Jobs with dependsOnJobIds become children of their dependencies.
- * Jobs without dependencies are top-level.
  *
- * Returns an array of flow job definitions suitable for FlowProducer.add().
+ * BullMQ semantics: a parent is not processed until all its CHILDREN complete
+ * (https://docs.bullmq.io/guide/flows). Therefore a job's DEPENDENCY must be
+ * its CHILD (so the dependency runs first), and the ultimate dependent is the
+ * root. Recurses to support arbitrary-depth chains.
  */
-export function toFlowJobs(jobs: Job[]): Array<{
+export type FlowNode = {
   name: string;
   queueName: string;
   data: Record<string, unknown>;
   opts: Record<string, unknown>;
-  children?: Array<{
-    name: string;
-    queueName: string;
-    data: Record<string, unknown>;
-    opts: Record<string, unknown>;
-  }>;
-}> {
-  const jobMap = new Map(jobs.map((j) => [j.id, j]));
-  const childrenOf = new Map<string, Job[]>();
+  children?: FlowNode[];
+};
 
+export function toFlowJobs(jobs: Job[]): FlowNode[] {
+  const jobMap = new Map(jobs.map((j) => [j.id, j]));
+  // childrenOf[X] = jobs X depends on (X's dependencies become X's children).
+  const childrenOf = new Map<string, Job[]>();
   for (const job of jobs) {
     for (const depId of job.dependsOnJobIds) {
-      if (!jobMap.has(depId)) continue; // dependency not in this batch
-      const children = childrenOf.get(depId) ?? [];
-      children.push(job);
-      childrenOf.set(depId, children);
+      const dep = jobMap.get(depId);
+      if (!dep) continue; // dependency outside this batch — caller handles ordering
+      const list = childrenOf.get(job.id) ?? [];
+      list.push(dep);
+      childrenOf.set(job.id, list);
     }
   }
 
-  function buildFlowNode(job: Job) {
-    const children = childrenOf.get(job.id) ?? [];
-    const childJobs = children.map((child) => {
-      const { data, opts } = toQueuePayload(child);
-      return {
-        name: child.id,
-        queueName: queueNames[child.type],
-        data,
-        opts
-      };
-    });
-
+  function buildFlowNode(job: Job): FlowNode {
+    const children = (childrenOf.get(job.id) ?? []).map(buildFlowNode);
     const { data, opts } = toQueuePayload(job);
     return {
       name: job.id,
       queueName: queueNames[job.type],
       data,
       opts,
-      children: childJobs.length > 0 ? childJobs : undefined
+      children: children.length > 0 ? children : undefined
     };
   }
 
-  // Return top-level jobs (those whose dependencies are not in this batch)
-  const topLevel = jobs.filter((j) => {
-    if (j.dependsOnJobIds.length === 0) return true;
-    // If all dependencies are outside this batch, treat as top-level
-    return j.dependsOnJobIds.every((depId) => !jobMap.has(depId));
-  });
+  // Top-level = jobs that nothing in this batch depends on (the ultimate dependents).
+  const dependedUpon = new Set<string>();
+  for (const job of jobs) {
+    for (const depId of job.dependsOnJobIds) {
+      if (jobMap.has(depId)) dependedUpon.add(depId);
+    }
+  }
+  const topLevel = jobs.filter((j) => !dependedUpon.has(j.id));
   return topLevel.map(buildFlowNode);
 }
