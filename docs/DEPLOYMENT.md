@@ -9,7 +9,7 @@
 | 服务 | 镜像/构建 | 启动命令 | 端口 | 作用 |
 |------|----------|---------|------|------|
 | **web** | Zeabur Next.js 服务（`zbpack.json`） | `npm run start:prod` → `prisma migrate deploy && prisma db seed && next start -H 0.0.0.0` | 3000（Zeabur 自动暴露） | App Router 页面 + API 路由 + middleware（auth/限流/黑名单） |
-| **worker** | `worker/Dockerfile`（独立 Zeabur 服务） | `npx tsx worker/index.ts` | 3001（仅 healthcheck，不对外） | BullMQ 消费者：素材分析 / 脚本 / 数字人 / 成片 / 配额重置 cron |
+| **worker** | `worker/Dockerfile`（独立 Zeabur 服务，**含 ffmpeg + CJK 字体**） | `npx tsx worker/index.ts` | 3001（仅 healthcheck，不对外） | BullMQ 消费者：素材分析 / 脚本 / 数字人 / 成片 / 配额重置 cron |
 | **PostgreSQL** | Zeabur Postgres 插件 | — | — | 主数据库（Prisma） |
 | **Redis** | Zeabur Redis 插件 | — | — | BullMQ 队列 + 限流计数器 + JWT 黑名单 |
 
@@ -135,7 +135,9 @@ Zeabur 新版 UI 无独立 Build Type / Dockerfile Path 字段，worker 用 Sett
    ```dockerfile
    FROM node:20-alpine AS base
    WORKDIR /app
-   RUN apk add --no-cache openssl
+   # ffmpeg=视频合成；font-noto-cjk=中文字幕烧录(libass 需 CJK 字体)；font-dejavu-sans= fallback；openssl=Prisma
+   # ⚠️ 必须与仓库 worker/Dockerfile 完全一致（含 ffmpeg/font-noto-cjk），否则 worker 无 ffmpeg、字幕烧录运行时崩
+   RUN apk add --no-cache openssl ffmpeg font-noto-cjk font-dejavu-sans
    COPY package.json package-lock.json* ./
    COPY prisma/ ./prisma/
    RUN npm ci
@@ -156,7 +158,7 @@ Zeabur 新版 UI 无独立 Build Type / Dockerfile Path 字段，worker 用 Sett
 > **注：为什么不用 zbpack.json 代码层配置？** zbpack 支持 `dockerfile.path` 字段（[源码](https://github.com/zeabur/zbpack) `internal/dockerfile/finder.go`），但路径相对 Root Directory 且不支持 `..` 穿越上下文（afero 虚拟 FS 隔离）。若在项目根 `zbpack.json` 加 `dockerfile.path: worker/Dockerfile`，会覆盖 web 的 `build_command`（zbpack 中 dockerfile.path 优先于 build_command），web 也会被 worker Dockerfile 构建，破坏 web。worker Root Directory 设 `worker/` 则上下文隔离，`COPY prisma/` / `COPY lib/` 失败。故当前只能用 Dashboard inline 内容框；若要根除手动同步，需重构 worker 为自包含子目录（独立 package.json + 复制 prisma/lib）。
 
 ### 4.3 部署后自检
-- `prisma migrate deploy` 应无报错（4 个 migration 全部 applied）。
+- `prisma migrate deploy` 应无报错（全部 migration applied，含新增 `talking_head_output_kind`、`bgm_track_library`）。
 - `prisma db seed` 幂等创建 `demo_user`，重复执行无副作用。
 
 ---
