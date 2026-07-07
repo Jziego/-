@@ -112,6 +112,19 @@ function assTimestamp(sec: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(sWhole).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
+/**
+ * Escape a filesystem path for use inside an ffmpeg filtergraph (e.g. the
+ * subtitles= filter). The filtergraph parser treats ":", "\", and "'" as
+ * special, so Windows paths like C:\...\subs.ass must be escaped. Backslashes
+ * are converted to forward slashes first. A no-op for Unix paths.
+ */
+function escapeFilterPath(p: string): string {
+  return p
+    .replace(/\\/g, "/")
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\'");
+}
+
 /** Map a RenderProject.subtitleStyle string to a preset (default if unrecognized). */
 export function resolveSubtitlePreset(style: string | undefined | null): SubtitleStylePreset {
   return style === "bold_bottom" || style === "minimal" ? style : "default";
@@ -215,7 +228,7 @@ export function buildFilterGraph(args: BuildFilterGraphArgs): FilterGraphResult 
 
   // Concat all video segments, then burn subtitles.
   parts.push(`${videoLabels.join("")}concat=n=${videoLabels.length}:v=1:a=0[vcat]`);
-  parts.push(`[vcat]subtitles=${assPath}[vsub]`);
+  parts.push(`[vcat]subtitles='${escapeFilterPath(assPath)}'[vsub]`);
 
   // Audio: presenter_broll uses continuous talking-head voiceover (+ducked BGM);
   // asset_only uses BGM only (or silent track if no BGM).

@@ -93,7 +93,7 @@ describe("buildFilterGraph", () => {
     expect(g.filterComplex).toContain("[0:v]trim=start=0:duration=4");
     expect(g.filterComplex).toContain("[1:v]trim=duration=7");
     expect(g.filterComplex).toContain("[v0][v1]concat=n=2:v=1:a=0[vcat]");
-    expect(g.filterComplex).toContain("subtitles=/tmp/subs.ass");
+    expect(g.filterComplex).toContain("subtitles='/tmp/subs.ass'");
     expect(g.filterComplex).toContain("amix=inputs=2");
     expect(g.mapVideo).toBe("[vsub]");
     expect(g.mapAudio).toBe("[aout]");
