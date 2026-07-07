@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildTimeline, resolveCompositionMode } from "@/lib/services/video-compose";
+import { buildTimeline, resolveCompositionMode, buildAss, resolveSubtitlePreset } from "@/lib/services/video-compose";
+import type { TimelineSegment } from "@/lib/services/video-compose";
 import type { Asset, ScriptScene, VideoOutput } from "@/lib/types";
 
 const scenes: ScriptScene[] = [
@@ -43,5 +44,30 @@ describe("video-compose", () => {
       "presenter_broll"
     );
     expect(resolveCompositionMode(null)).toBe("asset_only");
+  });
+});
+
+describe("buildAss", () => {
+  const segs: TimelineSegment[] = [
+    { role: "presenter", startSec: 0, endSec: 4, durationSec: 4, sceneOrder: 1, text: "开场白", assetId: null },
+    { role: "broll", startSec: 4, endSec: 11, durationSec: 7, sceneOrder: 2, text: "产品来了", assetId: "a1" }
+  ];
+
+  it("emits ASS with one Dialogue line per segment, timestamps from timeline", () => {
+    const ass = buildAss(segs, "default");
+    expect(ass).toContain("[V4+ Styles]");
+    expect(ass).toContain("Style: Default");
+    expect(ass).toContain("Dialogue: 0,0:00:00.00,0:00:04.00,Default,,0,0,0,,开场白");
+    expect(ass).toContain("Dialogue: 0,0:00:04.00,0:00:11.00,Default,,0,0,0,,产品来了");
+  });
+
+  it("uses the Noto Sans CJK SC font (required for Chinese subtitles)", () => {
+    expect(buildAss(segs, "default")).toContain("Noto Sans CJK SC");
+  });
+
+  it("resolveSubtitlePreset falls back to default for unknown styles", () => {
+    expect(resolveSubtitlePreset("bold_bottom")).toBe("bold_bottom");
+    expect(resolveSubtitlePreset("unknown")).toBe("default");
+    expect(resolveSubtitlePreset(undefined)).toBe("default");
   });
 });
