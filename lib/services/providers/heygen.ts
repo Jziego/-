@@ -206,7 +206,17 @@ export function createHeyGenProvider(): AvatarProvider {
     },
 
     async generateTalkingHead(input: TalkingHeadInput, onProgress?) {
-      const videoId = await createHeygenVideo(input);
+      // Workspace template overrides the profile's ids: an avatar profile may
+      // carry a stale mock id ("provider_avatar_*") from an earlier mock-provider
+      // run, which HeyGen rejects with 404 avatar_not_found. The configured
+      // template is the authoritative workspace avatar/voice when set.
+      const templateAvatarId = getHeygenAvatarTemplateId();
+      const templateVoiceId = getHeygenVoiceId();
+      const videoId = await createHeygenVideo({
+        ...input,
+        providerAvatarId: templateAvatarId ?? input.providerAvatarId,
+        providerVoiceId: templateVoiceId ?? input.providerVoiceId,
+      });
       const status = await pollHeygenVideo(videoId, onProgress);
       if (!status.video_url) {
         throw new Error("HeyGen completed but returned no video_url");

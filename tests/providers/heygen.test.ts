@@ -49,8 +49,8 @@ describe("heygen provider", () => {
   });
 
   it("generateTalkingHead creates via v3, polls, downloads, uploads to R2", async () => {
-    vi.stubEnv("HEYGEN_AVATAR_TEMPLATE_ID", "tpl_123");
-    vi.stubEnv("HEYGEN_VOICE_ID", "v_42");
+    // No HEYGEN_AVATAR_TEMPLATE_ID here → the input providerAvatarId/voiceId are
+    // sent to HeyGen (the template-override path has its own test below).
 
     // 1) POST /v3/videos -> video_id
     // 2) GET /v3/videos/{id} -> processing
@@ -109,6 +109,32 @@ describe("heygen provider", () => {
     expect(contentType).toBe("video/mp4");
     expect(result.videoAssetId).toBe(storageKey);
     expect(result.durationSeconds).toBe(12);
+  });
+
+  it("generateTalkingHead prefers HEYGEN_AVATAR_TEMPLATE_ID/VOICE_ID over stale input profile ids", async () => {
+    // Reproduces the prod 404: a mock-created avatar profile carries a fake
+    // providerAvatarId ("provider_avatar_*"). When a workspace template is
+    // configured, it MUST win so the stale mock id never reaches HeyGen.
+    vi.stubEnv("HEYGEN_AVATAR_TEMPLATE_ID", "tpl_REAL");
+    vi.stubEnv("HEYGEN_VOICE_ID", "v_REAL");
+
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ data: { video_id: "vid_override" } }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { status: "completed", video_url: "https://cdn/o.mp4", duration: 8 } }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([7, 8, 9]), { status: 200 }));
+
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    await createHeyGenProvider().generateTalkingHead({
+      providerAvatarId: "provider_avatar_STALE",
+      providerVoiceId: "provider_voice_STALE",
+      scriptText: "x",
+    });
+
+    const createBody = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(createBody.avatar_id).toBe("tpl_REAL");
+    expect(createBody.voice_id).toBe("v_REAL");
   });
 
   it("throws when HeyGen reports status failed (no upload)", async () => {
