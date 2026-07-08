@@ -135,9 +135,9 @@ Zeabur 新版 UI 无独立 Build Type / Dockerfile Path 字段，worker 用 Sett
    ```dockerfile
    FROM node:20-alpine AS base
    WORKDIR /app
-   # ffmpeg=视频合成；font-noto-cjk=中文字幕烧录(libass 需 CJK 字体)；font-dejavu-sans= fallback；openssl=Prisma
+   # ffmpeg=视频合成；font-noto-cjk=中文字幕烧录(ASS 硬编码 "Noto Sans CJK SC")；openssl=Prisma
    # ⚠️ 必须与仓库 worker/Dockerfile 完全一致（含 ffmpeg/font-noto-cjk），否则 worker 无 ffmpeg、字幕烧录运行时崩
-   RUN apk add --no-cache openssl ffmpeg font-noto-cjk font-dejavu-sans
+   RUN apk add --no-cache openssl ffmpeg font-noto-cjk
    COPY package.json package-lock.json* ./
    COPY prisma/ ./prisma/
    RUN npm ci

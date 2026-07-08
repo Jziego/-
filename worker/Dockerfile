@@ -8,9 +8,9 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# Install system dependencies for Prisma + ffmpeg (video composite) + CJK fonts
-# (subtitle burn requires libass + a CJK-capable font for Chinese captions).
-RUN apk add --no-cache openssl ffmpeg font-noto-cjk font-dejavu-sans
+# Install system dependencies for Prisma + ffmpeg (video composite) + CJK font
+# (subtitle burn: ASS Style hardcodes "Noto Sans CJK SC" → needs font-noto-cjk).
+RUN apk add --no-cache openssl ffmpeg font-noto-cjk
 
 # Copy package files
 COPY package.json package-lock.json* ./
