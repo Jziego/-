@@ -5,7 +5,8 @@ import type {
   Job,
   MarketingPurpose,
   ScriptDraft,
-  StoreProfile
+  StoreProfile,
+  VideoOutput
 } from "@/lib/types";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -202,4 +203,14 @@ export async function createRenderProjectApi(input: {
 export async function fetchJobs(): Promise<Job[]> {
   const data = await api<{ jobs: Job[] }>("/api/jobs");
   return data.jobs;
+}
+
+export async function fetchRenderOutputs(): Promise<VideoOutput[]> {
+  const data = await api<{ outputs: VideoOutput[] }>("/api/render-projects");
+  return data.outputs;
+}
+
+export async function fetchVideoOutputUrl(outputId: string): Promise<string> {
+  const data = await api<{ url: string }>(`/api/render-projects/outputs/${outputId}/url`);
+  return data.url;
 }

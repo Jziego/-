@@ -14,8 +14,10 @@ import {
   fetchAssets,
   fetchAvatars,
   fetchJobs,
+  fetchRenderOutputs,
   fetchScriptDrafts,
   fetchStores,
+  fetchVideoOutputUrl,
   requestTalkingHeadApi,
   saveStore,
   uploadFileToStorage
@@ -30,7 +32,7 @@ import {
 } from "@/lib/draft-storage";
 import { createId, nowIso } from "@/lib/ids";
 import { useJobProgressSSE } from "@/lib/use-job-progress";
-import type { Asset, AssetAnalysis, AvatarProfile, Job, MarketingPurpose, ScriptDraft, StoreProfile } from "@/lib/types";
+import type { Asset, AssetAnalysis, AvatarProfile, Job, MarketingPurpose, ScriptDraft, StoreProfile, VideoOutput } from "@/lib/types";
 
 type StoreFormValues = {
   name: string;
@@ -294,6 +296,16 @@ export function Dashboard() {
     }
   });
 
+  // Completed render outputs surface here once video_render finishes; poll in
+  // lockstep with jobs so a freshly-completed video appears without a reload.
+  const { data: serverOutputs = [] } = useQuery({
+    queryKey: ["render-outputs"],
+    queryFn: fetchRenderOutputs,
+    refetchInterval: (localJobs ?? serverJobs).some((job) => job.status === "queued" || job.status === "processing")
+      ? 5000
+      : false
+  });
+
   // SSE real-time progress for active jobs
   const activeJobs = localJobs ?? serverJobs;
   const jobProgressSSE = useJobProgressSSE(activeJobs);
@@ -318,6 +330,11 @@ export function Dashboard() {
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null)
       : null);
   const jobs = localJobs ?? serverJobs;
+
+  // Only completed final-composite videos are previewable/playable artifacts.
+  const completedOutputs = serverOutputs.filter(
+    (output) => output.kind === "final_composite" && output.status === "ready"
+  );
 
   // Merge SSE real-time progress into the job list for display
   const jobsWithProgress = useMemo(() => {
@@ -1028,7 +1045,61 @@ export function Dashboard() {
           ))}
         </div>
       </section>
+
+      {completedOutputs.length > 0 ? (
+        <section className="statusPanel" id="render-outputs" aria-live="polite">
+          <div className="cardHeader">
+            <div>
+              <h2>产物预览</h2>
+              <p>视频已合成完成，点击播放预览，或下载成片直接使用。</p>
+            </div>
+          </div>
+          <div className="timeline">
+            {completedOutputs.map((output) => (
+              <VideoOutputCard key={output.id} output={output} />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </main>
+  );
+}
+
+function VideoOutputCard({ output }: { output: VideoOutput }) {
+  // Presigned URLs are short-lived (~15min). Cache ~10min so switching tabs
+  // doesn't re-hit the route, and let it refresh after expiry.
+  const { data: url, isPending, isError } = useQuery({
+    queryKey: ["output-url", output.id],
+    queryFn: () => fetchVideoOutputUrl(output.id),
+    staleTime: 10 * 60 * 1000
+  });
+
+  return (
+    <div className="previewCard">
+      {isPending ? (
+        <div className="previewLoading">
+          <span className="spinner" aria-hidden="true" />
+          正在生成预览链接…
+        </div>
+      ) : isError ? (
+        <div className="previewLoading">预览链接生成失败，请稍后刷新重试。</div>
+      ) : (
+        <video className="previewVideo" controls preload="metadata" src={url} />
+      )}
+      <div className="previewMeta">
+        <div>
+          <strong>成片视频</strong>
+          <span>
+            {output.durationSeconds} 秒 · {output.aspectRatio}
+          </span>
+        </div>
+        {url ? (
+          <a className="secondaryButton previewDownload" download href={url} rel="noopener noreferrer" target="_blank">
+            下载成片
+          </a>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

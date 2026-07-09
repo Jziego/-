@@ -757,6 +757,52 @@ strong {
   gap: 14px;
 }
 
+.previewCard {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.previewVideo {
+  background: #000;
+  border-radius: 10px;
+  display: block;
+  max-height: 460px;
+  width: 100%;
+}
+
+.previewLoading {
+  align-items: center;
+  background: #000;
+  border-radius: 10px;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.previewMeta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.previewMeta span {
+  color: var(--muted);
+  display: block;
+  font-size: 13px;
+}
+
+.previewDownload {
+  width: auto;
+}
+
 .timelineItem {
   align-items: flex-start;
   background: rgba(255, 255, 255, 0.025);

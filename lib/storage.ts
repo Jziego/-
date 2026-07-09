@@ -79,6 +79,23 @@ export async function createPresignedPutUrl(
 }
 
 /**
+ * Short-lived presigned GET URL so the dashboard can play/download a finished
+ * render output without exposing the bucket publicly. Caller (route) enforces
+ * ownership before handing the URL to the client.
+ */
+export async function createPresignedGetUrl(
+  key: string,
+  expiresIn = PRESIGN_EXPIRES_SECONDS
+): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: getObjectStorageBucket(),
+    Key: key
+  });
+
+  return getSignedUrl(getS3Client(), command, { expiresIn });
+}
+
+/**
  * Server-side upload of raw bytes (e.g. a downloaded rendered video) to object
  * storage. Unlike {@link createPresignedPutUrl} (which is for browser uploads),
  * this is used by the worker to persist provider-generated assets we fetch
