@@ -642,4 +642,68 @@ describe("AI video assistant dashboard", () => {
     expect(within(screen.getByRole("status")).getByText("请先填写主营产品。")).toBeInTheDocument();
     expect(screen.getByText("2/3")).toBeInTheDocument();
   });
+
+  it("shows only the latest render batch in the progress panel", async () => {
+    const oldBatch = [
+      { id: "job_old_1", ownerId: "demo_user", projectId: "proj_old", type: "avatar_generation", status: "completed", progress: 100, payload: {}, dependsOnJobIds: [], createdAt: "2026-07-09T00:00:00.000Z", updatedAt: "2026-07-09T00:00:00.000Z" },
+      { id: "job_old_2", ownerId: "demo_user", projectId: "proj_old", type: "talking_head", status: "completed", progress: 100, payload: {}, dependsOnJobIds: [], createdAt: "2026-07-09T00:00:01.000Z", updatedAt: "2026-07-09T00:00:01.000Z" },
+      { id: "job_old_3", ownerId: "demo_user", projectId: "proj_old", type: "video_render", status: "completed", progress: 100, payload: {}, dependsOnJobIds: [], createdAt: "2026-07-09T00:00:02.000Z", updatedAt: "2026-07-09T00:00:02.000Z" }
+    ];
+    const newBatch = [
+      { id: "job_new_1", ownerId: "demo_user", projectId: "proj_new", type: "avatar_generation", status: "completed", progress: 100, payload: {}, dependsOnJobIds: [], createdAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z" },
+      { id: "job_new_2", ownerId: "demo_user", projectId: "proj_new", type: "talking_head", status: "completed", progress: 100, payload: {}, dependsOnJobIds: [], createdAt: "2026-07-10T00:00:01.000Z", updatedAt: "2026-07-10T00:00:01.000Z" },
+      { id: "job_new_3", ownerId: "demo_user", projectId: "proj_new", type: "video_render", status: "completed", progress: 100, payload: {}, dependsOnJobIds: [], createdAt: "2026-07-10T00:00:02.000Z", updatedAt: "2026-07-10T00:00:02.000Z" }
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => {
+          if (url === "/api/jobs") return { jobs: [...oldBatch, ...newBatch] };
+          if (url === "/api/store-profiles") return { stores: [] };
+          if (url === "/api/assets") return { assets: [] };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [] };
+          if (url === "/api/render-projects") return { renderProjects: [], jobs: [], outputs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      }))
+    );
+
+    const { container } = renderDashboard();
+
+    await screen.findByText("视频合成");
+    const items = container.querySelectorAll(".timelineItem");
+    expect(items).toHaveLength(3);
+  });
+
+  it("hides asset_analysis noise and only shows the latest video job", async () => {
+    const jobs = [
+      { id: "job_analysis", ownerId: "demo_user", projectId: "proj_a", type: "asset_analysis", status: "completed", progress: 100, payload: {}, dependsOnJobIds: [], createdAt: "2026-07-11T00:00:00.000Z", updatedAt: "2026-07-11T00:00:00.000Z" },
+      { id: "job_render", ownerId: "demo_user", projectId: "proj_b", type: "video_render", status: "completed", progress: 100, payload: {}, dependsOnJobIds: [], createdAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z" }
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => {
+          if (url === "/api/jobs") return { jobs };
+          if (url === "/api/store-profiles") return { stores: [] };
+          if (url === "/api/assets") return { assets: [] };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [] };
+          if (url === "/api/render-projects") return { renderProjects: [], jobs: [], outputs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      }))
+    );
+
+    const { container } = renderDashboard();
+
+    await screen.findByText("视频合成");
+    expect(container.querySelectorAll(".timelineItem")).toHaveLength(1);
+    expect(screen.queryByText("AI 识别素材")).toBeNull();
+  });
 });

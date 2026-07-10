@@ -34,6 +34,7 @@ import {
 import { createId, nowIso } from "@/lib/ids";
 import { useJobProgressSSE } from "@/lib/use-job-progress";
 import type { Asset, AssetAnalysis, AvatarProfile, Job, MarketingPurpose, ScriptDraft, StoreProfile, VideoOutput } from "@/lib/types";
+import { selectLatestBatchJobs } from "@/lib/dashboard-jobs";
 
 type StoreFormValues = {
   name: string;
@@ -135,10 +136,9 @@ const purposeLabels: Record<string, string> = {
 };
 
 const jobTypeLabels: Record<string, string> = {
-  asset_analysis: "AI 识别素材",
   avatar_generation: "AI 形象训练",
-  video_render: "视频合成中",
-  subtitle_generation: "字幕生成"
+  talking_head: "视频任务",
+  video_render: "视频合成"
 };
 
 const jobStatusLabels: Record<string, string> = {
@@ -293,24 +293,29 @@ export function Dashboard() {
     queryKey: ["jobs"],
     queryFn: fetchJobs,
     refetchInterval: (query) => {
-      const currentJobs = localJobs ?? query.state.data ?? [];
+      const currentJobs = selectLatestBatchJobs(localJobs ?? (query.state.data ?? []));
       return currentJobs.some((job) => job.status === "queued" || job.status === "processing") ? 5000 : false;
     }
   });
 
+  // Latest video-generation batch shown in the 生成进度 panel. Derived (not
+  // stored): new tasks have the newest createdAt, so they auto-replace the
+  // previous batch — no accumulation, survives reload. See selectLatestBatchJobs.
+  const progressJobs = useMemo(() => selectLatestBatchJobs(localJobs ?? serverJobs), [localJobs, serverJobs]);
+
   // Completed render outputs surface here once video_render finishes; poll in
-  // lockstep with jobs so a freshly-completed video appears without a reload.
+  // lockstep with the latest batch so a freshly-completed video appears without
+  // a reload.
   const { data: serverOutputs = [] } = useQuery({
     queryKey: ["render-outputs"],
     queryFn: fetchRenderOutputs,
-    refetchInterval: (localJobs ?? serverJobs).some((job) => job.status === "queued" || job.status === "processing")
+    refetchInterval: progressJobs.some((job) => job.status === "queued" || job.status === "processing")
       ? 5000
       : false
   });
 
-  // SSE real-time progress for active jobs
-  const activeJobs = localJobs ?? serverJobs;
-  const jobProgressSSE = useJobProgressSSE(activeJobs);
+  // SSE real-time progress for the latest batch's active jobs only.
+  const jobProgressSSE = useJobProgressSSE(progressJobs);
 
   const { data: serverScripts = [] } = useQuery({
     queryKey: ["script-drafts"],
@@ -331,7 +336,6 @@ export function Dashboard() {
           .filter((item) => item.storeId === store.id)
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null)
       : null);
-  const jobs = localJobs ?? serverJobs;
 
   // Only completed final-composite videos are previewable/playable artifacts.
   // serverOutputs already comes newest-first; keep the preview list short so it
@@ -340,15 +344,15 @@ export function Dashboard() {
     .filter((output) => output.kind === "final_composite" && output.status === "ready")
     .slice(0, 5);
 
-  // Merge SSE real-time progress into the job list for display
+  // Merge SSE real-time progress into the latest-batch job list for display
   const jobsWithProgress = useMemo(() => {
-    if (jobProgressSSE.size === 0) return jobs;
-    return jobs.map((job) => {
+    if (jobProgressSSE.size === 0) return progressJobs;
+    return progressJobs.map((job) => {
       const sseState = jobProgressSSE.get(job.id);
       if (!sseState) return job;
       return { ...job, status: sseState.status, progress: sseState.progress, error: sseState.error ?? job.error };
     });
-  }, [jobs, jobProgressSSE]);
+  }, [progressJobs, jobProgressSSE]);
   const hasTerminalJobs = jobsWithProgress.some(
     (job) => job.status === "completed" || job.status === "failed"
   );
