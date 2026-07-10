@@ -188,6 +188,15 @@ export class MemoryJobRepository implements JobRepository {
   async listByStatus(status: Job["status"]): Promise<Job[]> {
     return getRuntimeState().jobs.filter((job) => job.status === status);
   }
+
+  async deleteTerminalByOwner(ownerId: string): Promise<number> {
+    const state = getRuntimeState();
+    const before = state.jobs.length;
+    state.jobs = state.jobs.filter(
+      (job) => !(job.ownerId === ownerId && (job.status === "completed" || job.status === "failed"))
+    );
+    return before - state.jobs.length;
+  }
 }
 
 export class MemoryBgmTrackRepository implements BgmTrackRepository {

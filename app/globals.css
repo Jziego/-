@@ -803,6 +803,10 @@ strong {
   width: auto;
 }
 
+.cleanupButton {
+  width: auto;
+}
+
 .timelineItem {
   align-items: flex-start;
   background: rgba(255, 255, 255, 0.025);

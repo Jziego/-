@@ -5,6 +5,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState 
 import { useForm, useWatch } from "react-hook-form";
 import {
   analyzeAssetApi,
+  clearCompletedJobsApi,
   confirmAssetUpload,
   createAvatarApi,
   createRenderProjectApi,
@@ -263,6 +264,7 @@ export function Dashboard() {
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [clearingJobs, setClearingJobs] = useState(false);
   const draftClearedRef = useRef(false);
   const savedStoreHydratedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -347,6 +349,9 @@ export function Dashboard() {
       return { ...job, status: sseState.status, progress: sseState.progress, error: sseState.error ?? job.error };
     });
   }, [jobs, jobProgressSSE]);
+  const hasTerminalJobs = jobsWithProgress.some(
+    (job) => job.status === "completed" || job.status === "failed"
+  );
   const {
     control,
     register,
@@ -664,6 +669,24 @@ export function Dashboard() {
       setMessage("AI 正在生成你的视频：自动写文案、剪画面、加字幕、配音乐。");
     } finally {
       setPendingAction(null);
+    }
+  }
+
+  async function handleClearCompleted() {
+    if (clearingJobs || pendingAction) return;
+    if (typeof window !== "undefined" && !window.confirm("确认清理所有已完成的任务记录？该操作不可撤销。")) {
+      return;
+    }
+    setClearingJobs(true);
+    try {
+      const { deleted } = await clearCompletedJobsApi();
+      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      setMessage(deleted > 0 ? `已清理 ${deleted} 条已完成任务。` : "没有可清理的已完成任务。");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "清理失败，请稍后重试。";
+      setMessage(`清理失败：${detail}`);
+    } finally {
+      setClearingJobs(false);
     }
   }
 
@@ -1016,6 +1039,17 @@ export function Dashboard() {
             <h2>生成进度</h2>
             <p>AI 正在制作你的视频，AI 形象训练完成后自动合成。如果暂未就绪，会自动启用备用配音，保证视频按时出片。</p>
           </div>
+          {hasTerminalJobs ? (
+            <button
+              className="secondaryButton cleanupButton"
+              disabled={clearingJobs || Boolean(pendingAction)}
+              onClick={() => void handleClearCompleted()}
+              type="button"
+            >
+              {clearingJobs ? <span className="spinner" aria-hidden="true" /> : null}
+              清理已完成
+            </button>
+          ) : null}
         </div>
         <div className="timeline">
           {(jobsWithProgress.length

@@ -58,6 +58,8 @@ export interface JobRepository {
   findById(id: string): Promise<Job | null>;
   update(id: string, data: Partial<Job>): Promise<Job>;
   listByStatus(status: Job["status"]): Promise<Job[]>;
+  /** Delete this owner's terminal (completed/failed) jobs. Returns count deleted. */
+  deleteTerminalByOwner(ownerId: string): Promise<number>;
 }
 
 export interface BgmTrackRepository {

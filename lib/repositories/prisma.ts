@@ -265,6 +265,13 @@ export class PrismaJobRepository implements JobRepository {
     const rows = await this.prisma.job.findMany({ where: { status } });
     return rows.map(toJob);
   }
+
+  async deleteTerminalByOwner(ownerId: string): Promise<number> {
+    const result = await this.prisma.job.deleteMany({
+      where: { ownerId, status: { in: ["completed", "failed"] } }
+    });
+    return result.count;
+  }
 }
 
 export class PrismaBgmTrackRepository implements BgmTrackRepository {

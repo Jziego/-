@@ -220,6 +220,10 @@ export async function fetchJobs(): Promise<Job[]> {
   return data.jobs;
 }
 
+export async function clearCompletedJobsApi(): Promise<{ deleted: number }> {
+  return api<{ deleted: number }>("/api/jobs", { method: "DELETE" });
+}
+
 export async function fetchRenderOutputs(): Promise<VideoOutput[]> {
   const data = await api<{ outputs: VideoOutput[] }>("/api/render-projects");
   return data.outputs;
