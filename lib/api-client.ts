@@ -9,6 +9,21 @@ import type {
   VideoOutput
 } from "@/lib/types";
 
+/**
+ * Error from a non-2xx API response. Carries the HTTP status so callers (and
+ * the react-query retry policy) can distinguish retryable 5xx/network errors
+ * from 4xx that won't self-correct (e.g. 429 rate-limit, 401 auth).
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -16,7 +31,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const json = await res.json();
   if (!res.ok) {
-    throw new Error(json.error ?? "Request failed");
+    throw new ApiError(json.error ?? "Request failed", res.status);
   }
   return json as T;
 }
