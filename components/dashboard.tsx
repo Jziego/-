@@ -332,9 +332,11 @@ export function Dashboard() {
   const jobs = localJobs ?? serverJobs;
 
   // Only completed final-composite videos are previewable/playable artifacts.
-  const completedOutputs = serverOutputs.filter(
-    (output) => output.kind === "final_composite" && output.status === "ready"
-  );
+  // serverOutputs already comes newest-first; keep the preview list short so it
+  // doesn't pile up alongside the progress panel.
+  const completedOutputs = serverOutputs
+    .filter((output) => output.kind === "final_composite" && output.status === "ready")
+    .slice(0, 5);
 
   // Merge SSE real-time progress into the job list for display
   const jobsWithProgress = useMemo(() => {

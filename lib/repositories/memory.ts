@@ -142,8 +142,11 @@ export class MemoryRenderRepository implements RenderRepository {
     return matches[0] ?? null;
   }
 
-  async listOutputsByOwner(ownerId: string): Promise<VideoOutput[]> {
-    return getRuntimeState().outputs.filter((output) => output.ownerId === ownerId);
+  async listOutputsByOwner(ownerId: string, limit?: number): Promise<VideoOutput[]> {
+    const outputs = getRuntimeState()
+      .outputs.filter((output) => output.ownerId === ownerId)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return limit ? outputs.slice(0, limit) : outputs;
   }
 
   async updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject> {
@@ -157,8 +160,11 @@ export class MemoryRenderRepository implements RenderRepository {
 }
 
 export class MemoryJobRepository implements JobRepository {
-  async listByOwner(ownerId: string): Promise<Job[]> {
-    return getRuntimeState().jobs.filter((job) => job.ownerId === ownerId);
+  async listByOwner(ownerId: string, limit?: number): Promise<Job[]> {
+    const jobs = getRuntimeState()
+      .jobs.filter((job) => job.ownerId === ownerId)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return limit ? jobs.slice(0, limit) : jobs;
   }
 
   async createMany(jobs: Job[]): Promise<Job[]> {

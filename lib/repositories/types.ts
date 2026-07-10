@@ -48,12 +48,12 @@ export interface RenderRepository {
   createOutput(output: VideoOutput): Promise<VideoOutput>;
   findOutputById(id: string): Promise<VideoOutput | null>;
   findTalkingHeadOutputByProject(projectId: string): Promise<VideoOutput | null>;
-  listOutputsByOwner(ownerId: string): Promise<VideoOutput[]>;
+  listOutputsByOwner(ownerId: string, limit?: number): Promise<VideoOutput[]>;
   updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject>;
 }
 
 export interface JobRepository {
-  listByOwner(ownerId: string): Promise<Job[]>;
+  listByOwner(ownerId: string, limit?: number): Promise<Job[]>;
   createMany(jobs: Job[]): Promise<Job[]>;
   findById(id: string): Promise<Job | null>;
   update(id: string, data: Partial<Job>): Promise<Job>;

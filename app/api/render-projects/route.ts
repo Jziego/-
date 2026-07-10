@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const [renderProjects, jobs, outputs] = await Promise.all([
     renderRepo.listProjectsByOwner(ownerId),
     getJobRepository().listByOwner(ownerId),
-    renderRepo.listOutputsByOwner(ownerId)
+    renderRepo.listOutputsByOwner(ownerId, 20)
   ]);
   return jsonOk({ renderProjects, jobs, outputs });
 }

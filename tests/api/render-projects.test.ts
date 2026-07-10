@@ -233,4 +233,27 @@ describe("GET /api/render-projects", () => {
     expect(body.renderProjects.length).toBe(1);
     expect(body.jobs.length).toBeGreaterThan(0);
   });
+
+  it("caps outputs count so completed videos don't pile up in the preview", async () => {
+    const repo = getRenderRepository();
+    for (let i = 0; i < 25; i++) {
+      await repo.createOutput({
+        id: createId("output"),
+        ownerId: "demo_user",
+        renderProjectId: null,
+        storageKey: `renders/proj/out-${i}.mp4`,
+        aspectRatio: "9:16",
+        durationSeconds: 30,
+        kind: "final_composite",
+        status: "ready",
+        createdAt: `2026-01-01T00:00:${String(i).padStart(2, "0")}Z`
+      });
+    }
+
+    const res = await GET(new Request("http://localhost/api/render-projects"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.outputs.length).toBeLessThanOrEqual(20);
+    expect(body.outputs[0].createdAt).toBe("2026-01-01T00:00:24Z");
+  });
 });

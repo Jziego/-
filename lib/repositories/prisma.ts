@@ -201,8 +201,12 @@ export class PrismaRenderRepository implements RenderRepository {
     return row ? toVideoOutput(row) : null;
   }
 
-  async listOutputsByOwner(ownerId: string): Promise<VideoOutput[]> {
-    const rows = await this.prisma.videoOutput.findMany({ where: { ownerId } });
+  async listOutputsByOwner(ownerId: string, limit?: number): Promise<VideoOutput[]> {
+    const rows = await this.prisma.videoOutput.findMany({
+      where: { ownerId },
+      orderBy: { createdAt: "desc" },
+      ...(limit ? { take: limit } : {})
+    });
     return rows.map(toVideoOutput);
   }
 
@@ -222,8 +226,12 @@ export class PrismaRenderRepository implements RenderRepository {
 export class PrismaJobRepository implements JobRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async listByOwner(ownerId: string): Promise<Job[]> {
-    const rows = await this.prisma.job.findMany({ where: { ownerId } });
+  async listByOwner(ownerId: string, limit?: number): Promise<Job[]> {
+    const rows = await this.prisma.job.findMany({
+      where: { ownerId },
+      orderBy: { createdAt: "desc" },
+      ...(limit ? { take: limit } : {})
+    });
     return rows.map(toJob);
   }
 
