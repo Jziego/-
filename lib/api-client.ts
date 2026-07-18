@@ -152,6 +152,10 @@ export async function saveAsset(asset: Asset): Promise<Asset> {
   return data.asset;
 }
 
+export async function deleteAsset(id: string): Promise<void> {
+  await api<void>(`/api/assets/${id}`, { method: "DELETE" });
+}
+
 export async function analyzeAssetApi(input: {
   assetId: string;
   storeId: string;

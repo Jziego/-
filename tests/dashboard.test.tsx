@@ -977,6 +977,77 @@ describe("AI video assistant dashboard", () => {
     ).toBeInTheDocument();
   });
 
+  it("deletes an asset via the × button and removes it from the library", async () => {
+    const user = userEvent.setup();
+    const savedStore = {
+      id: "store_del",
+      ownerId: "demo_user",
+      name: "删除店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_del", ownerId: "demo_user", storeId: "store_del", type: "video", originalFilename: "del.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+
+    const deletedIds = new Set<string>();
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url === "/api/assets/asset_del" && method === "DELETE") {
+        deletedIds.add("asset_del");
+        return { ok: true, json: async () => ({ id: "asset_del" }) };
+      }
+      return {
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: savedAssets.filter((a) => !deletedIds.has(a.id)) };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [] };
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderDashboard();
+
+    await screen.findByText("已选 1 / 共 1");
+    await user.click(screen.getByRole("button", { name: "删除素材 del.mp4" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/assets/asset_del",
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(
+      await within(screen.getByRole("status")).findByText("已删除素材。")
+    ).toBeInTheDocument();
+
+    // Card disappears + grid collapses to the empty state. This verifies the
+    // full invalidate→refetch→UI loop: the stateful mock returns [] on the
+    // post-DELETE GET /api/assets refetch, so the grid re-renders empty. The
+    // mediaSummary ("已选 N / 共 N") is intentionally hidden when the library
+    // is empty (dashboard.tsx renders it only when assets.length > 0), so the
+    // empty-state copy is the authoritative signal that the card is gone.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "删除素材 del.mp4" })).not.toBeInTheDocument()
+    );
+    expect(await screen.findByText("拖拽或点击上传视频/图片")).toBeInTheDocument();
+    expect(screen.queryByText(/已选 .* \/ 共 .*/)).not.toBeInTheDocument();
+  });
+
   it("renders the asset library as a selectable grid and defaults to all selected", async () => {
     const savedStore = {
       id: "store_grid",

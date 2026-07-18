@@ -11,6 +11,7 @@ import {
   createRenderProjectApi,
   createScriptDraftApi,
   createUploadIntentApi,
+  deleteAsset,
   fetchAssetAnalyses,
   fetchAssets,
   fetchAvatars,
@@ -23,6 +24,7 @@ import {
   saveStore,
   uploadFileToStorage
 } from "@/lib/api-client";
+import { MAX_ASSETS_PER_STORE, clampUploadBatch } from "@/lib/asset-library";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
 import {
   clearStoreDraft,
@@ -583,13 +585,39 @@ export function Dashboard() {
     });
   }
 
+  async function handleDeleteAsset(id: string) {
+    if (typeof window !== "undefined" && !window.confirm("确认删除该素材？该操作不可撤销。")) {
+      return;
+    }
+    try {
+      await deleteAsset(id);
+      setLocalAssets((prev) => prev.filter((a) => a.id !== id));
+      setSelectedAssetIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      await queryClient.invalidateQueries({ queryKey: ["assets"] });
+      setMessage("已删除素材。");
+    } catch {
+      setMessage("删除失败，请稍后重试。");
+    }
+  }
+
   async function handleAssetUploads(files: File[]) {
     if (!store) {
       setMessage("请先完成门店档案。");
       return;
     }
 
-    const validFiles = files.filter(
+    const { accepted, rejected } = clampUploadBatch(assets.length, files.length);
+    if (accepted === 0) {
+      setMessage(`单店最多 ${MAX_ASSETS_PER_STORE} 个素材，请先删除不需要的再上传。`);
+      return;
+    }
+    const filesToUpload = rejected > 0 ? files.slice(0, accepted) : files;
+
+    const validFiles = filesToUpload.filter(
       (file) =>
         (file.type.startsWith("video/") || file.type.startsWith("image/") || file.type.startsWith("audio/")) &&
         file.size <= MAX_UPLOAD_BYTES
@@ -660,11 +688,11 @@ export function Dashboard() {
     setPendingAction(null);
 
     if (failCount === 0) {
-      setMessage(
+      const base =
         successCount > 1
           ? `上传完成：已上传 ${successCount} 个素材。`
-          : "上传完成：AI 已自动识别画面和语音内容。"
-      );
+          : "上传完成：AI 已自动识别画面和语音内容。";
+      setMessage(rejected > 0 ? `${base}（已达上限，其余 ${rejected} 个未上传）` : base);
     } else {
       setMessage(`上传完成：成功 ${successCount} 个，失败 ${failCount} 个，可重试失败的文件。`);
     }
@@ -982,6 +1010,14 @@ export function Dashboard() {
                           {item.type} · {Math.max(1, Math.ceil(item.sizeBytes / 1024))}KB
                         </span>
                       </div>
+                      <button
+                        aria-label={`删除素材 ${item.originalFilename}`}
+                        className="removeIcon"
+                        onClick={() => void handleDeleteAsset(item.id)}
+                        type="button"
+                      >
+                        ×
+                      </button>
                     </div>
                   );
                 })}
