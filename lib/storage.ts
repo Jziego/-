@@ -1,4 +1,4 @@
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
@@ -158,6 +158,32 @@ export async function headObject(key: string): Promise<HeadObjectResult> {
     }
 
     throw error;
+  }
+}
+
+/**
+ * Best-effort object deletion. Swallows "not found" so DB-record deletion is
+ * never blocked by a missing/stale S3 object — the DB row is the source of
+ * truth. Other errors are logged but not rethrown (the caller has already
+ * committed the DB delete by the time this runs).
+ */
+export async function deleteObject(key: string): Promise<void> {
+  try {
+    await getS3Client().send(
+      new DeleteObjectCommand({ Bucket: getObjectStorageBucket(), Key: key })
+    );
+  } catch (error) {
+    const statusCode =
+      typeof error === "object" && error !== null && "$metadata" in error
+        ? (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
+        : undefined;
+    const name = typeof error === "object" && error !== null && "name" in error ? String(error.name) : "";
+
+    // Note: NoSuchBucket is intentionally NOT swallowed — it signals config
+    // drift, not a missing object, and should surface to operators.
+    if (statusCode === 404 || name === "NotFound" || name === "NoSuchKey") return;
+
+    console.warn(`[storage] deleteObject failed for ${key}:`, name || error);
   }
 }
 

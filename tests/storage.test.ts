@@ -25,7 +25,14 @@ vi.mock("@aws-sdk/client-s3", () => {
     }
   }
 
-  return { S3Client, PutObjectCommand, HeadObjectCommand };
+  class DeleteObjectCommand {
+    input: unknown;
+    constructor(input: unknown) {
+      this.input = input;
+    }
+  }
+
+  return { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand };
 });
 
 vi.mock("@aws-sdk/s3-request-presigner", () => ({
@@ -91,6 +98,44 @@ describe("object storage helpers", () => {
     const result = await headObject("missing-key");
 
     expect(result).toEqual({ exists: false });
+  });
+
+  it("deleteObject swallows NotFound and does not rethrow", async () => {
+    sendMock.mockRejectedValue({ name: "NotFound", $metadata: { httpStatusCode: 404 } });
+
+    const { deleteObject, resetS3ClientForTests } = await import("@/lib/storage");
+    resetS3ClientForTests();
+
+    await expect(deleteObject("stores/store_1/assets/asset_1-demo.mp4")).resolves.toBeUndefined();
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("deleteObject sends a DeleteObjectCommand with bucket and key", async () => {
+    sendMock.mockResolvedValue({});
+
+    const { deleteObject, resetS3ClientForTests } = await import("@/lib/storage");
+    resetS3ClientForTests();
+
+    await deleteObject("stores/store_1/assets/asset_1-demo.mp4");
+
+    expect(sendMock.mock.calls[0]?.[0]).toMatchObject({
+      input: { Bucket: "ai-video-assistant", Key: "stores/store_1/assets/asset_1-demo.mp4" }
+    });
+  });
+
+  it("deleteObject logs and swallows non-404 errors", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    sendMock.mockRejectedValue(new Error("ServiceUnavailable"));
+
+    const { deleteObject, resetS3ClientForTests } = await import("@/lib/storage");
+    resetS3ClientForTests();
+
+    await expect(deleteObject("stores/store_1/assets/asset_1-demo.mp4")).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[storage] deleteObject failed"),
+      expect.anything()
+    );
+    warnSpy.mockRestore();
   });
 
   it("builds public URLs from OBJECT_STORAGE_PUBLIC_URL when set", async () => {
