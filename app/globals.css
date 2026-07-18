@@ -674,6 +674,15 @@ strong {
   width: 100%;
 }
 
+.mediaSelect .thumbnailImg,
+.mediaSelect .thumbnailVideo {
+  border-radius: 8px;
+  flex: 1 1 auto;
+  height: 90px;
+  object-fit: cover;
+  width: 100%;
+}
+
 .mediaMeta {
   display: flex;
   flex-direction: column;

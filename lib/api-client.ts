@@ -156,6 +156,16 @@ export async function deleteAsset(id: string): Promise<void> {
   await api<void>(`/api/assets/${id}`, { method: "DELETE" });
 }
 
+export interface AssetPreviewUrl {
+  url: string;
+  mimeType: string;
+  type: Asset["type"];
+}
+
+export async function fetchAssetPreviewUrl(id: string): Promise<AssetPreviewUrl> {
+  return api<AssetPreviewUrl>(`/api/assets/${id}/preview-url`);
+}
+
 export async function analyzeAssetApi(input: {
   assetId: string;
   storeId: string;

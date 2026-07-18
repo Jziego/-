@@ -13,6 +13,7 @@ import {
   createUploadIntentApi,
   deleteAsset,
   fetchAssetAnalyses,
+  fetchAssetPreviewUrl,
   fetchAssets,
   fetchAvatars,
   fetchJobs,
@@ -1002,7 +1003,7 @@ export function Dashboard() {
                           onChange={() => toggleAssetSelected(item.id)}
                           type="checkbox"
                         />
-                        <span className="thumbnail" aria-hidden="true" />
+                        <AssetThumbnail asset={item} />
                       </label>
                       <div className="mediaMeta">
                         <strong>{item.originalFilename}</strong>
@@ -1242,6 +1243,35 @@ export function Dashboard() {
       ) : null}
     </main>
   );
+}
+
+function AssetThumbnail({ asset }: { asset: Asset }) {
+  // Short-lived presigned URL. NO polling / window-focus refetch / retry — the
+  // dashboard's 429 death-spiral came from read amplification, so preview URLs
+  // are fetched once per card mount and cached under the URL expiry.
+  const { data } = useQuery({
+    queryKey: ["asset-preview", asset.id],
+    queryFn: () => fetchAssetPreviewUrl(asset.id),
+    // staleTime < 5-min URL expiry is a safety margin; it does NOT auto-refetch
+    // (no refetchInterval). Re-fetch only happens on card re-mount.
+    staleTime: 4 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false
+  });
+
+  if (!data) {
+    return <span className="thumbnail" aria-hidden="true" />;
+  }
+  // Dispatch on the API response's `type` (single source of truth) rather than
+  // asset.type — they should agree, but data.type is what we just fetched.
+  if (data.type === "image") {
+    return <img alt={asset.originalFilename} className="thumbnailImg" src={data.url} />;
+  }
+  if (data.type === "video") {
+    return <video className="thumbnailVideo" data-testid="asset-thumbnail-video" muted preload="metadata" src={data.url} />;
+  }
+  return <span className="thumbnail thumbnailAudio" aria-hidden="true" />;
 }
 
 function VideoOutputCard({ output }: { output: VideoOutput }) {

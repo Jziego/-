@@ -1142,4 +1142,100 @@ describe("AI video assistant dashboard", () => {
     expect(screen.getByText("已选 1 / 共 1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始生成视频" })).toBeEnabled();
   });
+
+  it("renders a video element for a video asset thumbnail", async () => {
+    const savedStore = {
+      id: "store_thumb",
+      ownerId: "demo_user",
+      name: "缩略图店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_v", ownerId: "demo_user", storeId: "store_thumb", type: "video", originalFilename: "clip.mp4", storageKey: "stores/store_thumb/assets/asset_v-clip.mp4", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: savedAssets };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [] };
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          if (url === `/api/assets/asset_v/preview-url`) {
+            return { url: "https://signed.example/clip", mimeType: "video/mp4", type: "video" };
+          }
+          return {};
+        }
+      }))
+    );
+
+    renderDashboard();
+
+    const video = await screen.findByTestId("asset-thumbnail-video");
+    expect(video.tagName).toBe("VIDEO");
+  });
+
+  it("keeps the placeholder when the preview-url request fails", async () => {
+    const savedStore = {
+      id: "store_thumbfail",
+      ownerId: "demo_user",
+      name: "缩略图失败店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_f", ownerId: "demo_user", storeId: "store_thumbfail", type: "video", originalFilename: "fail.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === `/api/assets/asset_f/preview-url`) {
+          // preview-url generation fails (e.g. S3 hiccup → 503). api<T> throws on non-ok.
+          return { ok: false, status: 503, json: async () => ({ error: "Failed to generate preview URL" }) };
+        }
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: savedAssets };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    // Card still renders (checkbox + meta present) but no video element (placeholder stays).
+    expect(await screen.findByLabelText("选择素材 fail.mp4")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByTestId("asset-thumbnail-video")).not.toBeInTheDocument()
+    );
+  });
 });
