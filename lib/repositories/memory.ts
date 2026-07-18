@@ -55,6 +55,14 @@ export class MemoryAssetRepository implements AssetRepository {
   async findById(id: string): Promise<Asset | null> {
     return getRuntimeState().assets.find((asset) => asset.id === id) ?? null;
   }
+
+  async deleteById(id: string): Promise<boolean> {
+    const state = getRuntimeState();
+    const before = state.assets.length;
+    state.assets = state.assets.filter((asset) => asset.id !== id);
+    state.analyses = state.analyses.filter((analysis) => analysis.assetId !== id);
+    return state.assets.length < before;
+  }
 }
 
 export class MemoryAssetAnalysisRepository implements AssetAnalysisRepository {

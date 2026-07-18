@@ -99,6 +99,17 @@ export class PrismaAssetRepository implements AssetRepository {
     const row = await this.prisma.asset.findUnique({ where: { id } });
     return row ? toAsset(row) : null;
   }
+
+  async deleteById(id: string): Promise<boolean> {
+    const result = await this.prisma.$transaction([
+      // FK has no onDelete cascade; child analysis must go first or the asset
+      // delete violates the references constraint.
+      this.prisma.assetAnalysis.deleteMany({ where: { assetId: id } }),
+      this.prisma.asset.deleteMany({ where: { id } })
+    ]);
+    const assetDelete = result[1];
+    return (assetDelete?.count ?? 0) > 0;
+  }
 }
 
 export class PrismaAssetAnalysisRepository implements AssetAnalysisRepository {

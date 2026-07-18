@@ -20,6 +20,8 @@ export interface AssetRepository {
   listByOwner(ownerId: string): Promise<Asset[]>;
   create(asset: Asset): Promise<Asset>;
   findById(id: string): Promise<Asset | null>;
+  /** Delete an asset by id. Returns true iff a row was actually removed. */
+  deleteById(id: string): Promise<boolean>;
 }
 
 export interface AssetAnalysisRepository {
