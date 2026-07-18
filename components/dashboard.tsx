@@ -469,24 +469,24 @@ export function Dashboard() {
 
   const currentStepIndex = useMemo(() => {
     if (!store) return 0;
-    if (!asset || !analysis) return 1;
+    if (assets.length === 0) return 1;
     if (!avatar) return 2;
     return 3;
-  }, [analysis, asset, avatar, store]);
+  }, [assets, avatar, store]);
 
   const workflowSteps = useMemo(
     () => [
       { label: "门店档案", href: "#store-profile", complete: Boolean(store) },
-      { label: "素材库", href: "#media-upload", complete: Boolean(asset && analysis) },
+      { label: "素材库", href: "#media-upload", complete: assets.length > 0 },
       { label: "AI 分身", href: "#avatar-clone", complete: Boolean(avatar) },
       { label: "智能成片", href: "#one-click-video", complete: Boolean(script) }
     ],
-    [analysis, asset, avatar, script, store]
+    [assets, avatar, script, store]
   );
 
   const selectedStoreStep = storeFormSteps[storeFormStep];
   const renderLocked = !store;
-  const renderMissingAssets = store && (!asset || !analysis);
+  const renderMissingAssets = store && selectedAssets.length === 0;
 
   function goToStoreFormStep(step: number) {
     const nextStep = normalizeStoreFormStep(step);
@@ -569,6 +569,18 @@ export function Dashboard() {
 
   function openFilePicker() {
     fileInputRef.current?.click();
+  }
+
+  function toggleAssetSelected(id: string) {
+    setSelectedAssetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   }
 
   async function handleAssetUploads(files: File[]) {
@@ -921,7 +933,7 @@ export function Dashboard() {
               <h2>素材库</h2>
               <p>上传你的视频、图片或音频，AI 自动看懂内容并分类，找素材时一搜就有</p>
             </div>
-            <span className={analysis ? "statusBadge success" : "statusBadge warning"}>{analysis ? "已完成" : "待完成"}</span>
+            <span className={assets.length > 0 ? "statusBadge success" : "statusBadge warning"}>{assets.length > 0 ? "已完成" : "待完成"}</span>
           </div>
 
           <input
@@ -935,9 +947,9 @@ export function Dashboard() {
 
           <div
             className="uploadZone"
-            onClick={!asset && !pendingAction ? openFilePicker : undefined}
+            onClick={assets.length === 0 && !pendingAction ? openFilePicker : undefined}
             onKeyDown={
-              !asset && !pendingAction
+              assets.length === 0 && !pendingAction
                 ? (event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
@@ -946,19 +958,33 @@ export function Dashboard() {
                   }
                 : undefined
             }
-            role={!asset ? "button" : undefined}
-            tabIndex={!asset && !pendingAction ? 0 : undefined}
+            role={assets.length === 0 ? "button" : undefined}
+            tabIndex={assets.length === 0 && !pendingAction ? 0 : undefined}
           >
-            {asset ? (
-              <div className="mediaItem">
-                <div className="thumbnail" aria-hidden="true" />
-                <div>
-                  <strong>{asset.originalFilename}</strong>
-                  <span>{asset.durationSeconds ?? 0} 秒 · 已上传</span>
-                </div>
-                <span className="removeIcon" aria-hidden="true">
-                  ×
-                </span>
+            {assets.length > 0 ? (
+              <div className="mediaGrid" role="list">
+                {assets.map((item) => {
+                  const selected = selectedAssetIds.has(item.id);
+                  return (
+                    <div className={`mediaItem ${selected ? "selected" : ""}`} key={item.id} role="listitem">
+                      <label className="mediaSelect">
+                        <input
+                          aria-label={`选择素材 ${item.originalFilename}`}
+                          checked={selected}
+                          onChange={() => toggleAssetSelected(item.id)}
+                          type="checkbox"
+                        />
+                        <span className="thumbnail" aria-hidden="true" />
+                      </label>
+                      <div className="mediaMeta">
+                        <strong>{item.originalFilename}</strong>
+                        <span>
+                          {item.type} · {Math.max(1, Math.ceil(item.sizeBytes / 1024))}KB
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="emptyState">
@@ -968,7 +994,7 @@ export function Dashboard() {
                   <circle cx="78" cy="34" r="6" />
                 </svg>
                 <strong>拖拽或点击上传视频/图片</strong>
-                <span>上传后 AI 自动提取画面和语音内容。</span>
+                <span>可一次选择多个文件，上传后 AI 自动提取画面和语音内容。</span>
               </div>
             )}
             {pendingAction === "upload" ? (
@@ -984,6 +1010,10 @@ export function Dashboard() {
               </div>
             ) : null}
           </div>
+
+          {assets.length > 0 ? (
+            <p className="mediaSummary">已选 {selectedAssets.length} / 共 {assets.length}</p>
+          ) : null}
 
           <button
             className="primaryButton"
@@ -1094,7 +1124,11 @@ export function Dashboard() {
             type="button"
           >
             {pendingAction === "render" ? <span className="spinner" aria-hidden="true" /> : null}
-            {renderLocked ? "请先完成门店档案" : "开始生成视频"}
+            {renderLocked
+              ? "请先完成门店档案"
+              : renderMissingAssets
+                ? "请至少勾选一个素材"
+                : "开始生成视频"}
           </button>
 
           {script ? (

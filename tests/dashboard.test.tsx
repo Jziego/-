@@ -976,4 +976,99 @@ describe("AI video assistant dashboard", () => {
       await within(screen.getByRole("status")).findByText(/成功 1 个.*失败 1 个/)
     ).toBeInTheDocument();
   });
+
+  it("renders the asset library as a selectable grid and defaults to all selected", async () => {
+    const savedStore = {
+      id: "store_grid",
+      ownerId: "demo_user",
+      name: "网格店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_a", ownerId: "demo_user", storeId: "store_grid", type: "video", originalFilename: "a.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "asset_b", ownerId: "demo_user", storeId: "store_grid", type: "image", originalFilename: "b.jpg", storageKey: "k2", mimeType: "image/jpeg", sizeBytes: 2000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: savedAssets };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [] };
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      }))
+    );
+
+    renderDashboard();
+
+    expect(await screen.findByText("已选 2 / 共 2")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择素材 a.mp4")).toBeChecked();
+    expect(screen.getByLabelText("选择素材 b.jpg")).toBeChecked();
+  });
+
+  it("disables generation when no asset is selected", async () => {
+    const user = userEvent.setup();
+    const savedStore = {
+      id: "store_gate",
+      ownerId: "demo_user",
+      name: "门禁店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_only", ownerId: "demo_user", storeId: "store_gate", type: "video", originalFilename: "only.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: savedAssets };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [] };
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      }))
+    );
+
+    renderDashboard();
+
+    await screen.findByText("已选 1 / 共 1");
+    await user.click(screen.getByLabelText("选择素材 only.mp4"));
+
+    expect(screen.getByText("已选 0 / 共 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "请至少勾选一个素材" })).toBeDisabled();
+
+    await user.click(screen.getByLabelText("选择素材 only.mp4"));
+
+    expect(screen.getByText("已选 1 / 共 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始生成视频" })).toBeEnabled();
+  });
 });
