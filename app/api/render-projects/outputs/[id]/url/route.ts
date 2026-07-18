@@ -31,7 +31,9 @@ export async function GET(
     const url = await createPresignedGetUrl(output.storageKey);
     return jsonOk({ url });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to generate URL";
-    return jsonError(message, 503);
+    // Log the full error server-side; return a generic message to the client
+    // so AWS SDK details (endpoint/host/region) are never leaked (CLAUDE.md §8).
+    console.error("[outputs-url] presign failed:", error);
+    return jsonError("Failed to generate preview URL", 503);
   }
 }
