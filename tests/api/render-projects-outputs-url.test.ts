@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/render-projects/outputs/[id]/url/route";
 import { getRenderRepository } from "@/lib/repositories";
 import { resetRuntimeStateForTests } from "@/lib/runtime-store";
@@ -86,5 +86,32 @@ describe("GET /api/render-projects/outputs/[id]/url", () => {
 
     const res = await callRoute(output.id);
     expect(res.status).toBe(404);
+  });
+
+  it("returns 503 with a generic message when presigning fails (no endpoint leak)", async () => {
+    const { resetS3ClientForTests } = await import("@/lib/storage");
+    resetS3ClientForTests();
+
+    const output = createTestOutput("demo_user");
+    await getRenderRepository().createOutput(output);
+
+    // Simulate an AWS SDK error whose message embeds the internal endpoint.
+    // The §8 contract: log server-side, return a generic message so the
+    // host/region never reaches the client.
+    const storage = await import("@/lib/storage");
+    vi.spyOn(storage, "createPresignedGetUrl").mockRejectedValue(
+      new Error("Connection error: fetch failed to http://internal-host:9000")
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await callRoute(output.id);
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toBe("Failed to generate preview URL");
+    // The internal endpoint must NOT leak to the client (CLAUDE.md §8).
+    expect(JSON.stringify(body)).not.toContain("internal-host");
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });
