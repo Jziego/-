@@ -155,6 +155,29 @@ export async function rateLimitLogin(
 }
 
 /**
+ * Resolve the rate-limit bucket (key + config) for an API request.
+ *
+ * Reads and writes use INDEPENDENT buckets (`:read` / `:write` suffix) so that
+ * background dashboard reads (mount burst + 5s polling) cannot exhaust the
+ * write budget and starve user-initiated mutations like asset upload-intent.
+ * The backend keys counters per-string, so distinct suffixes ⇒ isolated
+ * counters (reads capped at 60/min, writes at 20/min, independently).
+ *
+ * Pure & exported so the read/write bucket isolation is unit-testable without
+ * the demo/production/Redis coupling of `rateLimitApi`.
+ */
+export function resolveApiBucket(ownerId: string, method: string): {
+  key: string;
+  config: RateLimitConfig;
+} {
+  const isWrite = ["POST", "PUT", "DELETE"].includes(method);
+  return {
+    key: `api:${ownerId}:${isWrite ? "write" : "read"}`,
+    config: isWrite ? API_WRITE : API_READ,
+  };
+}
+
+/**
  * L2: API rate limit. Skipped in demo mode.
  *
  * @param key  Rate limit key (typically userId for authenticated users)
@@ -167,8 +190,8 @@ export async function rateLimitApi(
   if (getAppMode() === "demo") {
     return { allowed: true, remaining: 999, reset: 0 };
   }
-  const config = ["POST", "PUT", "DELETE"].includes(method) ? API_WRITE : API_READ;
-  return checkLimit(`api:${key}`, config);
+  const bucket = resolveApiBucket(key, method);
+  return checkLimit(bucket.key, bucket.config);
 }
 
 // ── IP-based middleware rate limit (L0) ─────────────────────────────────────
