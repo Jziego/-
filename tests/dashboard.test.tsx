@@ -1238,4 +1238,89 @@ describe("AI video assistant dashboard", () => {
       expect(screen.queryByTestId("asset-thumbnail-video")).not.toBeInTheDocument()
     );
   });
+
+  it("passes all selected assets and analyses when generating", async () => {
+    const user = userEvent.setup();
+    const savedStore = {
+      id: "store_passall",
+      ownerId: "demo_user",
+      name: "全量店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_p1", ownerId: "demo_user", storeId: "store_passall", type: "video", originalFilename: "p1.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "asset_p2", ownerId: "demo_user", storeId: "store_passall", type: "image", originalFilename: "p2.jpg", storageKey: "k2", mimeType: "image/jpeg", sizeBytes: 2000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+    const savedAnalyses = [
+      { id: "analysis_p1", assetId: "asset_p1", visualTags: ["food"], businessTags: ["新品推荐"], keywords: ["面"], confidence: 0.8, recommendedUses: ["new_product"], createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "analysis_p2", assetId: "asset_p2", visualTags: ["storefront"], businessTags: ["门店引流"], keywords: ["店"], confidence: 0.7, recommendedUses: ["store_traffic"], createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+
+    const fetchedBodies: Record<string, unknown> = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method === "POST") fetchedBodies[url] = JSON.parse(String(init?.body ?? "{}"));
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/script-drafts") {
+              return {
+                script: {
+                  id: "script_passall",
+                  ownerId: "demo_user",
+                  storeId: "store_passall",
+                  purpose: "store_traffic",
+                  platform: "douyin",
+                  title: "引流",
+                  hook: "来店",
+                  scenes: [],
+                  voiceover: "来店",
+                  captions: [],
+                  cta: "到店",
+                  generationMode: "ai",
+                  complianceWarnings: [],
+                  createdAt: "2026-01-02T00:00:00.000Z"
+                }
+              };
+            }
+            if (url === "/api/render-projects") return { project: { id: "proj_passall" }, jobs: [] };
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: savedAssets };
+            if (url === "/api/asset-analyses") return { analyses: savedAnalyses };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    await screen.findByText("已选 2 / 共 2");
+    await user.click(screen.getByRole("button", { name: "开始生成视频" }));
+
+    await waitFor(() => {
+      expect(fetchedBodies["/api/script-drafts"]).toBeDefined();
+      expect(fetchedBodies["/api/render-projects"]).toBeDefined();
+    });
+    expect(fetchedBodies["/api/script-drafts"]).toMatchObject({
+      assetAnalysisIds: expect.arrayContaining(["analysis_p1", "analysis_p2"])
+    });
+    expect((fetchedBodies["/api/script-drafts"] as { assetAnalysisIds: string[] }).assetAnalysisIds).toHaveLength(2);
+    expect(fetchedBodies["/api/render-projects"]).toMatchObject({
+      selectedAssetIds: expect.arrayContaining(["asset_p1", "asset_p2"])
+    });
+  });
 });

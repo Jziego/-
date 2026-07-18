@@ -374,10 +374,6 @@ export function Dashboard() {
     setSelectedAssetIds(new Set(assets.map((a) => a.id)));
   }, [assets]);
 
-  // Singletons retained so existing avatar/script/preview code keeps compiling
-  // until Tasks 6 & 9 rewire them to the full selection.
-  const asset = selectedAssets[0] ?? null;
-  const analysis = asset ? (analysesByAssetId.get(asset.id) ?? null) : null;
   const avatar =
     localAvatar ?? (store ? (serverAvatars.find((item) => item.storeId === store.id) ?? null) : null);
   const script =
@@ -724,7 +720,8 @@ export function Dashboard() {
       const profile = await createAvatarApi({
         ownerId: store.ownerId,
         storeId: store.id,
-        trainingVideoAssetId: asset?.id ?? "asset_training_demo",
+        trainingVideoAssetId:
+          selectedAssets.find((a) => a.type === "video")?.id ?? "asset_training_demo",
         consentAccepted: true
       });
       setLocalAvatar(profile);
@@ -752,7 +749,7 @@ export function Dashboard() {
       return;
     }
 
-    if (!analysis || !asset) {
+    if (selectedAnalyses.length === 0 || selectedAssets.length === 0) {
       setMessage("请先上传素材，让 AI 完成识别。");
       return;
     }
@@ -762,13 +759,13 @@ export function Dashboard() {
     try {
       const draft = await createScriptDraftApi({
         storeId: store.id,
-        assetAnalysisIds: [analysis.id],
+        assetAnalysisIds: selectedAnalyses.map((a) => a.id),
         purpose: selectedPurpose,
         platform: "douyin"
       });
       const { jobs: plannedJobs } = await createRenderProjectApi({
         scriptDraftId: draft.id,
-        selectedAssetIds: [asset.id],
+        selectedAssetIds: selectedAssets.map((a) => a.id),
         avatarProfileId: avatar?.id,
         aspectRatio: "9:16",
         subtitleStyle: "bold_bottom",
@@ -1062,11 +1059,13 @@ export function Dashboard() {
             上传素材
           </button>
 
-          {analysis ? (
+          {selectedAnalyses.length > 0 ? (
             <div className="result">
               <strong>AI 自动分类</strong>
               <div className="tagList">
-                {[...analysis.visualTags, ...analysis.businessTags].map((tag) => (
+                {Array.from(
+                  new Set(selectedAnalyses.flatMap((a) => [...a.visualTags, ...a.businessTags]))
+                ).map((tag) => (
                   <span className="techTag" key={tag}>
                     {tagDisplayLabels[tag] ?? tag}
                   </span>
