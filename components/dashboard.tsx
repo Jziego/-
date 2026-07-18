@@ -251,8 +251,13 @@ function scrollToFirstFieldError(fields: StoreField[]): void {
 export function Dashboard() {
   const queryClient = useQueryClient();
   const [localStore, setLocalStore] = useState<StoreProfile | null>(null);
-  const [localAsset, setLocalAsset] = useState<Asset | null>(null);
-  const [localAnalysis, setLocalAnalysis] = useState<AssetAnalysis | null>(null);
+  const [localAssets, setLocalAssets] = useState<Asset[]>([]);
+  const [localAnalyses, setLocalAnalyses] = useState<AssetAnalysis[]>([]);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [uploadingFiles, setUploadingFiles] = useState<
+    { id: string; name: string; progress: number; status: "uploading" | "failed" }[]
+  >([]);
+  const seededSelectionRef = useRef(false);
   const [localAvatar, setLocalAvatar] = useState<AvatarProfile | null>(null);
   const [localScript, setLocalScript] = useState<ScriptDraft | null>(null);
   const [localJobs, setLocalJobs] = useState<Job[] | null>(null);
@@ -263,7 +268,6 @@ export function Dashboard() {
   const [avatarConsent, setAvatarConsent] = useState(false);
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [clearingJobs, setClearingJobs] = useState(false);
   const draftClearedRef = useRef(false);
   const savedStoreHydratedRef = useRef(false);
@@ -323,10 +327,54 @@ export function Dashboard() {
   });
 
   const store = localStore ?? stores[0] ?? null;
-  const asset =
-    localAsset ?? (store ? (serverAssets.find((item) => item.storeId === store.id) ?? null) : null);
-  const analysis =
-    localAnalysis ?? (asset ? (serverAnalyses.find((item) => item.assetId === asset.id) ?? null) : null);
+  // Asset library is a per-store pool (DB-persisted + this session's uploads,
+  // deduped by id). Selection is a subset the user ticks for rendering.
+  const assets = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: Asset[] = [];
+    const storeAssets = store ? serverAssets.filter((item) => item.storeId === store.id) : [];
+    for (const asset of [...localAssets, ...storeAssets]) {
+      if (seen.has(asset.id)) continue;
+      seen.add(asset.id);
+      merged.push(asset);
+    }
+    return merged;
+  }, [localAssets, serverAssets, store]);
+
+  const analysesByAssetId = useMemo(() => {
+    const map = new Map<string, AssetAnalysis>();
+    for (const analysis of [...serverAnalyses, ...localAnalyses]) {
+      map.set(analysis.assetId, analysis);
+    }
+    return map;
+  }, [serverAnalyses, localAnalyses]);
+
+  const selectedAssets = useMemo(
+    () => assets.filter((a) => selectedAssetIds.has(a.id)),
+    [assets, selectedAssetIds]
+  );
+  const selectedAnalyses = useMemo(
+    () => selectedAssets.map((a) => analysesByAssetId.get(a.id)).filter((a): a is AssetAnalysis => Boolean(a)),
+    [selectedAssets, analysesByAssetId]
+  );
+
+  const overallUploadProgress =
+    uploadingFiles.length > 0
+      ? Math.round(uploadingFiles.reduce((sum, f) => sum + f.progress, 0) / uploadingFiles.length)
+      : 0;
+
+  // Default-select every asset on first load; after that selection is driven
+  // only by user toggle / upload / delete.
+  useEffect(() => {
+    if (seededSelectionRef.current || assets.length === 0) return;
+    seededSelectionRef.current = true;
+    setSelectedAssetIds(new Set(assets.map((a) => a.id)));
+  }, [assets]);
+
+  // Singletons retained so existing avatar/script/preview code keeps compiling
+  // until Tasks 6 & 9 rewire them to the full selection.
+  const asset = selectedAssets[0] ?? null;
+  const analysis = asset ? (analysesByAssetId.get(asset.id) ?? null) : null;
   const avatar =
     localAvatar ?? (store ? (serverAvatars.find((item) => item.storeId === store.id) ?? null) : null);
   const script =
@@ -523,78 +571,98 @@ export function Dashboard() {
     fileInputRef.current?.click();
   }
 
-  async function handleAssetUpload(file: File) {
+  async function handleAssetUploads(files: File[]) {
     if (!store) {
       setMessage("请先完成门店档案。");
       return;
     }
 
-    if (!file.type.startsWith("video/") && !file.type.startsWith("image/") && !file.type.startsWith("audio/")) {
-      setMessage("仅支持上传视频、图片或音频文件。");
-      return;
-    }
+    const validFiles = files.filter(
+      (file) =>
+        (file.type.startsWith("video/") || file.type.startsWith("image/") || file.type.startsWith("audio/")) &&
+        file.size <= MAX_UPLOAD_BYTES
+    );
 
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setMessage("文件过大，请选择不超过 200MB 的素材。");
+    if (validFiles.length === 0) {
+      setMessage("仅支持上传视频、图片或音频文件（单个不超过 200MB）。");
       return;
     }
 
     setPendingAction("upload");
-    setUploadProgress(0);
 
-    try {
-      const intent = await createUploadIntentApi({
-        ownerId: store.ownerId,
-        storeId: store.id,
-        filename: file.name,
-        contentType: file.type,
-        sizeBytes: file.size
-      });
+    let successCount = 0;
+    let failCount = 0;
 
-      await uploadFileToStorage(intent.uploadUrl, file, intent.headers, (ratio) => {
-        setUploadProgress(Math.round(ratio * 100));
-      });
+    for (const file of validFiles) {
+      const uploadId = createId("upl");
+      setUploadingFiles((prev) => [...prev, { id: uploadId, name: file.name, progress: 0, status: "uploading" }]);
+      try {
+        const intent = await createUploadIntentApi({
+          ownerId: store.ownerId,
+          storeId: store.id,
+          filename: file.name,
+          contentType: file.type,
+          sizeBytes: file.size
+        });
 
-      const uploadedAsset = await confirmAssetUpload({
-        assetId: intent.assetId,
-        storeId: store.id,
-        ownerId: store.ownerId,
-        storageKey: intent.storageKey,
-        originalFilename: file.name,
-        mimeType: file.type,
-        type: inferAssetType(file.type),
-        sizeBytes: file.size
-      });
+        await uploadFileToStorage(intent.uploadUrl, file, intent.headers, (ratio) => {
+          setUploadingFiles((prev) =>
+            prev.map((f) => (f.id === uploadId ? { ...f, progress: Math.round(ratio * 100) } : f))
+          );
+        });
 
-      const analyzed = await analyzeAssetApi({
-        assetId: uploadedAsset.id,
-        storeId: store.id,
-        visualLabels: ["food", "person", "storefront"],
-        transcript: `${store.mainProducts[0]}刚出锅，午餐出餐很快`
-      });
-      setLocalAsset(uploadedAsset);
-      setLocalAnalysis(analyzed);
-      await queryClient.invalidateQueries({ queryKey: ["assets"] });
-      await queryClient.invalidateQueries({ queryKey: ["asset-analyses"] });
-      setMessage("上传完成：AI 已自动识别画面和语音内容。");
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "上传失败，请稍后重试。";
-      if (detail.includes("Object storage is not configured") || detail.includes("503")) {
-        setMessage("对象存储未配置，请联系管理员。");
-      } else {
-        setMessage(`素材上传失败：${detail}`);
+        const uploadedAsset = await confirmAssetUpload({
+          assetId: intent.assetId,
+          storeId: store.id,
+          ownerId: store.ownerId,
+          storageKey: intent.storageKey,
+          originalFilename: file.name,
+          mimeType: file.type,
+          type: inferAssetType(file.type),
+          sizeBytes: file.size
+        });
+
+        const analyzed = await analyzeAssetApi({
+          assetId: uploadedAsset.id,
+          storeId: store.id,
+          visualLabels: ["food", "person", "storefront"],
+          transcript: `${store.mainProducts[0]}刚出锅，午餐出餐很快`
+        });
+
+        setLocalAssets((prev) => (prev.some((a) => a.id === uploadedAsset.id) ? prev : [...prev, uploadedAsset]));
+        setLocalAnalyses((prev) => [...prev, analyzed]);
+        setSelectedAssetIds((prev) => new Set(prev).add(uploadedAsset.id));
+        successCount += 1;
+      } catch {
+        failCount += 1;
+        setUploadingFiles((prev) => prev.map((f) => (f.id === uploadId ? { ...f, status: "failed" } : f)));
+      } finally {
+        // Task 5 scope: a finished/failed upload's row is removed immediately.
+        // Task 6/7 reintroduce a persistent failed-row UI with a retry affordance.
+        setUploadingFiles((prev) => prev.filter((f) => f.id !== uploadId));
       }
-    } finally {
-      setPendingAction(null);
-      setUploadProgress(0);
+    }
+
+    await queryClient.invalidateQueries({ queryKey: ["assets"] });
+    await queryClient.invalidateQueries({ queryKey: ["asset-analyses"] });
+    setPendingAction(null);
+
+    if (failCount === 0) {
+      setMessage(
+        successCount > 1
+          ? `上传完成：已上传 ${successCount} 个素材。`
+          : "上传完成：AI 已自动识别画面和语音内容。"
+      );
+    } else {
+      setMessage(`上传完成：成功 ${successCount} 个，失败 ${failCount} 个，可重试失败的文件。`);
     }
   }
 
   function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (file) {
-      void handleAssetUpload(file);
+    if (files.length > 0) {
+      void handleAssetUploads(files);
     }
   }
 
@@ -860,6 +928,7 @@ export function Dashboard() {
             ref={fileInputRef}
             accept="video/*,image/*,audio/*"
             className="srOnly"
+            multiple
             onChange={handleFileInputChange}
             type="file"
           />
@@ -907,11 +976,11 @@ export function Dashboard() {
                 aria-label="上传中"
                 aria-valuemax={100}
                 aria-valuemin={0}
-                aria-valuenow={uploadProgress}
+                aria-valuenow={overallUploadProgress}
                 className="progressTrack"
                 role="progressbar"
               >
-                <span style={{ width: `${Math.max(uploadProgress, 8)}%` }} />
+                <span style={{ width: `${Math.max(overallUploadProgress, 8)}%` }} />
               </div>
             ) : null}
           </div>

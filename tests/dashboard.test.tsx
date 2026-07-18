@@ -706,4 +706,274 @@ describe("AI video assistant dashboard", () => {
     expect(container.querySelectorAll(".timelineItem")).toHaveLength(1);
     expect(screen.queryByText("AI 识别素材")).toBeNull();
   });
+
+  it("uploads multiple files sequentially and confirms each", async () => {
+    const user = userEvent.setup();
+    const uploadSpy = vi.fn();
+    const savedStore = {
+      id: "store_multi",
+      ownerId: "demo_user",
+      name: "多素材店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    let intentCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/store-profiles" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return { ok: true, json: async () => ({ store: { ...savedStore, ...body, id: savedStore.id } }) };
+        }
+
+        if (url === "/api/assets/upload-intent" && method === "POST") {
+          intentCount += 1;
+          return {
+            ok: true,
+            json: async () => ({
+              intent: {
+                assetId: `asset_${intentCount}`,
+                storageKey: `stores/store_multi/assets/asset_${intentCount}-demo.mp4`,
+                uploadUrl: "https://storage.example/upload",
+                headers: { "Content-Type": "video/mp4" },
+                maxSizeBytes: 200 * 1024 * 1024,
+                expiresInSeconds: 900
+              }
+            })
+          };
+        }
+
+        if (url === "/api/assets/confirm" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return {
+            ok: true,
+            json: async () => ({
+              asset: {
+                id: body.assetId,
+                ownerId: savedStore.ownerId,
+                storeId: savedStore.id,
+                type: "video",
+                originalFilename: body.originalFilename,
+                storageKey: body.storageKey,
+                mimeType: body.mimeType,
+                sizeBytes: body.sizeBytes ?? 1000,
+                tags: [],
+                businessTags: [],
+                status: "uploaded",
+                createdAt: new Date().toISOString()
+              }
+            })
+          };
+        }
+
+        if (url === "/api/assets/analyze" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return {
+            ok: true,
+            json: async () => ({
+              analysis: {
+                id: `analysis_${body.assetId}`,
+                assetId: body.assetId,
+                visualTags: ["food"],
+                businessTags: ["新品推荐"],
+                keywords: ["牛肉面"],
+                confidence: 0.8,
+                recommendedUses: ["new_product"],
+                createdAt: new Date().toISOString()
+              }
+            })
+          };
+        }
+
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    const callOrder: string[] = [];
+    vi.spyOn(apiClient, "uploadFileToStorage").mockImplementation(
+      async (_url: string, file: File) => {
+        callOrder.push(file.name);
+        uploadSpy();
+      }
+    );
+
+    renderDashboard();
+
+    // The GET /api/store-profiles mock returns savedStore, so the dashboard
+    // auto-hydrates and the upload zone unlocks once stores load. Wait for the
+    // upload button to be enabled, mirroring the single-file upload test.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "上传素材" })).toBeEnabled();
+    });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(fileInput, [
+      new File(["video"], "one.mp4", { type: "video/mp4" }),
+      new File(["video"], "two.mp4", { type: "video/mp4" })
+    ]);
+
+    expect(uploadSpy).toHaveBeenCalledTimes(2);
+    // Guards the load-bearing rate-limit invariant: uploads must run in
+    // sequence (for...of), not concurrently (Promise.all). If this breaks,
+    // the fix is to restore the sequential loop — do NOT switch to Promise.all.
+    expect(callOrder).toEqual(["one.mp4", "two.mp4"]);
+    expect(
+      await within(screen.getByRole("status")).findByText(/已上传 2 个素材/)
+    ).toBeInTheDocument();
+  });
+
+  it("continues uploading remaining files when one fails (failure isolation)", async () => {
+    const user = userEvent.setup();
+    const uploadSpy = vi.fn();
+    const savedStore = {
+      id: "store_fail",
+      ownerId: "demo_user",
+      name: "失败隔离店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    let intentCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/store-profiles" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return { ok: true, json: async () => ({ store: { ...savedStore, ...body, id: savedStore.id } }) };
+        }
+
+        if (url === "/api/assets/upload-intent" && method === "POST") {
+          intentCount += 1;
+          return {
+            ok: true,
+            json: async () => ({
+              intent: {
+                assetId: `asset_${intentCount}`,
+                storageKey: `stores/store_fail/assets/asset_${intentCount}-demo.mp4`,
+                uploadUrl: "https://storage.example/upload",
+                headers: { "Content-Type": "video/mp4" },
+                maxSizeBytes: 200 * 1024 * 1024,
+                expiresInSeconds: 900
+              }
+            })
+          };
+        }
+
+        if (url === "/api/assets/confirm" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return {
+            ok: true,
+            json: async () => ({
+              asset: {
+                id: body.assetId,
+                ownerId: savedStore.ownerId,
+                storeId: savedStore.id,
+                type: "video",
+                originalFilename: body.originalFilename,
+                storageKey: body.storageKey,
+                mimeType: body.mimeType,
+                sizeBytes: body.sizeBytes ?? 1000,
+                tags: [],
+                businessTags: [],
+                status: "uploaded",
+                createdAt: new Date().toISOString()
+              }
+            })
+          };
+        }
+
+        if (url === "/api/assets/analyze" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return {
+            ok: true,
+            json: async () => ({
+              analysis: {
+                id: `analysis_${body.assetId}`,
+                assetId: body.assetId,
+                visualTags: ["food"],
+                businessTags: ["新品推荐"],
+                keywords: ["牛肉面"],
+                confidence: 0.8,
+                recommendedUses: ["new_product"],
+                createdAt: new Date().toISOString()
+              }
+            })
+          };
+        }
+
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    // First upload fails (bad.mp4), second succeeds (good.mp4).
+    vi.spyOn(apiClient, "uploadFileToStorage").mockImplementation(async (_url: string, file: File) => {
+      uploadSpy();
+      if (file.name === "bad.mp4") {
+        throw new Error("network error");
+      }
+    });
+
+    renderDashboard();
+
+    // Mirror the passing multi-file test: savedStore auto-hydrates via
+    // GET /api/store-profiles, so the upload zone unlocks without wizard clicks.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "上传素材" })).toBeEnabled();
+    });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(fileInput, [
+      new File(["video"], "bad.mp4", { type: "video/mp4" }),
+      new File(["video"], "good.mp4", { type: "video/mp4" })
+    ]);
+
+    // Both files were attempted (failure did not abort the batch).
+    expect(uploadSpy).toHaveBeenCalledTimes(2);
+    expect(
+      await within(screen.getByRole("status")).findByText(/成功 1 个.*失败 1 个/)
+    ).toBeInTheDocument();
+  });
 });
