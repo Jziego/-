@@ -1323,4 +1323,77 @@ describe("AI video assistant dashboard", () => {
       selectedAssetIds: expect.arrayContaining(["asset_p1", "asset_p2"])
     });
   });
+
+  it("does not refetch the asset list when deleting (optimistic cache update)", async () => {
+    const user = userEvent.setup();
+    const savedStore = {
+      id: "store_norefresh",
+      ownerId: "demo_user",
+      name: "无刷新店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_nr", ownerId: "demo_user", storeId: "store_norefresh", type: "video", originalFilename: "nr.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url === "/api/assets/asset_nr" && method === "DELETE") {
+        return { ok: true, json: async () => ({ id: "asset_nr" }) };
+      }
+      return {
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: savedAssets };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [] };
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderDashboard();
+
+    await screen.findByText("已选 1 / 共 1");
+
+    const assetsGetCount = () =>
+      fetchMock.mock.calls.filter(
+        ([url, init]) => url === "/api/assets" && (init?.method ?? "GET") === "GET"
+      ).length;
+    const beforeDelete = assetsGetCount();
+
+    await user.click(screen.getByRole("button", { name: "删除素材 nr.mp4" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/assets/asset_nr",
+        expect.objectContaining({ method: "DELETE" })
+      );
+    });
+    // Asset gone from UI via optimistic cache update.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "删除素材 nr.mp4" })).not.toBeInTheDocument()
+    );
+
+    // CRITICAL: deleting must NOT trigger a GET /api/assets refetch. Each
+    // refetch costs a read against the shared L0/L2-read budget; on the
+    // multi-asset dashboard it pushed read load over the limit, cascading into
+    // 429s — and a failed refetch left the stale (still-has-asset) cache, so
+    // the deleted asset reappeared. setQueryData updates the cache directly.
+    expect(assetsGetCount()).toBe(beforeDelete);
+  });
 });

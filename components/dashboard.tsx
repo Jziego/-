@@ -588,13 +588,22 @@ export function Dashboard() {
     }
     try {
       await deleteAsset(id);
+      // Optimistic cache update — mirror the server-side delete in the
+      // react-query cache directly instead of refetching. A refetch costs a
+      // read against the shared L0/L2-read rate-limit budget; on the
+      // multi-asset dashboard, consecutive-delete refetches tipped the limit
+      // and cascaded into 429s. Worse, a 429'd refetch left the stale
+      // (still-has-asset) cache so the deleted asset reappeared. setQueryData
+      // updates instantly with zero extra requests.
+      queryClient.setQueryData<Asset[]>(["assets"], (old) =>
+        (old ?? []).filter((a) => a.id !== id)
+      );
       setLocalAssets((prev) => prev.filter((a) => a.id !== id));
       setSelectedAssetIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
-      await queryClient.invalidateQueries({ queryKey: ["assets"] });
       setMessage("已删除素材。");
     } catch {
       setMessage("删除失败，请稍后重试。");
