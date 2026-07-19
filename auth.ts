@@ -14,6 +14,13 @@ function getResend(): Resend {
   return _resend;
 }
 
+/**
+ * JWT session lifetime. NextAuth v5 defaults maxAge to 30 days; we pin it
+ * explicitly so session-blacklist revocation (revokeSession) can reference the
+ * same value and stay aligned. If this changes, update app/login/actions.ts too.
+ */
+export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: {
     ...PrismaAdapter(getPrisma()!),
@@ -52,7 +59,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         ]
       : []),
   ],
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SECONDS },
   pages: {
     signIn: "/login",
     verifyRequest: "/login/verify",

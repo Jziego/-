@@ -1,7 +1,7 @@
 "use server";
 
 import { rateLimitLogin, getClientIp } from "@/lib/rate-limit";
-import { auth, signIn, signOut } from "@/auth";
+import { auth, signIn, signOut, SESSION_MAX_AGE_SECONDS } from "@/auth";
 import { revokeSession } from "@/lib/session-blacklist";
 import { headers } from "next/headers";
 
@@ -37,8 +37,10 @@ export async function signInWithWeChat() {
 export async function signOutWithRevocation() {
   const session = await auth();
   if (session?.user?.jti) {
-    // Revoke the current JWT. TTL: 7 days (NextAuth default max session).
-    await revokeSession(session.user.jti, 7 * 86400);
+    // Revoke the current JWT for the full session lifetime so the blacklist
+    // entry outlives the cookie (NextAuth v5 default maxAge = 30 days, pinned
+    // via SESSION_MAX_AGE_SECONDS in auth.ts).
+    await revokeSession(session.user.jti, SESSION_MAX_AGE_SECONDS);
   }
   await signOut({ redirectTo: "/login" });
 }
