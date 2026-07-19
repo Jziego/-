@@ -1,4 +1,5 @@
 import { getJobRepository } from "@/lib/repositories";
+import { getOwnerId } from "@/lib/auth-helpers";
 
 /**
  * GET /api/jobs/[id]/progress — SSE stream of job status changes.
@@ -12,9 +13,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   const { id } = await params;
+  const ownerId = await getOwnerId();
 
   const job = await getJobRepository().findById(id);
-  if (!job) {
+  // IDOR guard: must run before the stream is opened. Missing and foreign
+  // both resolve to 404 so existence is not leaked.
+  if (!job || job.ownerId !== ownerId) {
     return new Response(JSON.stringify({ error: "Job not found" }), {
       status: 404,
       headers: { "Content-Type": "application/json" }
