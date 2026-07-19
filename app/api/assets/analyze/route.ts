@@ -5,9 +5,14 @@ import { getAssetAnalysisRepository, getAssetRepository, getStoreRepository } fr
 import { classifyAsset } from "@/lib/services/assets";
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const asset = await getAssetRepository().findById(body.assetId);
-  const store = await getStoreRepository().findById(body.storeId);
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Request body must be valid JSON", 400);
+  }
+  const asset = await getAssetRepository().findById(body.assetId as string);
+  const store = await getStoreRepository().findById(body.storeId as string);
 
   if (!asset || !store) {
     return jsonError("Asset or store not found", 404);
@@ -24,10 +29,10 @@ export async function POST(request: Request) {
   const analysis = await classifyAsset({
     asset,
     store,
-    visualLabels: body.visualLabels,
-    transcript: body.transcript,
-    manualTags: body.manualTags,
-    analysisUnavailable: body.analysisUnavailable
+    visualLabels: body.visualLabels as string[] | undefined,
+    transcript: body.transcript as string | undefined,
+    manualTags: body.manualTags as string[] | undefined,
+    analysisUnavailable: body.analysisUnavailable as boolean | undefined
   });
 
   const saved = await getAssetAnalysisRepository().create(analysis);

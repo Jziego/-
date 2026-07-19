@@ -14,7 +14,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Request body must be valid JSON", 400);
+  }
   const ownerId = await getOwnerId();
   const limited = await applyRateLimit(request, ownerId);
   if (limited) return limited;

@@ -13,7 +13,12 @@ export async function POST(request: Request) {
     return jsonError("Object storage is not configured", 503);
   }
 
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Request body must be valid JSON", 400);
+  }
   const parsed = confirmAssetUploadSchema.safeParse(body);
 
   if (!parsed.success) {

@@ -14,8 +14,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const store = await getStoreRepository().findById(body.storeId);
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Request body must be valid JSON", 400);
+  }
+  const store = await getStoreRepository().findById(body.storeId as string);
 
   if (!store) {
     return jsonError("Store profile not found", 404);
@@ -29,8 +34,9 @@ export async function POST(request: Request) {
     return jsonError("Store profile not found", 404);
   }
 
-  const assetAnalyses = body.assetAnalysisIds?.length
-    ? await getAssetAnalysisRepository().listByIds(body.assetAnalysisIds)
+  const assetAnalysisIds = body.assetAnalysisIds as string[] | undefined;
+  const assetAnalyses = assetAnalysisIds?.length
+    ? await getAssetAnalysisRepository().listByIds(assetAnalysisIds)
     : [];
   const purpose = (body.purpose ?? "store_traffic") as MarketingPurpose;
 
