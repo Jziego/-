@@ -213,6 +213,6 @@ Zeabur 新版 UI 无独立 Build Type / Dockerfile Path 字段，worker 用 Sett
 | L0 外层 IP 限流（60/min, middleware） | 60×200 → **429** `{"error":"rate_limited","message":"Too many requests"}`，**无 Retry-After** ✓ |
 | L2 内层写限流（20/min, route handler） | 20×400 → **429** + `retry-after` + `x-ratelimit-remaining: 0` ✓ |
 | 配额扣减（POST render-projects） | `User.quotaRemaining` **10 → 9** ✓ |
-| JWT 黑名单（revokeSession(jti)） | redis `revoked:<jti>` = `1` TTL≈7d；再访问 → **401** `{"error":"Session revoked","code":"session_revoked"}` ✓ |
+| JWT 黑名单（revokeSession(jti)） | redis `revoked:<jti>` = `1` TTL≈30d（对齐 `SESSION_MAX_AGE_SECONDS`）；再访问 → **401** `{"error":"Session revoked","code":"session_revoked"}` ✓ |
 
 > JWT 黑名单生效是 **middleware 锁 `nodejs` runtime** 改造（Task 3）的关键验证点：Edge 时代 ioredis 不可用导致 fail-open，现已由 nodejs runtime + 直连 `isSessionRevoked` 真实生效。
