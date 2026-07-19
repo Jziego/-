@@ -94,13 +94,25 @@ const purposeByBusinessTag: Record<string, MarketingPurpose> = {
 
 export { ALLOWED_MIME_PREFIXES, MAX_UPLOAD_BYTES };
 
+/**
+ * Thrown by createUploadIntent when input fails validation. These messages are
+ * safe to echo to the client. Other errors (e.g. S3 presign failures) must NOT
+ * be forwarded — routes branch on this type.
+ */
+export class UploadValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UploadValidationError";
+  }
+}
+
 export async function createUploadIntent(input: UploadIntentInput): Promise<UploadIntent> {
   if (!isAllowedMimeType(input.contentType)) {
-    throw new Error(`Unsupported content type. Allowed: ${ALLOWED_MIME_PREFIXES.join(", ")}`);
+    throw new UploadValidationError(`Unsupported content type. Allowed: ${ALLOWED_MIME_PREFIXES.join(", ")}`);
   }
 
   if (input.sizeBytes <= 0 || input.sizeBytes > MAX_UPLOAD_BYTES) {
-    throw new Error(`File size must be between 1 and ${MAX_UPLOAD_BYTES} bytes`);
+    throw new UploadValidationError(`File size must be between 1 and ${MAX_UPLOAD_BYTES} bytes`);
   }
 
   const assetId = createId("asset");
