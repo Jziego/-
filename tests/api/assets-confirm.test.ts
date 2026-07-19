@@ -57,6 +57,10 @@ describe("POST /api/assets/confirm", () => {
       contentLength: 5000,
       contentType: "video/mp4"
     });
+    // MP4 magic bytes appear at offset 4 (....ftyp) — pad with leading zeros.
+    const mp4Magic = new Uint8Array(8);
+    mp4Magic.set([0x66, 0x74, 0x79, 0x70], 4);
+    vi.spyOn(storage, "getFirstBytes").mockResolvedValue(mp4Magic);
 
     const response = await POST(
       new Request("http://localhost/api/assets/confirm", {
@@ -110,6 +114,9 @@ describe("POST /api/assets/confirm", () => {
       contentLength: 5000,
       contentType: "video/mp4"
     });
+    const mp4Magic = new Uint8Array(8);
+    mp4Magic.set([0x66, 0x74, 0x79, 0x70], 4);
+    vi.spyOn(storage, "getFirstBytes").mockResolvedValue(mp4Magic);
 
     const payload = {
       assetId: "asset_3",

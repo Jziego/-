@@ -5,7 +5,8 @@ import { nowIso } from "@/lib/ids";
 import { getAssetRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
 import { confirmAssetUploadSchema } from "@/lib/schemas";
-import { MAX_UPLOAD_BYTES, headObject } from "@/lib/storage";
+import { MAX_UPLOAD_BYTES, deleteObject, getFirstBytes, headObject } from "@/lib/storage";
+import { MAGIC_BYTES_READ_LENGTH, detectMimeFromMagicBytes, isMimeConsistentWithMagic } from "@/lib/file-magic";
 
 export async function POST(request: Request) {
   if (!hasObjectStorage()) {
@@ -52,6 +53,18 @@ export async function POST(request: Request) {
   const sizeBytes = head.contentLength ?? input.sizeBytes;
   if (!sizeBytes || sizeBytes <= 0 || sizeBytes > MAX_UPLOAD_BYTES) {
     return jsonError("Uploaded object size is invalid or exceeds limit", 400);
+  }
+
+  // Server-side MIME verification: never trust the client-supplied contentType
+  // (CLAUDE.md §2). Download the first N bytes and check magic bytes match the
+  // declared type. Mismatch → reject and delete the orphan object so storage is
+  // not polluted by attacker-uploaded HTML/JS/EXE disguised as images.
+  const firstBytes = await getFirstBytes(input.storageKey, MAGIC_BYTES_READ_LENGTH);
+  const detectedMime = detectMimeFromMagicBytes(firstBytes);
+  const claimedMime = head.contentType ?? input.mimeType;
+  if (!isMimeConsistentWithMagic(claimedMime, detectedMime)) {
+    await deleteObject(input.storageKey);
+    return jsonError("Uploaded content does not match the declared MIME type", 400);
   }
 
   const asset = await getAssetRepository().create({

@@ -128,6 +128,24 @@ export async function getObjectToBuffer(key: string): Promise<Uint8Array> {
   return new Uint8Array(await response.Body.transformToByteArray());
 }
 
+/**
+ * Download only the first `length` bytes of an object via a ranged GET. Used
+ * by the upload-confirm flow to verify magic bytes without fetching the whole
+ * file (which can be up to 200 MB). Returns an empty Uint8Array if the object
+ * has no body.
+ */
+export async function getFirstBytes(key: string, length: number): Promise<Uint8Array> {
+  const response = await getS3Client().send(
+    new GetObjectCommand({
+      Bucket: getObjectStorageBucket(),
+      Key: key,
+      Range: `bytes=0-${Math.max(0, length - 1)}`,
+    }),
+  );
+  if (!response.Body) return new Uint8Array();
+  return new Uint8Array(await response.Body.transformToByteArray());
+}
+
 export async function headObject(key: string): Promise<HeadObjectResult> {
   try {
     const response = await getS3Client().send(
