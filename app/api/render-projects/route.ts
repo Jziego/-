@@ -110,12 +110,14 @@ export async function POST(request: Request) {
             }
           }
         } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : "Unknown enqueue error";
-          enqueueResults.push({ jobId: flowJob.name, ok: false, error: errorMsg });
+          // §8: don't forward raw err.message — BullMQ/ioredis errors expose
+          // internal infra (host:port). Log server-side, return ok:false only.
+          console.error("[render-projects] enqueue failed for flow:", flowJob.name, err);
+          enqueueResults.push({ jobId: flowJob.name, ok: false });
           failedJobIds.push(flowJob.name);
           if (flowJob.children) {
             for (const child of flowJob.children) {
-              enqueueResults.push({ jobId: child.name, ok: false, error: `Parent flow failed: ${errorMsg}` });
+              enqueueResults.push({ jobId: child.name, ok: false });
               failedJobIds.push(child.name);
             }
           }
@@ -168,14 +170,15 @@ export async function POST(request: Request) {
         202
       );
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Redis unavailable";
+      // §8: don't leak ioredis/BullMQ internals (host:port) to the client.
+      console.error("[render-projects] enqueue failed:", err);
 
-      // Mark all jobs as failed since we couldn't enqueue
+      // Generic message in DB; full error is in server logs only.
       for (const job of jobs) {
         try {
           await getJobRepository().update(job.id, {
             status: "failed",
-            error: errorMsg,
+            error: "Failed to enqueue to Redis",
             updatedAt: now
           });
         } catch {
@@ -192,7 +195,7 @@ export async function POST(request: Request) {
         // Best-effort
       }
 
-      return jsonOk({ project: { ...project, status: "failed" }, jobs, enqueued: false, error: errorMsg }, 202);
+      return jsonOk({ project: { ...project, status: "failed" }, jobs, enqueued: false }, 202);
     }
   }
 
