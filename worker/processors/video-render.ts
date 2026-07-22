@@ -12,7 +12,7 @@ import type {
   RenderRepository,
   ScriptRepository
 } from "@/lib/repositories/types";
-import { getObjectToBuffer, putObjectFromBuffer } from "@/lib/storage";
+import { createPresignedGetUrl, getObjectToBuffer, putObjectFromBuffer } from "@/lib/storage";
 import {
   buildAss,
   buildFilterGraph,
@@ -22,7 +22,7 @@ import {
   type CompositionMode,
   type TimelineSegment
 } from "@/lib/services/video-compose";
-import { runFfmpeg, type FfmpegInput } from "@/lib/services/ffmpeg-runner";
+import { probeFileDuration, runFfmpeg, type FfmpegInput } from "@/lib/services/ffmpeg-runner";
 import { mkdtempSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -44,7 +44,7 @@ export interface CompositeResult {
 export interface RenderCompositeInput {
   projectId: string;
   mode: CompositionMode;
-  timeline: TimelineSegment[];
+  segments: TimelineSegment[];
   assContent: string;
   subtitleStyle: string;
   talkingHead: VideoOutput | null;
@@ -62,6 +62,8 @@ export interface VideoRenderDeps {
   scriptRepository: ScriptRepository;
   assetRepository: AssetRepository;
   bgmTrackRepository: BgmTrackRepository;
+  /** Returns real duration (seconds) for a video asset; undefined for images / on failure. */
+  probeAssetDuration: (asset: Asset) => Promise<number | undefined>;
   renderComposite: RenderCompositeFn;
 }
 
@@ -80,8 +82,28 @@ export const videoRenderProcessor: ProcessorFn = (job) =>
     scriptRepository: getScriptRepository(),
     assetRepository: getAssetRepository(),
     bgmTrackRepository: getBgmTrackRepository(),
+    probeAssetDuration: defaultProbeAssetDuration,
     renderComposite: defaultRenderComposite
   });
+
+/**
+ * Default duration probe: presign a short-lived GET URL and ffprobe over HTTP
+ * (no full download). Returns undefined for non-video assets or on any error so
+ * the timeline falls back to the image-default slot instead of failing the render.
+ */
+export const defaultProbeAssetDuration = async (asset: Asset): Promise<number | undefined> => {
+  if (asset.type !== "video") return undefined;
+  try {
+    const url = await createPresignedGetUrl(asset.storageKey, 60);
+    const dur = await probeFileDuration(url);
+    return dur > 0 ? dur : undefined;
+  } catch (err) {
+    console.warn(
+      `[video_render] probeAssetDuration failed for ${asset.id}: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return undefined;
+  }
+};
 
 export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promise<VideoOutput> {
   const projectId = job.data.projectId as string;
@@ -103,12 +125,24 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
   );
   const assets = assetResults.filter((a): a is Asset => a !== null);
 
-  const timeline = buildTimeline({
+  // Probe real durations for video assets (Bug B: align timeline to actual media).
+  const probeEntries = await Promise.all(
+    assets.map(async (a) =>
+      a.type === "video" ? ([a.id, await deps.probeAssetDuration(a)] as const) : null
+    )
+  );
+  const assetDurations: Record<string, number> = {};
+  for (const entry of probeEntries) {
+    if (entry && typeof entry[1] === "number") assetDurations[entry[0]] = entry[1];
+  }
+
+  const { segments, totalDurationSec } = buildTimeline({
     scenes: draft.scenes,
     assets,
-    selectedAssetIds: project.selectedAssetIds
+    selectedAssetIds: project.selectedAssetIds,
+    assetDurations,
+    talkingHeadDurationSec: talkingHead?.durationSeconds
   });
-  const totalDuration = timeline.reduce((s, seg) => s + seg.durationSec, 0);
 
   const bgmTrack = project.bgmTrackId
     ? await deps.bgmTrackRepository.findById(project.bgmTrackId)
@@ -117,14 +151,14 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
   const { storageKey, durationSeconds } = await deps.renderComposite({
     projectId,
     mode,
-    timeline,
-    assContent: buildAss(timeline, resolveSubtitlePreset(project.subtitleStyle)),
+    segments,
+    assContent: buildAss(segments, resolveSubtitlePreset(project.subtitleStyle)),
     subtitleStyle: project.subtitleStyle,
     talkingHead,
     assets,
     bgmTrack,
     aspectRatio: project.aspectRatio,
-    totalDurationSec: totalDuration,
+    totalDurationSec,
     onProgress: (pct) => {
       void job.updateProgress(pct);
     }
@@ -181,7 +215,7 @@ export const defaultRenderComposite: RenderCompositeFn = async (input) => {
 
     // Dedup assets across broll segments.
     const seen = new Set<string>();
-    for (const seg of input.timeline) {
+    for (const seg of input.segments) {
       if (seg.role !== "broll" || !seg.assetId || seen.has(seg.assetId)) continue;
       seen.add(seg.assetId);
       const asset = input.assets.find((a) => a.id === seg.assetId);
@@ -192,7 +226,7 @@ export const defaultRenderComposite: RenderCompositeFn = async (input) => {
       assetInputIndex[asset.id] = nextIdx;
       inputs.push({ path: p, isImage: asset.type !== "video" });
       nextIdx++;
-      input.onProgress(5 + Math.round((nextIdx / (input.timeline.length + 2)) * 15));
+      input.onProgress(5 + Math.round((nextIdx / (input.segments.length + 2)) * 15));
     }
 
     let bgmInputIndex: number | undefined;
@@ -209,7 +243,7 @@ export const defaultRenderComposite: RenderCompositeFn = async (input) => {
 
     const filter = buildFilterGraph({
       mode: input.mode,
-      segments: input.timeline,
+      segments: input.segments,
       assetInputIndex,
       talkingHeadInputIndex,
       bgmInputIndex,

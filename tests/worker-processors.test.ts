@@ -54,7 +54,10 @@ describe("video render processor", () => {
     if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl;
   });
 
-  async function seedProject(opts: { withTalkingHead?: boolean } = {}): Promise<string> {
+  async function seedProject(opts: {
+    withTalkingHead?: boolean;
+    selectedAssetIds?: string[];
+  } = {}): Promise<string> {
     const now = nowIso();
     const draft: ScriptDraft = {
       id: "draft_vr",
@@ -76,12 +79,22 @@ describe("video render processor", () => {
       createdAt: now
     };
     await getScriptRepository().create(draft);
+    await getAssetRepository().create({
+      id: "asset_v1", ownerId: "demo_user", storeId: "store_1", type: "video",
+      originalFilename: "v1.mp4", storageKey: "uploads/v1.mp4", mimeType: "video/mp4",
+      sizeBytes: 1000, tags: [], businessTags: [], status: "ready", createdAt: now
+    });
+    await getAssetRepository().create({
+      id: "asset_v2", ownerId: "demo_user", storeId: "store_1", type: "image",
+      originalFilename: "v2.png", storageKey: "uploads/v2.png", mimeType: "image/png",
+      sizeBytes: 500, tags: [], businessTags: [], status: "ready", createdAt: now
+    });
     const project: RenderProject = {
       id: "proj_vr",
       ownerId: "demo_user",
       storeId: "store_1",
       scriptDraftId: draft.id,
-      selectedAssetIds: [],
+      selectedAssetIds: opts.selectedAssetIds ?? ["asset_v1", "asset_v2"],
       avatarProfileId: undefined,
       purpose: "promotion",
       aspectRatio: "9:16",
@@ -108,20 +121,34 @@ describe("video render processor", () => {
     return project.id;
   }
 
-  function depsWithFakeComposite(capture: { mode?: CompositionMode; totalDuration?: number } = {}) {
+  function depsWithFakeComposite(
+    capture: {
+      mode?: CompositionMode;
+      totalDuration?: number;
+      assetIds?: string[];
+      talkingHeadDuration?: number;
+    } = {},
+    probeDurations: Record<string, number> = { asset_v1: 5 }
+  ) {
     return {
       renderRepository: getRenderRepository(),
       scriptRepository: getScriptRepository(),
       assetRepository: getAssetRepository(),
       bgmTrackRepository: getBgmTrackRepository(),
+      probeAssetDuration: async (asset: { id: string; type: string }) =>
+        asset.type === "video" ? (probeDurations[asset.id] ?? 4) : undefined,
       renderComposite: async (input: {
         mode: CompositionMode;
         totalDurationSec: number;
         projectId: string;
+        segments: Array<{ assetId: string | null }>;
+        talkingHead?: { durationSeconds: number } | null;
         onProgress: (pct: number) => void;
       }) => {
         capture.mode = input.mode;
         capture.totalDuration = input.totalDurationSec;
+        capture.assetIds = input.segments.map((s) => s.assetId).filter(Boolean) as string[];
+        capture.talkingHeadDuration = input.talkingHead?.durationSeconds ?? undefined;
         input.onProgress(50);
         return {
           storageKey: `renders/${input.projectId}/output-fake.mp4`,
@@ -138,7 +165,7 @@ describe("video render processor", () => {
       data: { jobId: "j1", projectId, ownerId: "demo_user", payload: { aspectRatio: "9:16", subtitleStyle: "bold_bottom" }, dependsOnJobIds: [] },
       updateProgress
     };
-    const capture: { mode?: CompositionMode; totalDuration?: number } = {};
+    const capture: { mode?: CompositionMode; totalDuration?: number; assetIds?: string[] } = {};
     const output = await processVideoRender(
       mockJob as unknown as BullJob,
       depsWithFakeComposite(capture) as never
@@ -148,7 +175,9 @@ describe("video render processor", () => {
     expect(output.renderProjectId).toBe(projectId);
     expect(output.storageKey).toContain("renders/");
     expect(capture.mode).toBe("asset_only"); // no talking-head product
-    expect(capture.totalDuration).toBe(10); // 4 + 6
+    // asset_only: both assets appear; total = video(5 capped) + image(3) = 8
+    expect(capture.assetIds).toEqual(["asset_v1", "asset_v2"]);
+    expect(capture.totalDuration).toBeCloseTo(8, 5);
     expect(updateProgress).toHaveBeenCalled();
     const persisted = await getRenderRepository().findOutputById(output.id);
     expect(persisted?.kind).toBe("final_composite");
@@ -156,13 +185,31 @@ describe("video render processor", () => {
 
   it("uses presenter_broll mode when a talking-head product exists", async () => {
     const projectId = await seedProject({ withTalkingHead: true });
-    const capture: { mode?: CompositionMode } = {};
+    const capture: { mode?: CompositionMode; assetIds?: string[]; talkingHeadDuration?: number } = {};
     const mockJob = {
       data: { jobId: "j2", projectId, ownerId: "demo_user", payload: { aspectRatio: "9:16", subtitleStyle: "bold_bottom" }, dependsOnJobIds: [] },
       updateProgress: vi.fn()
     };
     await processVideoRender(mockJob as unknown as BullJob, depsWithFakeComposite(capture) as never);
     expect(capture.mode).toBe("presenter_broll");
+    expect(capture.talkingHeadDuration).toBe(10);
+    expect(capture.assetIds).toEqual(["asset_v1", "asset_v2"]); // Bug A fix: all assets present
+  });
+
+  it("aligns total to real probed asset durations, not planned scene durations", async () => {
+    const projectId = await seedProject({ withTalkingHead: true });
+    const capture: { totalDuration?: number } = {};
+    const mockJob = {
+      data: { jobId: "j_dur", projectId, ownerId: "demo_user", payload: { aspectRatio: "9:16", subtitleStyle: "bold_bottom" }, dependsOnJobIds: [] },
+      updateProgress: vi.fn()
+    };
+    // talkingHead=10s. asset_v1 real=2 (cap 2), asset_v2 image (3), presenter closer scene (4).
+    // contentTotal = 2+3+4 = 9 < 10 → total clamps to 9 (NOT the old planned 4+6=10).
+    await processVideoRender(
+      mockJob as unknown as BullJob,
+      depsWithFakeComposite(capture, { asset_v1: 2 }) as never
+    );
+    expect(capture.totalDuration).toBeCloseTo(9, 5);
   });
 
   it("throws when projectId is missing", async () => {
