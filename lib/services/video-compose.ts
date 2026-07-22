@@ -122,7 +122,7 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
 
   let cursor = 0;
   const segments: TimelineSegment[] = beats.map((b, i) => {
-    const duration = Math.max(b.natural * scale, 0.1);
+    const duration = b.natural * scale;
     const start = cursor;
     cursor = start + duration;
     return {

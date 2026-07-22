@@ -40,13 +40,23 @@ describe("video-compose buildTimeline", () => {
     expect(segments[segments.length - 1]?.role).toBe("presenter");
   });
 
-  it("presenter mode: a video asset never exceeds its real (capped) duration", () => {
-    const { segments } = buildTimeline({
+  it("presenter mode: video asset is capped at real duration and scales down when content exceeds the voiceover", () => {
+    // Scale-up never happens (total <= contentTotal), so a3 never exceeds its real 8s.
+    const capped = buildTimeline({
       scenes, assets, selectedAssetIds: ["a3"],
       assetDurations: { a3: 8 }, talkingHeadDurationSec: 40
     });
-    const a3 = segments.find((s) => s.assetId === "a3");
-    expect(a3?.durationSec).toBeLessThanOrEqual(8 + 0.01);
+    const a3c = capped.segments.find((s) => s.assetId === "a3");
+    expect(a3c?.durationSec).toBeLessThanOrEqual(8 + 0.01);
+
+    // TH(8) < contentTotal(4+8+4=16) -> scale 0.5 -> a3 halves to ~4.
+    const shrunk = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a3"],
+      assetDurations: { a3: 8 }, talkingHeadDurationSec: 8
+    });
+    const a3s = shrunk.segments.find((s) => s.assetId === "a3");
+    expect(a3s?.durationSec).toBeLessThan(8);
+    expect(a3s?.durationSec).toBeCloseTo(4, 1);
   });
 
   it("presenter mode: shrinks total when content cannot fill the voiceover (no freeze)", () => {
@@ -56,6 +66,30 @@ describe("video-compose buildTimeline", () => {
     });
     expect(totalDurationSec).toBeLessThan(30);
     expect(totalDurationSec).toBeGreaterThan(0);
+  });
+
+  it("presenter mode: total never exceeds talking-head duration even with many assets (no floor drift)", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `v${i}`, type: "video" as const, tags: [], businessTags: []
+    })) as unknown as Asset[];
+    const durations = Object.fromEntries(many.map((a) => [a.id, 10]));
+    const { segments, totalDurationSec } = buildTimeline({
+      scenes, assets: many, selectedAssetIds: many.map((a) => a.id),
+      assetDurations: durations, talkingHeadDurationSec: 3
+    });
+    // contentTotal (~124s) far exceeds 3s; total must clamp to <= talking-head.
+    expect(totalDurationSec).toBeLessThanOrEqual(3 + 0.01);
+    // And Σ segments must equal the returned total (the invariant the floor broke).
+    const sum = segments.reduce((acc, s) => acc + s.durationSec, 0);
+    expect(Math.abs(sum - totalDurationSec)).toBeLessThan(0.05);
+  });
+
+  it("returns empty segments when no assets and no scenes", () => {
+    const { segments, totalDurationSec } = buildTimeline({
+      scenes: [], assets: [], selectedAssetIds: [], talkingHeadDurationSec: 10
+    });
+    expect(segments).toEqual([]);
+    expect(totalDurationSec).toBe(0);
   });
 
   it("asset_only mode: no talking-head → all assets appear, presenter scenes are not black", () => {
