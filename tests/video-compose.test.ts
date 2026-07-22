@@ -69,17 +69,17 @@ describe("video-compose buildTimeline", () => {
   });
 
   it("presenter mode: total never exceeds talking-head duration even with many assets (no floor drift)", () => {
-    const many = Array.from({ length: 12 }, (_, i) => ({
+    const many = Array.from({ length: 30 }, (_, i) => ({
       id: `v${i}`, type: "video" as const, tags: [], businessTags: []
     })) as unknown as Asset[];
     const durations = Object.fromEntries(many.map((a) => [a.id, 10]));
     const { segments, totalDurationSec } = buildTimeline({
       scenes, assets: many, selectedAssetIds: many.map((a) => a.id),
-      assetDurations: durations, talkingHeadDurationSec: 3
+      assetDurations: durations, talkingHeadDurationSec: 1
     });
-    // contentTotal (~124s) far exceeds 3s; total must clamp to <= talking-head.
-    expect(totalDurationSec).toBeLessThanOrEqual(3 + 0.01);
-    // And Σ segments must equal the returned total (the invariant the floor broke).
+    // contentTotal (~308s) >> TH(1s). With the OLD 0.1s floor this would be ~3.2s
+    // (30 video beats floored to 0.1); without the floor, total clamps to <= 1s.
+    expect(totalDurationSec).toBeLessThanOrEqual(1 + 0.01);
     const sum = segments.reduce((acc, s) => acc + s.durationSec, 0);
     expect(Math.abs(sum - totalDurationSec)).toBeLessThan(0.05);
   });
@@ -184,5 +184,21 @@ describe("buildFilterGraph", () => {
     expect(g.filterComplex).not.toContain("[0:v]trim=start=");
     expect(g.filterComplex).toContain("[0:v]trim=duration=5");
     expect(g.mapAudio).toBe("[abgm]");
+  });
+
+  it("asset_only: a broll beat with a resolved asset never falls back to black color source", () => {
+    const g = buildFilterGraph({
+      mode: "asset_only",
+      segments: [
+        { role: "broll", startSec: 0, endSec: 4, durationSec: 4, sceneOrder: 1, text: "x", assetId: "a1" }
+      ],
+      assetInputIndex: { a1: 0 },
+      assPath: "/tmp/subs.ass",
+      width: 1080,
+      height: 1920,
+      totalDurationSec: 4
+    });
+    expect(g.filterComplex).toContain("[0:v]trim=duration=4");
+    expect(g.filterComplex).not.toContain("color=c=black");
   });
 });
