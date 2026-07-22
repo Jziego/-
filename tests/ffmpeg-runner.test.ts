@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync, statSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
-import { runFfmpeg } from "@/lib/services/ffmpeg-runner";
+import { runFfmpeg, probeFileDuration } from "@/lib/services/ffmpeg-runner";
 import { buildFilterGraph, buildAss } from "@/lib/services/video-compose";
 
 const hasFfmpeg = (() => {
@@ -57,6 +57,26 @@ runner("ffmpeg runner (requires the ffmpeg binary)", () => {
       expect(statSync(outPath).size).toBeGreaterThan(1000);
       // mp4 'ftyp' box sanity (bytes 4..7 are ASCII 'ftyp')
       expect(readFileSync(outPath).subarray(4, 8).toString("latin1")).toBe("ftyp");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("probeFileDuration returns the duration of a generated test video", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ff-probe-"));
+    try {
+      const vidPath = join(dir, "clip.mp4");
+      // Generate a 3-second test video (same lavfi trick the suite already uses).
+      execSync(
+        'ffmpeg -hide_banner -loglevel error -f lavfi -i "color=c=blue:s=320x568:d=3" -c:v libx264 -pix_fmt yuv420p ' +
+          vidPath,
+        { stdio: "ignore" }
+      );
+
+      const dur = await probeFileDuration(vidPath);
+      // ffprobe reports ~3.0s; allow encoder jitter.
+      expect(dur).toBeGreaterThanOrEqual(2.8);
+      expect(dur).toBeLessThanOrEqual(3.2);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

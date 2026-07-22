@@ -66,3 +66,23 @@ export function runFfmpeg(args: RunFfmpegArgs): Promise<void> {
     cmd.run();
   });
 }
+
+/**
+ * Probe the duration (seconds) of a media file or HTTP URL via ffprobe. Used by
+ * the render worker to learn the real duration of a video asset (which is NOT
+ * populated at upload time) so the timeline can be aligned to actual media
+ * length. Resolves to 0 if the probe fails or reports no duration — callers
+ * treat 0/missing as "use the image default slot".
+ */
+export function probeFileDuration(pathOrUrl: string): Promise<number> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(pathOrUrl, (err: Error | null, data: { format?: { duration?: number | string } }) => {
+      if (err || !data?.format?.duration) {
+        resolve(0);
+        return;
+      }
+      const dur = Number(data.format.duration);
+      resolve(Number.isFinite(dur) ? dur : 0);
+    });
+  });
+}
