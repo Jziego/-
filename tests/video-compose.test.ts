@@ -3,46 +3,81 @@ import { buildTimeline, resolveCompositionMode, buildAss, resolveSubtitlePreset,
 import type { TimelineSegment } from "@/lib/services/video-compose";
 import type { Asset, ScriptScene, VideoOutput } from "@/lib/types";
 
-const scenes: ScriptScene[] = [
-  { order: 1, text: "开场", durationSeconds: 4, assetHints: ["门店"], role: "presenter" },
-  { order: 2, text: "产品", durationSeconds: 7, assetHints: ["招牌产品"], role: "broll" },
-  { order: 3, text: "CTA", durationSeconds: 4, assetHints: ["促销"], role: "presenter" }
-];
+describe("video-compose buildTimeline", () => {
+  const scenes: ScriptScene[] = [
+    { order: 1, text: "开场", durationSeconds: 4, assetHints: ["门店"], role: "presenter" },
+    { order: 2, text: "产品", durationSeconds: 7, assetHints: ["招牌产品"], role: "broll" },
+    { order: 3, text: "CTA", durationSeconds: 4, assetHints: ["促销"], role: "presenter" }
+  ];
+  const assets: Asset[] = [
+    { id: "a1", type: "video", tags: [], businessTags: [] } as unknown as Asset,
+    { id: "a2", type: "image", tags: [], businessTags: [] } as unknown as Asset,
+    { id: "a3", type: "video", tags: [], businessTags: [] } as unknown as Asset
+  ];
 
-function asset(id: string, tags: string[] = [], businessTags: string[] = []): Asset {
-  return { id, tags, businessTags } as unknown as Asset;
-}
-
-const assets: Asset[] = [asset("a1", ["招牌产品"]), asset("a2", [], ["门店"])];
-
-describe("video-compose", () => {
-  it("accumulates scene durations into [start,end] windows", () => {
-    const tl = buildTimeline({ scenes, assets, selectedAssetIds: ["a1", "a2"] });
-    expect(tl).toHaveLength(3);
-    expect(tl[0]).toMatchObject({ startSec: 0, endSec: 4, durationSec: 4 });
-    expect(tl[1]).toMatchObject({ startSec: 4, endSec: 11, durationSec: 7 });
-    expect(tl[2]).toMatchObject({ startSec: 11, endSec: 15, durationSec: 4 });
+  it("presenter mode: every selected asset gets its own broll segment", () => {
+    const { segments } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a1", "a2", "a3"],
+      assetDurations: { a1: 5, a3: 8 }, talkingHeadDurationSec: 20
+    });
+    const brollAssetIds = segments.filter((s) => s.role === "broll").map((s) => s.assetId);
+    expect(brollAssetIds).toEqual(["a1", "a2", "a3"]);
   });
 
-  it("resolves an asset for broll via hint intersection, null for presenter", () => {
-    const tl = buildTimeline({ scenes, assets, selectedAssetIds: ["a1", "a2"] });
-    expect(tl[0]?.assetId).toBeNull(); // presenter
-    expect(tl[1]?.assetId).toBe("a1"); // broll: "招牌产品" matches a1.tags
-    expect(tl[2]?.assetId).toBeNull(); // presenter
+  it("presenter mode: total equals talking-head duration and segments are contiguous", () => {
+    const { segments, totalDurationSec } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a1", "a2", "a3"],
+      assetDurations: { a1: 5, a3: 8 }, talkingHeadDurationSec: 20
+    });
+    const sum = segments.reduce((acc, s) => acc + s.durationSec, 0);
+    expect(Math.abs(sum - totalDurationSec)).toBeLessThan(0.05);
+    expect(totalDurationSec).toBeCloseTo(20, 1);
+    expect(segments[0]?.startSec).toBe(0);
+    for (let i = 1; i < segments.length; i++) {
+      expect(segments[i]?.startSec).toBeCloseTo(segments[i - 1]?.endSec ?? -1, 5);
+    }
+    expect(segments[0]?.role).toBe("presenter");
+    expect(segments[segments.length - 1]?.role).toBe("presenter");
   });
 
-  it("falls back to round-robin selectedAssetIds when no hint matches", () => {
-    const noMatch: ScriptScene[] = [
-      { order: 1, text: "x", durationSeconds: 4, assetHints: ["不存在"], role: "broll" }
-    ];
-    const tl = buildTimeline({ scenes: noMatch, assets, selectedAssetIds: ["a1"] });
-    expect(tl[0]?.assetId).toBe("a1");
+  it("presenter mode: a video asset never exceeds its real (capped) duration", () => {
+    const { segments } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a3"],
+      assetDurations: { a3: 8 }, talkingHeadDurationSec: 40
+    });
+    const a3 = segments.find((s) => s.assetId === "a3");
+    expect(a3?.durationSec).toBeLessThanOrEqual(8 + 0.01);
+  });
+
+  it("presenter mode: shrinks total when content cannot fill the voiceover (no freeze)", () => {
+    const { totalDurationSec } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a1", "a2"],
+      assetDurations: { a1: 5 }, talkingHeadDurationSec: 30
+    });
+    expect(totalDurationSec).toBeLessThan(30);
+    expect(totalDurationSec).toBeGreaterThan(0);
+  });
+
+  it("asset_only mode: no talking-head → all assets appear, presenter scenes are not black", () => {
+    const { segments } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a1", "a2", "a3"],
+      assetDurations: { a1: 5, a3: 8 }
+    });
+    expect(segments.every((s) => s.role === "broll" && s.assetId !== null)).toBe(true);
+    expect(segments.map((s) => s.assetId)).toEqual(["a1", "a2", "a3"]);
+  });
+
+  it("de-dupes repeated selectedAssetIds and drops ids with no matching asset", () => {
+    const { segments } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a1", "missing", "a1", "a2"],
+      assetDurations: { a1: 5 }, talkingHeadDurationSec: 20
+    });
+    const ids = segments.filter((s) => s.role === "broll").map((s) => s.assetId);
+    expect(ids).toEqual(["a1", "a2"]);
   });
 
   it("resolveCompositionMode returns presenter_broll when talking-head exists, else asset_only", () => {
-    expect(resolveCompositionMode({ kind: "talking_head" } as VideoOutput)).toBe(
-      "presenter_broll"
-    );
+    expect(resolveCompositionMode({ kind: "talking_head" } as VideoOutput)).toBe("presenter_broll");
     expect(resolveCompositionMode(null)).toBe("asset_only");
   });
 });

@@ -1,4 +1,4 @@
-import type { Asset, ScriptScene, VideoOutput } from "@/lib/types";
+import type { Asset, SceneRole, ScriptScene, VideoOutput } from "@/lib/types";
 
 export type CompositionMode = "presenter_broll" | "asset_only";
 
@@ -22,63 +22,121 @@ export function resolveCompositionMode(talkingHead: VideoOutput | null): Composi
 }
 
 /**
- * Build a flat timeline of segments from scenes, accumulating durationSeconds
- * into [startSec, endSec] windows. Broll segments resolve a selected asset via
- * assetHint intersection (tags/businessTags); presenter segments get null.
- * When no hint matches, falls back to round-robin over selectedAssetIds.
+ * Build a real-duration-aligned, asset-driven timeline.
+ *
+ * Every selected asset becomes its own broll segment (Bug A fix: all uploaded
+ * assets appear). Segment durations are grounded in actual media length — the
+ * talking-head TTS duration anchors the total in presenter mode, and each
+ * video asset uses its ffprobe'd length (Bug B fix: the concatenated video
+ * stream now equals totalDurationSec, so the tail no longer freezes).
+ *
+ * Σ segment.durationSec === totalDurationSec by construction (the returned
+ * totalDurationSec is the actual accumulated cursor). In presenter mode the
+ * total is min(talkingHeadDuration, contentTotal) so the output never exceeds
+ * the available footage/voiceover.
  */
-export function buildTimeline(args: {
+export interface BuildTimelineArgs {
   scenes: ScriptScene[];
   assets: Asset[];
   selectedAssetIds: string[];
-}): TimelineSegment[] {
-  const selectedIds = args.selectedAssetIds;
-  let cursor = 0;
-  let rr = 0;
-
-  return args.scenes.map((scene) => {
-    const duration = Math.max(scene.durationSeconds, 0.1);
-    const start = cursor;
-    const end = cursor + duration;
-    cursor = end;
-
-    const assetId =
-      scene.role === "broll"
-        ? resolveAssetForScene(scene, args.assets, selectedIds, () => {
-            const id = selectedIds[rr % Math.max(selectedIds.length, 1)];
-            rr += 1;
-            return id ?? null;
-          })
-        : null;
-
-    return {
-      role: scene.role,
-      startSec: start,
-      endSec: end,
-      durationSec: duration,
-      sceneOrder: scene.order,
-      text: scene.text,
-      assetId
-    };
-  });
+  /** assetId → real ffprobe seconds, for video assets. Images use imageDefaultSec. */
+  assetDurations?: Record<string, number>;
+  /** Authoritative total when a talking-head product exists (presenter mode). */
+  talkingHeadDurationSec?: number;
+  /** Duration slot for image assets. Default 3. */
+  imageDefaultSec?: number;
+  /** Cap a single video clip's contribution. Default 12. */
+  maxClipSec?: number;
 }
 
-function resolveAssetForScene(
-  scene: ScriptScene,
-  assets: Asset[],
-  selectedIds: string[],
-  fallback: () => string | null
-): string | null {
-  const hints = new Set(scene.assetHints.map((h) => h.toLowerCase()));
-  const selected = new Set(selectedIds);
-  const match = assets.find((a) =>
-    selected.has(a.id) &&
-    [...(a.tags ?? []), ...(a.businessTags ?? [])].some((t) =>
-      hints.has(String(t).toLowerCase())
-    )
-  );
-  if (match) return match.id;
-  return fallback();
+export interface BuildTimelineResult {
+  segments: TimelineSegment[];
+  totalDurationSec: number;
+}
+
+export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
+  const assetDurations = args.assetDurations ?? {};
+  const imageDefaultSec = args.imageDefaultSec ?? 3;
+  const maxClipSec = args.maxClipSec ?? 12;
+  const hasTalkingHead =
+    typeof args.talkingHeadDurationSec === "number" && args.talkingHeadDurationSec > 0;
+
+  // Ordered, existing, de-duped selected assets = the broll pool.
+  const seen = new Set<string>();
+  const pool: Asset[] = [];
+  for (const id of args.selectedAssetIds) {
+    if (seen.has(id)) continue;
+    const asset = args.assets.find((a) => a.id === id);
+    if (asset) {
+      seen.add(id);
+      pool.push(asset);
+    }
+  }
+
+  // Natural duration: video = real (capped) length; image = default slot.
+  const naturalFor = (a: Asset): number =>
+    a.type === "video"
+      ? Math.min(Math.max(assetDurations[a.id] ?? imageDefaultSec, 0.5), maxClipSec)
+      : imageDefaultSec;
+
+  // Subtitle text pool: cycle scene texts across broll beats.
+  const subtitlePool = args.scenes.map((s) => s.text).filter((t) => t.length > 0);
+  let textCursor = 0;
+  const nextText = (): string =>
+    subtitlePool.length > 0 ? subtitlePool[textCursor++ % subtitlePool.length] : "";
+
+  type Beat = { role: SceneRole; assetId: string | null; text: string; natural: number };
+  const beats: Beat[] = [];
+
+  const presenterScenes = args.scenes.filter((s) => s.role === "presenter");
+  const openers = presenterScenes.slice(0, -1);
+  const closer = presenterScenes.length > 0 ? presenterScenes[presenterScenes.length - 1] : undefined;
+
+  if (hasTalkingHead) {
+    for (const s of openers) {
+      beats.push({ role: "presenter", assetId: null, text: s.text, natural: Math.max(s.durationSeconds, 0.5) });
+    }
+    for (const a of pool) {
+      beats.push({ role: "broll", assetId: a.id, text: nextText(), natural: naturalFor(a) });
+    }
+    if (closer) {
+      beats.push({ role: "presenter", assetId: null, text: closer.text, natural: Math.max(closer.durationSeconds, 0.5) });
+    }
+  } else {
+    for (const a of pool) {
+      beats.push({ role: "broll", assetId: a.id, text: nextText(), natural: naturalFor(a) });
+    }
+    if (pool.length === 0) {
+      // No assets selected: one beat per script scene so the video is never empty.
+      for (const s of args.scenes) {
+        beats.push({ role: "broll", assetId: null, text: s.text, natural: Math.max(s.durationSeconds, 0.5) });
+      }
+    }
+  }
+
+  const contentTotal = beats.reduce((acc, b) => acc + b.natural, 0);
+  const total = hasTalkingHead
+    ? Math.min(args.talkingHeadDurationSec as number, contentTotal)
+    : contentTotal;
+  const scale = contentTotal > 0 ? total / contentTotal : 1;
+
+  let cursor = 0;
+  const segments: TimelineSegment[] = beats.map((b, i) => {
+    const duration = Math.max(b.natural * scale, 0.1);
+    const start = cursor;
+    cursor = start + duration;
+    return {
+      role: b.role,
+      startSec: start,
+      endSec: cursor,
+      durationSec: duration,
+      sceneOrder: i + 1,
+      text: b.text,
+      assetId: b.assetId
+    };
+  });
+
+  return { segments, totalDurationSec: cursor };
 }
 
 // ── Subtitle (ASS) generation ──────────────────────────────────────────────
