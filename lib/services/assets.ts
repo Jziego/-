@@ -297,24 +297,58 @@ function inferBusinessTags(input: {
 }): string[] {
   const text = `${input.visualTags.join(" ")} ${input.transcript ?? ""} ${input.filename}`.toLowerCase();
   const tags: string[] = [];
+  const industry = input.industry;
 
-  if (input.industry.includes("餐饮") || input.industry.includes("烘焙")) {
-    if (text.includes("croissant") || text.includes("可颂") || text.includes("蛋糕") || text.includes("牛肉面")) {
-      tags.push("新品推荐");
-    }
-    if (text.includes("门店") || text.includes("环境") || text.includes("store")) {
-      tags.push("门店环境");
-    }
-    if (text.includes("套餐") || text.includes("促销") || text.includes("sale")) {
-      tags.push("促销");
-    }
+  const isFnb = industry.includes("餐饮") || industry.includes("烘焙");
+  const isRetail = industry.includes("零售");
+  const isBeauty = industry.includes("美业") || industry.includes("美容") || industry.includes("美甲");
+  const isEdu = industry.includes("教育") || industry.includes("培训");
+  const isService = industry.includes("生活服务") || industry.includes("服务");
+
+  const has = (...keys: string[]) => keys.some((k) => text.includes(k));
+
+  if (isFnb) {
+    if (has("croissant", "可颂", "蛋糕", "牛肉面", "新品", "new")) tags.push("新品推荐");
+    if (has("门店", "环境", "store", "front")) tags.push("门店环境");
+    if (has("套餐", "促销", "sale", "半价")) tags.push("促销");
+  }
+  if (isRetail) {
+    if (has("新品", "new", "上架", "商品")) tags.push("新品推荐");
+    if (has("促销", "sale", "折扣", "特价")) tags.push("促销");
+    if (has("门店", "柜台", "陈列", "store")) tags.push("门店环境");
+  }
+  if (isBeauty) {
+    if (has("造型", "美甲", "美容", "护肤", "设计", "nail", "beauty")) tags.push("造型展示");
+    if (has("门店", "环境", "store", "工作室")) tags.push("门店环境");
+    if (has("预约", "体验", "口碑", "好评")) tags.push("口碑");
+  }
+  if (isEdu) {
+    if (has("课程", "体验课", "名师", "试听", "class", "course")) tags.push("课程展示");
+    if (has("报名", "促销", "优惠", "sale")) tags.push("促销");
+    if (has("门店", "教室", "环境", "store")) tags.push("门店环境");
+  }
+  if (isService) {
+    if (has("门店", "环境", "store", "门面")) tags.push("门店环境");
+    if (has("口碑", "好评", "师傅", "专业")) tags.push("口碑");
+    if (has("预约", "上门", "促销", "优惠")) tags.push("促销");
   }
 
   return tags;
 }
 
 function extractBusinessKeywords(text: string): string[] {
-  const candidates = ["牛肉面", "可颂", "蛋糕", "午餐", "下午茶", "出炉", "促销", "到店"];
+  const candidates = [
+    // 餐饮/烘焙
+    "牛肉面", "可颂", "蛋糕", "午餐", "下午茶", "出炉", "套餐",
+    // 零售
+    "新品", "上架", "特价", "折扣",
+    // 美业
+    "美甲", "美容", "护肤", "造型", "预约",
+    // 教育
+    "体验课", "课程", "报名", "试听",
+    // 生活服务 / 通用
+    "促销", "到店", "上门", "口碑"
+  ];
   return candidates.filter((keyword) => text.includes(keyword));
 }
 

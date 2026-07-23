@@ -143,4 +143,25 @@ describe("asset upload and analysis", () => {
     const analysis = await classifyAsset({ asset, store, analysisUnavailable: true });
     expect(analysis.analysisStatus).toBe("succeeded");
   });
+
+  it("rule fallback produces business tags for a 美业 store", async () => {
+    const beautyStore = { ...store, industry: "美业", mainProducts: ["美甲", "美容"] };
+    const analysis = await classifyAsset({
+      asset: { ...asset, originalFilename: "nail-art-design.mp4" },
+      store: beautyStore,
+      analysisUnavailable: true
+    });
+    expect(analysis.businessTags.length).toBeGreaterThan(0);
+    expect(analysis.analysisStatus).toBe("succeeded");
+  });
+
+  it("rule fallback produces business tags for a 教育培训 store", async () => {
+    const eduStore = { ...store, industry: "教育培训", mainProducts: ["英语体验课"] };
+    const analysis = await classifyAsset({
+      asset: { ...asset, originalFilename: "demo-class.mp4" },
+      store: eduStore,
+      analysisUnavailable: true
+    });
+    expect(analysis.businessTags.length).toBeGreaterThan(0);
+  });
 });
