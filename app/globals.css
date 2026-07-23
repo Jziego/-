@@ -412,6 +412,26 @@ strong {
   color: var(--success);
 }
 
+.analysisStatusList {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analysisStatusList li {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.analysisStatusList .secondaryButton {
+  width: auto;
+}
+
 .form {
   display: grid;
   gap: 22px;
