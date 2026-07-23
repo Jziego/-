@@ -62,6 +62,14 @@ describe("POST /api/assets/[id]/reanalyze", () => {
     expect(res.status).toBe(404);
   });
 
+  it("returns 404 for an asset owned by another user (IDOR guard)", async () => {
+    const assetRepo = new MemoryAssetRepository();
+    await assetRepo.create({ ...baseAsset, ownerId: "other_user" });
+    vi.spyOn(repositories, "getAssetRepository").mockReturnValue(assetRepo);
+    const res = await POST(newRequest("asset_a"), { params: Promise.resolve({ id: "asset_a" }) });
+    expect(res.status).toBe(404);
+  });
+
   it("returns 503 when AI is not configured", async () => {
     const assetRepo = new MemoryAssetRepository();
     await assetRepo.create(baseAsset);
