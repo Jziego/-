@@ -90,4 +90,30 @@ describe("script engine", () => {
 
     expect(draft.scenes.map((s) => s.role)).toEqual(["presenter", "broll", "presenter"]);
   });
+
+  it("fills matchedAssetId on generated scenes via tag overlap", async () => {
+    const draft = await createScriptDraft({
+      store,
+      assetAnalyses: analysis,
+      purpose: "store_traffic",
+      platform: "douyin",
+      forcedRawCopy: "现熬牛骨汤，午市出餐快",
+    });
+    // template scenes 的 hints 含 analysis 的 businessTags（招牌菜/到店引流）
+    const matched = draft.scenes.map((s) => s.matchedAssetId ?? null);
+    expect(matched).toContain("asset_1");
+  });
+
+  it("accepts targetDurationSec and threads a duration hint into the prompt", async () => {
+    // forcedRawCopy 路径不依赖 AI，仅验证入参被接受且不抛错
+    const draft = await createScriptDraft({
+      store,
+      assetAnalyses: analysis,
+      purpose: "promotion",
+      platform: "douyin",
+      forcedRawCopy: "短文案测试",
+      targetDurationSec: 15,
+    });
+    expect(draft.scenes.length).toBeGreaterThan(0);
+  });
 });

@@ -1,5 +1,6 @@
 import { createId, nowIso } from "@/lib/ids";
 import { hasAI, chatCompletionJSON, sanitizePromptField } from "@/lib/services/ai-client";
+import { matchAssetsToScenes, type AssetMatchInput } from "@/lib/services/script-match";
 import type { AssetAnalysis, MarketingPurpose, Platform, SceneRole, ScriptDraft, ScriptScene, StoreProfile } from "@/lib/types";
 
 // ── Public input types ─────────────────────────────────────────────────────
@@ -10,6 +11,8 @@ interface ScriptDraftInput {
   purpose: MarketingPurpose;
   platform?: Platform;
   forcedRawCopy?: string;
+  /** 目标时长（秒）：15 / 30 / 60，影响 AI 场景数与文案量。 */
+  targetDurationSec?: number;
 }
 
 interface TemplateDraftInput {
@@ -66,7 +69,7 @@ const platformNames: Record<Platform, string> = {
 // ── System prompt ──────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `你是为本地实体店创作短视频脚本的营销文案专家。
-你的文案必须口语化、有网感、适合短视频配音。视频时长控制在15-30秒。
+你的文案必须口语化、有网感、适合短视频配音。视频时长按用户给的【目标时长】控制，场景数与每镜配音字数匹配目标时长。
 
 要求：
 - 开头3秒内抓住注意力（hook）
@@ -98,6 +101,12 @@ const SCHEMA_DESCRIPTION = `{
 
 // ── Prompt builders ────────────────────────────────────────────────────────
 
+function durationGuidance(target?: number): string {
+  if (target === 15) return "约15秒，分2-3个场景，每镜配音不超过12字";
+  if (target === 60) return "约60秒，分6-8个场景，每镜配音约15字";
+  return "约30秒，分3-5个场景，每镜配音8-15字";
+}
+
 function buildUserPrompt(input: ScriptDraftInput): string {
   const store = input.store;
   const hints = collectAssetHints(input.assetAnalyses);
@@ -116,6 +125,7 @@ function buildUserPrompt(input: ScriptDraftInput): string {
     ``,
     `【素材标签】${hints.length ? hints.join("、") : "无特定标签"}`,
     ``,
+    `【目标时长】${durationGuidance(input.targetDurationSec)}`,
     `【营销目的】${purposeLabels[input.purpose]}`,
     `【发布平台】${platformNames[platform]}`,
   ].filter(Boolean);
@@ -270,6 +280,12 @@ function buildDraft(input: {
   cta: string;
   warnings: string[];
 }): ScriptDraft {
+  const matchInputs: AssetMatchInput[] = input.assetAnalyses.map((a) => ({
+    assetId: a.assetId,
+    features: [...new Set([...a.businessTags, ...a.keywords, ...a.visualTags])],
+  }));
+  const scenes = matchAssetsToScenes(input.scenes, matchInputs);
+
   return {
     id: createId("script"),
     ownerId: input.store.ownerId,
@@ -278,7 +294,7 @@ function buildDraft(input: {
     platform: input.platform,
     title: input.title,
     hook: input.hook,
-    scenes: input.scenes,
+    scenes,
     voiceover: input.voiceover,
     captions: input.captions,
     cta: input.cta,
