@@ -20,17 +20,13 @@ export async function POST(request: Request) {
   } catch {
     return jsonError("Request body must be valid JSON", 400);
   }
-  const store = await getStoreRepository().findById(body.storeId as string);
-
-  if (!store) {
-    return jsonError("Store profile not found", 404);
-  }
-
   const ownerId = await getOwnerId();
   const limited = await applyRateLimit(request, ownerId);
   if (limited) return limited;
-  // IDOR guard
-  if (store.ownerId !== ownerId) {
+
+  const store = await getStoreRepository().findById(body.storeId as string);
+  // Not-found + IDOR guard (both 404, no leak)
+  if (!store || store.ownerId !== ownerId) {
     return jsonError("Store profile not found", 404);
   }
 
