@@ -184,7 +184,7 @@ describe("POST /api/render-projects", () => {
         scriptDraftId: script.id,
         selectedAssetIds: [],
         aspectRatio: "16:9",
-        subtitleStyle: "clean_center"
+        subtitleStyle: "bold_bottom"
       })
     });
 
