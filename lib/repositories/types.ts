@@ -41,6 +41,7 @@ export interface ScriptRepository {
   listByOwner(ownerId: string): Promise<ScriptDraft[]>;
   create(script: ScriptDraft): Promise<ScriptDraft>;
   findById(id: string): Promise<ScriptDraft | null>;
+  update(id: string, data: Partial<ScriptDraft>): Promise<ScriptDraft>;
 }
 
 export interface RenderRepository {

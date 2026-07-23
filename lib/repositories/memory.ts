@@ -118,6 +118,15 @@ export class MemoryScriptRepository implements ScriptRepository {
   async findById(id: string): Promise<ScriptDraft | null> {
     return getRuntimeState().scripts.find((script) => script.id === id) ?? null;
   }
+
+  async update(id: string, data: Partial<ScriptDraft>): Promise<ScriptDraft> {
+    const state = getRuntimeState();
+    const index = state.scripts.findIndex((s) => s.id === id);
+    if (index < 0) throw new Error(`ScriptDraft not found: ${id}`);
+    const updated = { ...state.scripts[index], ...data, id: state.scripts[index].id };
+    state.scripts[index] = updated;
+    return updated;
+  }
 }
 
 export class MemoryRenderRepository implements RenderRepository {

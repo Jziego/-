@@ -174,6 +174,17 @@ export class PrismaScriptRepository implements ScriptRepository {
     const row = await this.prisma.scriptDraft.findUnique({ where: { id } });
     return row ? toScriptDraft(row) : null;
   }
+
+  async update(id: string, data: Partial<ScriptDraft>): Promise<ScriptDraft> {
+    const existing = await this.findById(id);
+    if (!existing) throw new Error(`ScriptDraft not found: ${id}`);
+    const merged = { ...existing, ...data, id };
+    const row = await this.prisma.scriptDraft.update({
+      where: { id },
+      data: toScriptDraftInput(merged),
+    });
+    return toScriptDraft(row);
+  }
 }
 
 export class PrismaRenderRepository implements RenderRepository {
