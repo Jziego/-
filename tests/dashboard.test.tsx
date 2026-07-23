@@ -1526,4 +1526,71 @@ describe("AI video assistant dashboard", () => {
     // the deleted asset reappeared. setQueryData updates the cache directly.
     expect(assetsGetCount()).toBe(beforeDelete);
   });
+
+  it("prefills store-profile fields from the AI suggestion without auto-saving", async () => {
+    const user = userEvent.setup();
+    let suggestPosted = false;
+    let storePosts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/store-profiles/suggest" && method === "POST") {
+          suggestPosted = true;
+          return {
+            ok: true,
+            json: async () => ({
+              suggestion: {
+                mainProducts: ["牛肉面", "葱油拌面"],
+                sellingPoints: ["现熬牛骨汤"],
+                targetCustomers: ["上班族"],
+                promotions: ["午餐半价"],
+                brandTone: "亲切接地气"
+              }
+            })
+          };
+        }
+
+        if (url === "/api/store-profiles" && method === "POST") {
+          storePosts += 1;
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          return { ok: true, json: async () => ({ store: body }) };
+        }
+
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    // Step 1 already has defaults (name/industry/location), advance to step 2 (产品与人设).
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    expect(screen.getByRole("heading", { name: "产品与人设" })).toBeInTheDocument();
+
+    const suggestButton = await screen.findByRole("button", { name: /AI 建议/ });
+    await user.click(suggestButton);
+
+    expect(suggestPosted).toBe(true);
+    const mainProductsInput = await screen.findByLabelText(/主营产品/);
+    expect((mainProductsInput as HTMLInputElement).value).toContain("牛肉面");
+    expect((mainProductsInput as HTMLInputElement).value).toContain("葱油拌面");
+
+    // The suggestion prefills for review but does NOT auto-save the store.
+    expect(storePosts).toBe(0);
+    expect(
+      await within(screen.getByRole("status")).findByText("AI 建议已填入，请审阅后保存。")
+    ).toBeInTheDocument();
+  });
 });

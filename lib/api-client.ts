@@ -8,6 +8,7 @@ import type {
   StoreProfile,
   VideoOutput
 } from "@/lib/types";
+import type { StoreSuggestion, StoreSuggestionInput } from "@/lib/services/store-suggest";
 
 /**
  * Error from a non-2xx API response. Carries the HTTP status so callers (and
@@ -67,6 +68,14 @@ export async function saveStore(profile: StoreProfile): Promise<StoreProfile> {
     body: JSON.stringify(profile)
   });
   return data.store;
+}
+
+export async function suggestStoreProfileApi(input: StoreSuggestionInput): Promise<StoreSuggestion> {
+  const data = await api<{ suggestion: StoreSuggestion }>("/api/store-profiles/suggest", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+  return data.suggestion;
 }
 
 export interface UploadIntentResponse {

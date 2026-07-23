@@ -24,6 +24,7 @@ import {
   fetchVideoOutputUrl,
   requestTalkingHeadApi,
   saveStore,
+  suggestStoreProfileApi,
   updateScriptDraftApi,
   uploadFileToStorage
 } from "@/lib/api-client";
@@ -431,6 +432,7 @@ export function Dashboard() {
     register,
     trigger,
     getValues,
+    setValue,
     getFieldState,
     reset,
     formState: { dirtyFields, errors }
@@ -581,6 +583,35 @@ export function Dashboard() {
   function handleStoreFormSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void submitCurrentStoreStep();
+  }
+
+  async function handleSuggestStore() {
+    if (pendingAction) return;
+    const name = getValues("name");
+    const industry = getValues("industry");
+    if (!name || !industry) {
+      setMessage("请先填写门店名称和行业，再使用 AI 建议。");
+      return;
+    }
+    setPendingAction("store");
+    try {
+      const suggestion = await suggestStoreProfileApi({
+        name,
+        industry,
+        location: getValues("location") || undefined
+      });
+      setValue("mainProducts", joinCsv(suggestion.mainProducts), { shouldDirty: true });
+      setValue("targetCustomers", joinCsv(suggestion.targetCustomers), { shouldDirty: true });
+      setValue("sellingPoints", joinCsv(suggestion.sellingPoints), { shouldDirty: true });
+      setValue("promotions", joinCsv(suggestion.promotions), { shouldDirty: true });
+      setValue("brandTone", suggestion.brandTone, { shouldDirty: true });
+      setMessage("AI 建议已填入，请审阅后保存。");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "请稍后重试";
+      setMessage(`AI 建议生成失败：${detail}（可重试或手动填写）`);
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   function inferAssetType(mimeType: string): "video" | "image" | "audio" {
@@ -994,6 +1025,17 @@ export function Dashboard() {
             </div>
 
             <div className="formActions">
+              {storeFormStep >= 1 ? (
+                <button
+                  className="secondaryButton"
+                  disabled={Boolean(pendingAction)}
+                  onClick={() => void handleSuggestStore()}
+                  type="button"
+                >
+                  {pendingAction === "store" ? <span className="spinner" aria-hidden="true" /> : null}
+                  AI 建议
+                </button>
+              ) : null}
               <button
                 className="secondaryButton"
                 disabled={storeFormStep === 0 || Boolean(pendingAction)}
