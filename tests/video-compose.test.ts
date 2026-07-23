@@ -159,6 +159,23 @@ describe("video-compose buildTimeline", () => {
     // scene2→a2, scene3→a1 (scene order), then remaining a3.
     expect(brollAssetIds).toEqual(["a2", "a1", "a3"]);
   });
+
+  it("presenter mode: two broll scenes pinning the same asset dedupe to a single beat", () => {
+    const pinnedScenes: ScriptScene[] = [
+      { order: 1, text: "开场", durationSeconds: 4, assetHints: [], role: "presenter" },
+      { order: 2, text: "产品", durationSeconds: 5, assetHints: [], role: "broll", matchedAssetId: "a2" },
+      { order: 3, text: "特写", durationSeconds: 5, assetHints: [], role: "broll", matchedAssetId: "a2" },
+      { order: 4, text: "CTA", durationSeconds: 4, assetHints: [], role: "presenter" },
+    ];
+    const { segments } = buildTimeline({
+      scenes: pinnedScenes, assets, selectedAssetIds: ["a1", "a2", "a3"],
+      assetDurations: { a1: 5, a3: 8 }, talkingHeadDurationSec: 30,
+    });
+    const brollAssetIds = segments.filter((s) => s.role === "broll").map((s) => s.assetId);
+    // a2 pinned once (first broll scene), then a1, a3 appended; NO duplicate a2.
+    expect(brollAssetIds).toEqual(["a2", "a1", "a3"]);
+    expect(brollAssetIds.filter((id) => id === "a2")).toHaveLength(1);
+  });
 });
 
 describe("buildAss", () => {
