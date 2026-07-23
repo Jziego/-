@@ -188,6 +188,13 @@ export async function analyzeAssetApi(input: {
   return data.analysis;
 }
 
+export async function reanalyzeAssetApi(assetId: string): Promise<AssetAnalysis> {
+  const data = await api<{ analysis: AssetAnalysis }>(`/api/assets/${assetId}/reanalyze`, {
+    method: "POST"
+  });
+  return data.analysis;
+}
+
 export async function createAvatarApi(input: {
   ownerId: string;
   storeId: string;

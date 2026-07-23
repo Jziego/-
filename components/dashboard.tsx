@@ -22,6 +22,7 @@ import {
   fetchScriptDrafts,
   fetchStores,
   fetchVideoOutputUrl,
+  reanalyzeAssetApi,
   requestTalkingHeadApi,
   saveStore,
   suggestStoreProfileApi,
@@ -260,6 +261,7 @@ export function Dashboard() {
   const [localStore, setLocalStore] = useState<StoreProfile | null>(null);
   const [localAssets, setLocalAssets] = useState<Asset[]>([]);
   const [localAnalyses, setLocalAnalyses] = useState<AssetAnalysis[]>([]);
+  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
   const [uploadingFiles, setUploadingFiles] = useState<
     { id: string; name: string; progress: number; status: "uploading" | "failed" }[]
@@ -611,6 +613,20 @@ export function Dashboard() {
       setMessage(`AI 建议生成失败：${detail}（可重试或手动填写）`);
     } finally {
       setPendingAction(null);
+    }
+  }
+
+  async function handleReanalyze(assetId: string) {
+    setReanalyzingId(assetId);
+    try {
+      await reanalyzeAssetApi(assetId);
+      await queryClient.invalidateQueries({ queryKey: ["asset-analyses"] });
+      setMessage("已重新分析该素材。");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "请稍后重试";
+      setMessage(`重新分析失败：${detail}`);
+    } finally {
+      setReanalyzingId(null);
     }
   }
 
@@ -1170,6 +1186,36 @@ export function Dashboard() {
                   </span>
                 ))}
               </div>
+              <ul className="analysisStatusList">
+                {selectedAnalyses.map((a) => {
+                  const status = a.analysisStatus ?? "succeeded";
+                  const owningAsset = selectedAssets.find((x) => x.id === a.assetId);
+                  const label =
+                    status === "failed"
+                      ? "分析失败·已用兜底"
+                      : status === "pending"
+                        ? "分析中"
+                        : "已分析";
+                  return (
+                    <li key={a.assetId}>
+                      <span className={status === "failed" ? "statusBadge warning" : status === "pending" ? "statusBadge" : "statusBadge success"}>
+                        {owningAsset?.originalFilename ?? a.assetId}·{label}
+                      </span>
+                      {status === "failed" ? (
+                        <button
+                          className="secondaryButton"
+                          disabled={reanalyzingId === a.assetId}
+                          onClick={() => void handleReanalyze(a.assetId)}
+                          type="button"
+                        >
+                          {reanalyzingId === a.assetId ? <span className="spinner" aria-hidden="true" /> : null}
+                          重新分析
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           ) : null}
         </article>

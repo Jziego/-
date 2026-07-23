@@ -1593,4 +1593,77 @@ describe("AI video assistant dashboard", () => {
       await within(screen.getByRole("status")).findByText("AI 建议已填入，请审阅后保存。")
     ).toBeInTheDocument();
   });
+
+  it("shows a reanalyze button for a failed analysis and calls the reanalyze endpoint on click", async () => {
+    const user = userEvent.setup();
+    const savedStore = {
+      id: "store_reanalyze",
+      ownerId: "demo_user",
+      name: "重分析店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_a", ownerId: "demo_user", storeId: "store_reanalyze", type: "video", originalFilename: "failed-clip.mp4", storageKey: "ka", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+    const failedAnalysis = { id: "an_1", assetId: "asset_a", visualTags: [], businessTags: [], keywords: [], confidence: 0.3, recommendedUses: [], createdAt: "2026-01-01T00:00:00.000Z", analysisStatus: "failed" };
+
+    let reanalyzed = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (url === "/api/assets/asset_a/reanalyze" && method === "POST") {
+          reanalyzed = true;
+          return {
+            ok: true,
+            json: async () => ({
+              analysis: {
+                id: "an_1",
+                assetId: "asset_a",
+                visualTags: [],
+                businessTags: ["新品推荐"],
+                keywords: [],
+                confidence: 0.6,
+                recommendedUses: [],
+                createdAt: "2026-01-01T00:00:00.000Z",
+                analysisStatus: "succeeded"
+              }
+            })
+          };
+        }
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: savedAssets };
+            if (url === "/api/asset-analyses") return { analyses: [failedAnalysis] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    // Asset library renders with the failed analysis visible.
+    await screen.findByText("已选 1 / 共 1");
+    const reanalyzeBtn = await screen.findByRole("button", { name: "重新分析" });
+    await user.click(reanalyzeBtn);
+
+    await waitFor(() => {
+      expect(reanalyzed).toBe(true);
+    });
+  });
 });
