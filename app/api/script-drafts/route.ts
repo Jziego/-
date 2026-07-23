@@ -46,7 +46,8 @@ export async function POST(request: Request) {
         store,
         assetAnalyses,
         purpose,
-        platform: (body.platform ?? "douyin") as Platform
+        platform: (body.platform ?? "douyin") as Platform,
+        targetDurationSec: typeof body.targetDurationSec === "number" ? body.targetDurationSec : undefined,
       });
 
   const saved = await getScriptRepository().create(script);

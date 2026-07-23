@@ -207,6 +207,7 @@ export async function createScriptDraftApi(input: {
   assetAnalysisIds: string[];
   purpose: MarketingPurpose;
   platform?: string;
+  targetDurationSec?: number;
 }): Promise<ScriptDraft> {
   const data = await api<{ script: ScriptDraft }>("/api/script-drafts", {
     method: "POST",
@@ -246,4 +247,27 @@ export async function fetchRenderOutputs(): Promise<VideoOutput[]> {
 export async function fetchVideoOutputUrl(outputId: string): Promise<string> {
   const data = await api<{ url: string }>(`/api/render-projects/outputs/${outputId}/url`);
   return data.url;
+}
+
+export async function updateScriptDraftApi(input: {
+  scriptDraftId: string;
+  scenes: { order: number; text?: string; matchedAssetId?: string | null }[];
+}): Promise<ScriptDraft> {
+  const data = await api<{ script: ScriptDraft }>(
+    `/api/script-drafts/${encodeURIComponent(input.scriptDraftId)}`,
+    { method: "PATCH", body: JSON.stringify({ scenes: input.scenes }) },
+  );
+  return data.script;
+}
+
+export interface BgmTrackOption {
+  id: string;
+  name: string;
+  category: string;
+  durationSeconds: number;
+}
+
+export async function fetchBgmTracks(): Promise<BgmTrackOption[]> {
+  const data = await api<{ tracks: BgmTrackOption[] }>("/api/bgm-tracks");
+  return data.tracks;
 }
