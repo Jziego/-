@@ -34,6 +34,9 @@ export function resolveCompositionMode(talkingHead: VideoOutput | null): Composi
  * totalDurationSec is the actual accumulated cursor). In presenter mode the
  * total is min(talkingHeadDuration, contentTotal) so the output never exceeds
  * the available footage/voiceover.
+ *
+ * Broll assets follow scene.matchedAssetId pinning when present: assets pinned
+ * to broll scenes come first in scene order, then remaining pool assets.
  */
 export interface BuildTimelineArgs {
   scenes: ScriptScene[];
@@ -73,6 +76,27 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
     }
   }
 
+  // Scene-pinned ordering: assets matched to broll scenes (via matchedAssetId) come first,
+  // in scene order; any remaining pool assets are appended after. Backward-compatible —
+  // when no scene carries a matchedAssetId, orderedAssets === pool (same order).
+  const poolById = new Map(pool.map((a) => [a.id, a]));
+  const usedAssetIds = new Set<string>();
+  const orderedAssets: Asset[] = [];
+  for (const s of args.scenes) {
+    if (s.role !== "broll") continue;
+    const mid = s.matchedAssetId ?? null;
+    if (mid && poolById.has(mid) && !usedAssetIds.has(mid)) {
+      orderedAssets.push(poolById.get(mid) as Asset);
+      usedAssetIds.add(mid);
+    }
+  }
+  for (const a of pool) {
+    if (!usedAssetIds.has(a.id)) {
+      orderedAssets.push(a);
+      usedAssetIds.add(a.id);
+    }
+  }
+
   // Natural duration: video = real (capped) length; image = default slot.
   const naturalFor = (a: Asset): number =>
     a.type === "video"
@@ -96,14 +120,14 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
     for (const s of openers) {
       beats.push({ role: "presenter", assetId: null, text: s.text, natural: Math.max(s.durationSeconds, 0.5) });
     }
-    for (const a of pool) {
+    for (const a of orderedAssets) {
       beats.push({ role: "broll", assetId: a.id, text: nextText(), natural: naturalFor(a) });
     }
     if (closer) {
       beats.push({ role: "presenter", assetId: null, text: closer.text, natural: Math.max(closer.durationSeconds, 0.5) });
     }
   } else {
-    for (const a of pool) {
+    for (const a of orderedAssets) {
       beats.push({ role: "broll", assetId: a.id, text: nextText(), natural: naturalFor(a) });
     }
     if (pool.length === 0) {

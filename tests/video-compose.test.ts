@@ -114,6 +114,51 @@ describe("video-compose buildTimeline", () => {
     expect(resolveCompositionMode({ kind: "talking_head" } as VideoOutput)).toBe("presenter_broll");
     expect(resolveCompositionMode(null)).toBe("asset_only");
   });
+
+  it("presenter mode: broll beats honor scene.matchedAssetId (pinned asset first, then pool)", () => {
+    const pinnedScenes: ScriptScene[] = [
+      { order: 1, text: "开场", durationSeconds: 4, assetHints: [], role: "presenter" },
+      { order: 2, text: "产品", durationSeconds: 7, assetHints: [], role: "broll", matchedAssetId: "a3" },
+      { order: 3, text: "CTA", durationSeconds: 4, assetHints: [], role: "presenter" },
+    ];
+    const { segments } = buildTimeline({
+      scenes: pinnedScenes, assets, selectedAssetIds: ["a1", "a2", "a3"],
+      assetDurations: { a1: 5, a3: 8 }, talkingHeadDurationSec: 20,
+    });
+    const brollAssetIds = segments.filter((s) => s.role === "broll").map((s) => s.assetId);
+    // a3 pinned to the broll scene → first; a1, a2 appended in pool order.
+    expect(brollAssetIds).toEqual(["a3", "a1", "a2"]);
+  });
+
+  it("presenter mode: matchedAssetId not in the selected pool is ignored (no phantom asset)", () => {
+    const pinnedScenes: ScriptScene[] = [
+      { order: 1, text: "开场", durationSeconds: 4, assetHints: [], role: "presenter" },
+      { order: 2, text: "产品", durationSeconds: 7, assetHints: [], role: "broll", matchedAssetId: "a3" },
+      { order: 3, text: "CTA", durationSeconds: 4, assetHints: [], role: "presenter" },
+    ];
+    const { segments } = buildTimeline({
+      scenes: pinnedScenes, assets, selectedAssetIds: ["a1", "a2"], // a3 NOT selected
+      assetDurations: { a1: 5 }, talkingHeadDurationSec: 20,
+    });
+    const brollAssetIds = segments.filter((s) => s.role === "broll").map((s) => s.assetId);
+    expect(brollAssetIds).toEqual(["a1", "a2"]); // a3 dropped (not in pool)
+  });
+
+  it("presenter mode: multiple broll scenes pin in scene order", () => {
+    const pinnedScenes: ScriptScene[] = [
+      { order: 1, text: "开场", durationSeconds: 4, assetHints: [], role: "presenter" },
+      { order: 2, text: "产品", durationSeconds: 5, assetHints: [], role: "broll", matchedAssetId: "a2" },
+      { order: 3, text: "环境", durationSeconds: 5, assetHints: [], role: "broll", matchedAssetId: "a1" },
+      { order: 4, text: "CTA", durationSeconds: 4, assetHints: [], role: "presenter" },
+    ];
+    const { segments } = buildTimeline({
+      scenes: pinnedScenes, assets, selectedAssetIds: ["a1", "a2", "a3"],
+      assetDurations: { a1: 5, a3: 8 }, talkingHeadDurationSec: 30,
+    });
+    const brollAssetIds = segments.filter((s) => s.role === "broll").map((s) => s.assetId);
+    // scene2→a2, scene3→a1 (scene order), then remaining a3.
+    expect(brollAssetIds).toEqual(["a2", "a1", "a3"]);
+  });
 });
 
 describe("buildAss", () => {
