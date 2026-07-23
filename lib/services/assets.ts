@@ -87,6 +87,8 @@ const purposeByBusinessTag: Record<string, MarketingPurpose> = {
   门店环境: "store_traffic",
   招牌菜: "new_product",
   新品推荐: "new_product",
+  造型展示: "store_traffic",
+  课程展示: "new_product",
   促销: "promotion",
   口碑: "testimonial",
   招聘: "recruiting"
@@ -303,7 +305,7 @@ function inferBusinessTags(input: {
   const isRetail = industry.includes("零售");
   const isBeauty = industry.includes("美业") || industry.includes("美容") || industry.includes("美甲");
   const isEdu = industry.includes("教育") || industry.includes("培训");
-  const isService = industry.includes("生活服务") || industry.includes("服务");
+  const isService = industry.includes("生活服务");
 
   const has = (...keys: string[]) => keys.some((k) => text.includes(k));
 

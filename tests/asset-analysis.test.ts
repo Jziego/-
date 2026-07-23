@@ -152,6 +152,7 @@ describe("asset upload and analysis", () => {
       analysisUnavailable: true
     });
     expect(analysis.businessTags.length).toBeGreaterThan(0);
+    expect(analysis.businessTags).toContain("造型展示");
     expect(analysis.analysisStatus).toBe("succeeded");
   });
 
@@ -163,5 +164,6 @@ describe("asset upload and analysis", () => {
       analysisUnavailable: true
     });
     expect(analysis.businessTags.length).toBeGreaterThan(0);
+    expect(analysis.businessTags).toContain("课程展示");
   });
 });
