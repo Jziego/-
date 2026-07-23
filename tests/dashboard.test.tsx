@@ -1140,7 +1140,7 @@ describe("AI video assistant dashboard", () => {
     await user.click(screen.getByLabelText("选择素材 only.mp4"));
 
     expect(screen.getByText("已选 1 / 共 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "开始生成视频" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "生成分镜脚本" })).toBeEnabled();
   });
 
   it("renders a video element for a video asset thumbnail", async () => {
@@ -1284,7 +1284,16 @@ describe("AI video assistant dashboard", () => {
                   platform: "douyin",
                   title: "引流",
                   hook: "来店",
-                  scenes: [],
+                  scenes: [
+                    {
+                      order: 1,
+                      text: "镜1",
+                      durationSeconds: 4,
+                      assetHints: [],
+                      role: "presenter",
+                      matchedAssetId: "asset_p1"
+                    }
+                  ],
                   voiceover: "来店",
                   captions: [],
                   cta: "到店",
@@ -1309,19 +1318,17 @@ describe("AI video assistant dashboard", () => {
     renderDashboard();
 
     await screen.findByText("已选 2 / 共 2");
-    await user.click(screen.getByRole("button", { name: "开始生成视频" }));
+    await user.click(screen.getByRole("button", { name: "生成分镜脚本" }));
 
     await waitFor(() => {
       expect(fetchedBodies["/api/script-drafts"]).toBeDefined();
-      expect(fetchedBodies["/api/render-projects"]).toBeDefined();
     });
     expect(fetchedBodies["/api/script-drafts"]).toMatchObject({
       assetAnalysisIds: expect.arrayContaining(["analysis_p1", "analysis_p2"])
     });
     expect((fetchedBodies["/api/script-drafts"] as { assetAnalysisIds: string[] }).assetAnalysisIds).toHaveLength(2);
-    expect(fetchedBodies["/api/render-projects"]).toMatchObject({
-      selectedAssetIds: expect.arrayContaining(["asset_p1", "asset_p2"])
-    });
+    // 改造后：点击「生成分镜脚本」只生成草稿，不立即建渲染项目
+    expect(fetchedBodies["/api/render-projects"]).toBeUndefined();
   });
 
   it("does not refetch the asset list when deleting (optimistic cache update)", async () => {

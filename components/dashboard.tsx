@@ -16,6 +16,7 @@ import {
   fetchAssetPreviewUrl,
   fetchAssets,
   fetchAvatars,
+  fetchBgmTracks,
   fetchJobs,
   fetchRenderOutputs,
   fetchScriptDrafts,
@@ -23,8 +24,10 @@ import {
   fetchVideoOutputUrl,
   requestTalkingHeadApi,
   saveStore,
+  updateScriptDraftApi,
   uploadFileToStorage
 } from "@/lib/api-client";
+import { StoryboardConfirm } from "@/components/storyboard-confirm";
 import { MAX_ASSETS_PER_STORE, clampUploadBatch } from "@/lib/asset-library";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
 import {
@@ -272,6 +275,12 @@ export function Dashboard() {
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [clearingJobs, setClearingJobs] = useState(false);
+  const [storyboardDraft, setStoryboardDraft] = useState<ScriptDraft | null>(null);
+  const [bgmTracks, setBgmTracks] = useState<
+    { id: string; name: string; category: string; durationSeconds: number }[]
+  >([]);
+  const [targetDuration, setTargetDuration] = useState<number>(30);
+  const [generating, setGenerating] = useState(false);
   const draftClearedRef = useRef(false);
   const savedStoreHydratedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -373,6 +382,20 @@ export function Dashboard() {
     seededSelectionRef.current = true;
     setSelectedAssetIds(new Set(assets.map((a) => a.id)));
   }, [assets]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchBgmTracks()
+      .then((tracks) => {
+        if (!cancelled) setBgmTracks(Array.isArray(tracks) ? tracks : []);
+      })
+      .catch(() => {
+        /* 静默：无曲目也能渲染 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const avatar =
     localAvatar ?? (store ? (serverAvatars.find((item) => item.storeId === store.id) ?? null) : null);
@@ -752,7 +775,8 @@ export function Dashboard() {
     }
   }
 
-  async function simulateOneClickRender() {
+  async function generateStoryboard() {
+    if (pendingAction || generating) return;
     if (!store) {
       setMessage("请先完成门店档案。");
       return;
@@ -763,27 +787,53 @@ export function Dashboard() {
       return;
     }
 
-    setPendingAction("render");
+    setGenerating(true);
 
     try {
       const draft = await createScriptDraftApi({
         storeId: store.id,
         assetAnalysisIds: selectedAnalyses.map((a) => a.id),
         purpose: selectedPurpose,
-        platform: "douyin"
+        platform: "douyin",
+        targetDurationSec: targetDuration
       });
+      setStoryboardDraft(draft);
+      setLocalScript(draft);
+      await queryClient.invalidateQueries({ queryKey: ["script-drafts"] });
+      setMessage("分镜脚本已生成，请确认后再渲染。");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function patchStoryboard(
+    scenes: { order: number; text?: string; matchedAssetId?: string | null }[]
+  ) {
+    if (!storyboardDraft) return;
+    const updated = await updateScriptDraftApi({ scriptDraftId: storyboardDraft.id, scenes });
+    setStoryboardDraft(updated);
+    setLocalScript(updated);
+  }
+
+  async function confirmAndRender(selection: {
+    selectedAssetIds: string[];
+    subtitleStyle: string;
+    bgmTrackId: string;
+  }) {
+    if (!storyboardDraft) return;
+    setPendingAction("render");
+
+    try {
       const { jobs: plannedJobs } = await createRenderProjectApi({
-        scriptDraftId: draft.id,
-        selectedAssetIds: selectedAssets.map((a) => a.id),
+        scriptDraftId: storyboardDraft.id,
+        selectedAssetIds: selection.selectedAssetIds,
         avatarProfileId: avatar?.id,
         aspectRatio: "9:16",
-        subtitleStyle: "bold_bottom",
-        bgmTrackId: "bgm_warm"
+        subtitleStyle: selection.subtitleStyle,
+        bgmTrackId: selection.bgmTrackId || undefined
       });
-
-      setLocalScript(draft);
       setLocalJobs(plannedJobs);
-      await queryClient.invalidateQueries({ queryKey: ["script-drafts"] });
+      setStoryboardDraft(null);
       await queryClient.invalidateQueries({ queryKey: ["jobs"] });
       setMessage("AI 正在生成你的视频：自动写文案、剪画面、加字幕、配音乐。");
     } finally {
@@ -1162,18 +1212,35 @@ export function Dashboard() {
           ) : null}
           {renderMissingAssets ? <p className="lockNotice">上传素材并完成 AI 识别后，就可以开始生成。</p> : null}
 
+          <div className="choiceGrid" style={{ marginBottom: 12 }}>
+            {[
+              { value: 15, label: "短 · 约15秒" },
+              { value: 30, label: "中 · 约30秒" },
+              { value: 60, label: "长 · 约60秒" }
+            ].map((d) => (
+              <button
+                key={d.value}
+                type="button"
+                className={targetDuration === d.value ? "purposeCard selected" : "purposeCard"}
+                onClick={() => setTargetDuration(d.value)}
+              >
+                <strong>{d.label}</strong>
+              </button>
+            ))}
+          </div>
+
           <button
             className="primaryButton"
-            disabled={renderLocked || Boolean(renderMissingAssets) || Boolean(pendingAction)}
-            onClick={simulateOneClickRender}
+            disabled={renderLocked || Boolean(renderMissingAssets) || generating || Boolean(pendingAction)}
+            onClick={generateStoryboard}
             type="button"
           >
-            {pendingAction === "render" ? <span className="spinner" aria-hidden="true" /> : null}
+            {generating ? <span className="spinner" aria-hidden="true" /> : null}
             {renderLocked
               ? "请先完成门店档案"
               : renderMissingAssets
                 ? "请至少勾选一个素材"
-                : "开始生成视频"}
+                : "生成分镜脚本"}
           </button>
 
           {script ? (
@@ -1183,6 +1250,18 @@ export function Dashboard() {
             </div>
           ) : null}
         </article>
+
+        {storyboardDraft ? (
+          <StoryboardConfirm
+            key={storyboardDraft.id}
+            draft={storyboardDraft}
+            assets={assets}
+            bgmTracks={bgmTracks}
+            onPatch={patchStoryboard}
+            onConfirm={confirmAndRender}
+            pending={pendingAction === "render"}
+          />
+        ) : null}
       </section>
 
       <section className="statusPanel" aria-live="polite">
