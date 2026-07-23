@@ -88,6 +88,15 @@ export class MemoryAssetAnalysisRepository implements AssetAnalysisRepository {
     );
     return getRuntimeState().analyses.filter((analysis) => assetIds.has(analysis.assetId));
   }
+
+  async update(assetId: string, data: Partial<AssetAnalysis>): Promise<AssetAnalysis> {
+    const state = getRuntimeState();
+    const index = state.analyses.findIndex((a) => a.assetId === assetId);
+    if (index < 0) throw new Error(`AssetAnalysis not found for assetId: ${assetId}`);
+    const updated = { ...state.analyses[index], ...data, id: state.analyses[index].id, assetId };
+    state.analyses[index] = updated;
+    return updated;
+  }
 }
 
 export class MemoryAvatarRepository implements AvatarRepository {

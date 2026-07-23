@@ -77,4 +77,22 @@ describe("MemoryAssetRepository.deleteById", () => {
     const found = await repo.findByAssetId("asset_a");
     expect(found?.analysisStatus).toBe("failed");
   });
+
+  it("update merges fields by assetId (memory)", async () => {
+    resetRuntimeStateForTests();
+    const repo = new MemoryAssetAnalysisRepository();
+    await repo.create(sampleAnalysis("asset_a", { businessTags: ["旧标签"] }));
+    const updated = await repo.update("asset_a", { businessTags: ["新标签"], analysisStatus: "failed" });
+    expect(updated.businessTags).toEqual(["新标签"]);
+    expect(updated.analysisStatus).toBe("failed");
+    expect(updated.assetId).toBe("asset_a");
+    const found = await repo.findByAssetId("asset_a");
+    expect(found?.businessTags).toEqual(["新标签"]);
+  });
+
+  it("update throws when assetId not found (memory)", async () => {
+    resetRuntimeStateForTests();
+    const repo = new MemoryAssetAnalysisRepository();
+    await expect(repo.update("missing", { businessTags: ["x"] })).rejects.toThrow();
+  });
 });

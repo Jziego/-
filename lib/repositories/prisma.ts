@@ -136,6 +136,17 @@ export class PrismaAssetAnalysisRepository implements AssetAnalysisRepository {
     });
     return rows.map(toAssetAnalysis);
   }
+
+  async update(assetId: string, data: Partial<AssetAnalysis>): Promise<AssetAnalysis> {
+    const existing = await this.findByAssetId(assetId);
+    if (!existing) throw new Error(`AssetAnalysis not found for assetId: ${assetId}`);
+    const merged = { ...existing, ...data, id: existing.id, assetId: existing.assetId };
+    const row = await this.prisma.assetAnalysis.update({
+      where: { assetId },
+      data: toAssetAnalysisInput(merged)
+    });
+    return toAssetAnalysis(row);
+  }
 }
 
 export class PrismaAvatarRepository implements AvatarRepository {

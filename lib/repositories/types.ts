@@ -29,6 +29,7 @@ export interface AssetAnalysisRepository {
   findByAssetId(assetId: string): Promise<AssetAnalysis | null>;
   listByIds(ids: string[]): Promise<AssetAnalysis[]>;
   listByOwner(ownerId: string): Promise<AssetAnalysis[]>;
+  update(assetId: string, data: Partial<AssetAnalysis>): Promise<AssetAnalysis>;
 }
 
 export interface AvatarRepository {
