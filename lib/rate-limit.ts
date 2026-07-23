@@ -170,7 +170,7 @@ export function resolveApiBucket(ownerId: string, method: string): {
   key: string;
   config: RateLimitConfig;
 } {
-  const isWrite = ["POST", "PUT", "DELETE"].includes(method);
+  const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
   return {
     key: `api:${ownerId}:${isWrite ? "write" : "read"}`,
     config: isWrite ? API_WRITE : API_READ,
@@ -181,7 +181,7 @@ export function resolveApiBucket(ownerId: string, method: string): {
  * L2: API rate limit. Skipped in demo mode.
  *
  * @param key  Rate limit key (typically userId for authenticated users)
- * @param method  HTTP method — POST/PUT/DELETE use the write limit, others use read
+ * @param method  HTTP method — POST/PUT/PATCH/DELETE use the write limit, others use read
  */
 export async function rateLimitApi(
   key: string,

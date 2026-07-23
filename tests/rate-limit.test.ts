@@ -66,10 +66,10 @@ describe("rateLimitApi", () => {
     expect(write.config.maxRequests).toBe(20);
   });
 
-  it("classifies POST/PUT/DELETE as writes and everything else as reads", async () => {
+  it("classifies POST/PUT/PATCH/DELETE as writes and everything else as reads", async () => {
     const { resolveApiBucket } = await import("@/lib/rate-limit");
     const owner = "owner_methods_test";
-    for (const m of ["POST", "PUT", "DELETE"]) {
+    for (const m of ["POST", "PUT", "PATCH", "DELETE"]) {
       expect(resolveApiBucket(owner, m).key).toBe(`api:${owner}:write`);
     }
     for (const m of ["GET", "HEAD", "OPTIONS"]) {
