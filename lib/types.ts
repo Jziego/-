@@ -106,6 +106,12 @@ export interface ScriptScene {
   durationSeconds: number;
   assetHints: string[];
   role: SceneRole;
+  /** 匹配器派生：该镜期望的素材标签/关键词（默认取 assetHints） */
+  desiredTags?: string[];
+  /** 自动匹配命中的素材 id；null = 待匹配（用户手选） */
+  matchedAssetId?: string | null;
+  /** 命中依据标签，便于 UI 展示 */
+  matchTag?: string | null;
 }
 
 export interface ScriptDraft {
@@ -134,7 +140,7 @@ export interface RenderProject {
   avatarProfileId?: string;
   purpose: MarketingPurpose;
   aspectRatio: AspectRatio;
-  subtitleStyle: "bold_bottom" | "clean_center" | "brand_card";
+  subtitleStyle: "default" | "bold_bottom" | "minimal";
   bgmTrackId?: string;
   status: RenderStatus;
   createdAt: string;
