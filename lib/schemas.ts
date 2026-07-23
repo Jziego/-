@@ -33,6 +33,14 @@ export const storeProfileSchema = z.object({
   updatedAt: isoDateString
 });
 
+export const storeSuggestionInputSchema = z.object({
+  name: z.string().min(1, "请填写门店名称"),
+  industry: z.string().min(1, "请选择行业"),
+  location: z.string().optional()
+});
+
+export type StoreSuggestionInput = z.infer<typeof storeSuggestionInputSchema>;
+
 export const confirmAssetUploadSchema = z.object({
   assetId: z.string().min(1),
   storeId: z.string().min(1),
