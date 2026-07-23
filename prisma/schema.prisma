@@ -107,6 +107,7 @@ model AssetAnalysis {
   keywords        String[]
   confidence      Float
   recommendedUses String[]
+  analysisStatus   String   @default("pending")
   createdAt       DateTime @default(now())
   asset           Asset    @relation(fields: [assetId], references: [id])
 }

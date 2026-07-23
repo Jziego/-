@@ -73,6 +73,7 @@ export const assetAnalysisSchema = z.object({
   keywords: z.array(z.string()).default([]),
   confidence: z.number().min(0).max(1),
   recommendedUses: z.array(marketingPurposeSchema).default([]),
+  analysisStatus: z.string().default("pending"),
   createdAt: isoDateString
 });
 

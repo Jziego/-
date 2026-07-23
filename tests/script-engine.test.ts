@@ -32,7 +32,8 @@ const analysis: AssetAnalysis[] = [
     keywords: ["牛肉面", "午餐", "快"],
     confidence: 0.86,
     recommendedUses: ["new_product", "store_traffic"],
-    createdAt: "2026-06-03T10:00:00.000Z"
+    createdAt: "2026-06-03T10:00:00.000Z",
+    analysisStatus: "succeeded"
   }
 ];
 

@@ -121,7 +121,8 @@ export function toAssetAnalysis(row: PrismaAssetAnalysis): AssetAnalysis {
     keywords: row.keywords,
     confidence: row.confidence,
     recommendedUses: row.recommendedUses as MarketingPurpose[],
-    createdAt: row.createdAt.toISOString()
+    createdAt: row.createdAt.toISOString(),
+    analysisStatus: row.analysisStatus
   };
 }
 
@@ -135,7 +136,8 @@ export function toAssetAnalysisInput(analysis: AssetAnalysis) {
     keywords: analysis.keywords,
     confidence: analysis.confidence,
     recommendedUses: analysis.recommendedUses,
-    createdAt: new Date(analysis.createdAt)
+    createdAt: new Date(analysis.createdAt),
+    analysisStatus: analysis.analysisStatus
   };
 }
 

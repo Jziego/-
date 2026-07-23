@@ -590,7 +590,8 @@ describe("AI video assistant dashboard", () => {
                 keywords: ["牛肉面"],
                 confidence: 0.8,
                 recommendedUses: ["new_product"],
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                analysisStatus: "succeeded"
               }
             })
           };
@@ -790,7 +791,8 @@ describe("AI video assistant dashboard", () => {
                 keywords: ["牛肉面"],
                 confidence: 0.8,
                 recommendedUses: ["new_product"],
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                analysisStatus: "succeeded"
               }
             })
           };
@@ -927,7 +929,8 @@ describe("AI video assistant dashboard", () => {
                 keywords: ["牛肉面"],
                 confidence: 0.8,
                 recommendedUses: ["new_product"],
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                analysisStatus: "succeeded"
               }
             })
           };
@@ -1261,8 +1264,8 @@ describe("AI video assistant dashboard", () => {
       { id: "asset_p2", ownerId: "demo_user", storeId: "store_passall", type: "image", originalFilename: "p2.jpg", storageKey: "k2", mimeType: "image/jpeg", sizeBytes: 2000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
     ];
     const savedAnalyses = [
-      { id: "analysis_p1", assetId: "asset_p1", visualTags: ["food"], businessTags: ["新品推荐"], keywords: ["面"], confidence: 0.8, recommendedUses: ["new_product"], createdAt: "2026-01-01T00:00:00.000Z" },
-      { id: "analysis_p2", assetId: "asset_p2", visualTags: ["storefront"], businessTags: ["门店引流"], keywords: ["店"], confidence: 0.7, recommendedUses: ["store_traffic"], createdAt: "2026-01-01T00:00:00.000Z" }
+      { id: "analysis_p1", assetId: "asset_p1", visualTags: ["food"], businessTags: ["新品推荐"], keywords: ["面"], confidence: 0.8, recommendedUses: ["new_product"], createdAt: "2026-01-01T00:00:00.000Z", analysisStatus: "succeeded" },
+      { id: "analysis_p2", assetId: "asset_p2", visualTags: ["storefront"], businessTags: ["门店引流"], keywords: ["店"], confidence: 0.7, recommendedUses: ["store_traffic"], createdAt: "2026-01-01T00:00:00.000Z", analysisStatus: "succeeded" }
     ];
 
     const fetchedBodies: Record<string, unknown> = {};

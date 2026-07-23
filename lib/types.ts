@@ -82,6 +82,7 @@ export interface AssetAnalysis {
   confidence: number;
   recommendedUses: MarketingPurpose[];
   createdAt: string;
+  analysisStatus: string;
 }
 
 export interface AvatarProfile {

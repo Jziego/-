@@ -20,7 +20,7 @@ function sampleAsset(id: string, ownerId = "demo_user"): Asset {
   };
 }
 
-function sampleAnalysis(assetId: string): AssetAnalysis {
+function sampleAnalysis(assetId: string, overrides: Partial<AssetAnalysis> = {}): AssetAnalysis {
   return {
     id: `analysis_${assetId}`,
     assetId,
@@ -29,7 +29,9 @@ function sampleAnalysis(assetId: string): AssetAnalysis {
     keywords: ["面"],
     confidence: 0.8,
     recommendedUses: ["new_product"],
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    analysisStatus: "succeeded",
+    ...overrides
   };
 }
 
@@ -65,5 +67,14 @@ describe("MemoryAssetRepository.deleteById", () => {
     await assetRepo.deleteById("asset_b");
 
     expect(await analysisRepo.findByAssetId("asset_b")).toBeNull();
+  });
+
+  it("persists and returns analysisStatus via the memory repo", async () => {
+    resetRuntimeStateForTests();
+    const repo = new MemoryAssetAnalysisRepository();
+    const analysis = sampleAnalysis("asset_a", { analysisStatus: "failed" });
+    await repo.create(analysis);
+    const found = await repo.findByAssetId("asset_a");
+    expect(found?.analysisStatus).toBe("failed");
   });
 });

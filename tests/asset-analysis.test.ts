@@ -116,4 +116,31 @@ describe("asset upload and analysis", () => {
     // analysisUnavailable should skip AI entirely
     expect(aiClient.chatCompletionJSON).not.toHaveBeenCalled();
   });
+
+  it("marks analysisStatus succeeded when AI classifies successfully", async () => {
+    vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      businessTags: ["新品推荐"],
+      keywords: ["可颂"],
+      recommendedUses: ["new_product"],
+      reasoning: "x"
+    });
+    const analysis = await classifyAsset({ asset, store, visualLabels: ["food"] });
+    expect(analysis.analysisStatus).toBe("succeeded");
+  });
+
+  it("marks analysisStatus failed (with rule fallback tags) when AI returns empty", async () => {
+    vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue(null);
+    const analysis = await classifyAsset({ asset, store, visualLabels: ["food"] });
+    expect(analysis.analysisStatus).toBe("failed");
+    expect(analysis.confidence).toBeLessThanOrEqual(0.3);
+    expect(Array.isArray(analysis.businessTags)).toBe(true);
+    expect(Array.isArray(analysis.keywords)).toBe(true);
+  });
+
+  it("marks analysisStatus succeeded on the rule-only path (analysisUnavailable)", async () => {
+    const analysis = await classifyAsset({ asset, store, analysisUnavailable: true });
+    expect(analysis.analysisStatus).toBe("succeeded");
+  });
 });

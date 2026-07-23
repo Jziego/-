@@ -200,6 +200,8 @@ export async function classifyAsset(input: ClassifyAssetInput): Promise<AssetAna
   let businessTags: string[];
   let keywords: string[];
   let recommendedUses: MarketingPurpose[];
+  let analysisStatus: string;
+  let aiFailed = false;
 
   if (!input.analysisUnavailable && hasAI()) {
     try {
@@ -207,21 +209,31 @@ export async function classifyAsset(input: ClassifyAssetInput): Promise<AssetAna
       businessTags = aiResult.businessTags;
       keywords = aiResult.keywords;
       recommendedUses = aiResult.recommendedUses;
+      analysisStatus = "succeeded";
     } catch (error) {
       console.warn(
         `[assets] AI classification failed, falling back to rules: ${error instanceof Error ? error.message : String(error)}`,
       );
+      aiFailed = true;
       const fallback = ruleBasedClassify(input, visualTags);
       businessTags = fallback.businessTags;
       keywords = fallback.keywords;
       recommendedUses = fallback.recommendedUses;
+      analysisStatus = "failed";
     }
   } else {
     const fallback = ruleBasedClassify(input, visualTags);
     businessTags = fallback.businessTags;
     keywords = fallback.keywords;
     recommendedUses = fallback.recommendedUses;
+    analysisStatus = "succeeded";
   }
+
+  const confidence = aiFailed
+    ? 0.3
+    : input.analysisUnavailable
+      ? 0.35
+      : calculateConfidence(visualTags, keywords, businessTags);
 
   return {
     id: createId("analysis"),
@@ -230,9 +242,10 @@ export async function classifyAsset(input: ClassifyAssetInput): Promise<AssetAna
     businessTags,
     transcript: input.transcript,
     keywords,
-    confidence: input.analysisUnavailable ? 0.35 : calculateConfidence(visualTags, keywords, businessTags),
+    confidence,
     recommendedUses: recommendedUses.length > 0 ? recommendedUses : ["store_traffic"],
-    createdAt: nowIso()
+    createdAt: nowIso(),
+    analysisStatus
   };
 }
 
