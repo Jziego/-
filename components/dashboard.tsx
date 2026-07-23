@@ -693,9 +693,7 @@ export function Dashboard() {
 
         const analyzed = await analyzeAssetApi({
           assetId: uploadedAsset.id,
-          storeId: store.id,
-          visualLabels: ["food", "person", "storefront"],
-          transcript: `${store.mainProducts[0]}刚出锅，午餐出餐很快`
+          storeId: store.id
         });
 
         setLocalAssets((prev) => (prev.some((a) => a.id === uploadedAsset.id) ? prev : [...prev, uploadedAsset]));
