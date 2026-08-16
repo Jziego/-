@@ -1666,4 +1666,13 @@ describe("AI video assistant dashboard", () => {
       expect(reanalyzed).toBe(true);
     });
   });
+
+  it("offers 30/45/60s duration slots with 45s selected by default", async () => {
+    renderDashboard();
+    const slot45 = await screen.findByRole("button", { name: /约45秒/ });
+    expect(slot45.className).toContain("selected");
+    expect(screen.getByRole("button", { name: /约30秒/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /约60秒/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /约15秒/ })).not.toBeInTheDocument();
+  });
 });

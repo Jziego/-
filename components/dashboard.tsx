@@ -282,7 +282,7 @@ export function Dashboard() {
   const [bgmTracks, setBgmTracks] = useState<
     { id: string; name: string; category: string; durationSeconds: number }[]
   >([]);
-  const [targetDuration, setTargetDuration] = useState<number>(30);
+  const [targetDuration, setTargetDuration] = useState<number>(45);
   const [generating, setGenerating] = useState(false);
   const draftClearedRef = useRef(false);
   const savedStoreHydratedRef = useRef(false);
@@ -1300,8 +1300,8 @@ export function Dashboard() {
 
           <div className="choiceGrid" style={{ marginBottom: 12 }}>
             {[
-              { value: 15, label: "短 · 约15秒" },
-              { value: 30, label: "中 · 约30秒" },
+              { value: 30, label: "短 · 约30秒" },
+              { value: 45, label: "中 · 约45秒" },
               { value: 60, label: "长 · 约60秒" }
             ].map((d) => (
               <button
