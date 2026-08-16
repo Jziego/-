@@ -15,6 +15,7 @@ import type {
 import { createPresignedGetUrl, getObjectToBuffer, putObjectFromBuffer } from "@/lib/storage";
 import {
   buildAss,
+  buildCaptionCues,
   buildFilterGraph,
   buildTimeline,
   resolveCompositionMode,
@@ -141,18 +142,24 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
     assets,
     selectedAssetIds: project.selectedAssetIds,
     assetDurations,
-    talkingHeadDurationSec: talkingHead?.durationSeconds
+    talkingHeadDurationSec: talkingHead?.durationSeconds,
+    targetDurationSec: project.targetDurationSec
   });
 
   const bgmTrack = project.bgmTrackId
     ? await deps.bgmTrackRepository.findById(project.bgmTrackId)
     : null;
 
+  // Subtitles follow the voiceover (Bug 3 fix): presenter mode burns the spoken
+  // script; asset_only has no voice track, hence no subtitles at all.
+  const captionCues =
+    mode === "presenter_broll" ? buildCaptionCues(draft.voiceover, totalDurationSec) : [];
+
   const { storageKey, durationSeconds } = await deps.renderComposite({
     projectId,
     mode,
     segments,
-    assContent: buildAss(segments, resolveSubtitlePreset(project.subtitleStyle)),
+    assContent: buildAss(captionCues, resolveSubtitlePreset(project.subtitleStyle)),
     subtitleStyle: project.subtitleStyle,
     talkingHead,
     assets,
