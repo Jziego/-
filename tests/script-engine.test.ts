@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createScriptDraft, createTemplateScriptDraft, warnIfDurationOffTarget } from "@/lib/services/script-engine";
+import * as aiClient from "@/lib/services/ai-client";
 import type { AssetAnalysis, StoreProfile } from "@/lib/types";
 
 const store: StoreProfile = {
@@ -171,5 +172,37 @@ describe("script engine", () => {
     );
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+
+  it("AI empty-scenes fallback scales template scenes to the target slot", async () => {
+    const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      title: "测试标题",
+      hook: "测试钩子",
+      scenes: [],
+      voiceover: "测试配音文案",
+      captions: ["测试配音文案"],
+      cta: "到店体验",
+    });
+    try {
+      const draft = await createScriptDraft({
+        store, assetAnalyses: analysis, purpose: "store_traffic",
+        platform: "douyin", targetDurationSec: 60,
+      });
+      // 走了 AI 路径（非模板降级），但 AI 返回空 scenes → 兜底模板镜应按 60s 档出 5 镜
+      expect(draft.generationMode).toBe("ai");
+      expect(draft.scenes).toHaveLength(5);
+    } finally {
+      hasAISpy.mockRestore();
+      aiSpy.mockRestore();
+    }
+  });
+
+  it("forcedRawCopy path scales template scenes to the target slot", async () => {
+    const draft = await createScriptDraft({
+      store, assetAnalyses: analysis, purpose: "promotion",
+      platform: "douyin", forcedRawCopy: "现熬牛骨汤，午市出餐快", targetDurationSec: 60,
+    });
+    expect(draft.scenes).toHaveLength(5);
   });
 });

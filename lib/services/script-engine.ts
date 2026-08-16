@@ -150,7 +150,7 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
       title: `${input.store.name}本期推荐`,
       hook: cleaned.copy,
       voiceover: cleaned.copy,
-      scenes: buildTemplateScenes(input.store, input.assetAnalyses),
+      scenes: buildTemplateScenes(input.store, input.assetAnalyses, input.targetDurationSec),
       captions: [cleaned.copy],
       cta: purposeCta[input.purpose],
       warnings: cleaned.warnings,
@@ -209,7 +209,7 @@ export async function createScriptDraftWithAI(
 
   const scenes: ScriptScene[] = (aiResponse.scenes?.length
     ? aiResponse.scenes
-    : buildTemplateScenes(input.store, input.assetAnalyses)
+    : buildTemplateScenes(input.store, input.assetAnalyses, input.targetDurationSec)
   ).map((s, i, arr) => {
     // Default: first and last scenes are presenter (hook/CTA), middle are broll.
     const isEdge = i === 0 || i === arr.length - 1;
