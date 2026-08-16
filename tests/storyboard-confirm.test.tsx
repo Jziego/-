@@ -32,6 +32,7 @@ function renderConfirm(overrides: Partial<Parameters<typeof StoryboardConfirm>[0
       draft={draft}
       assets={assets}
       bgmTracks={bgmTracks}
+      librarySelectedAssetIds={["asset_a", "asset_b"]}
       onPatch={onPatch}
       onConfirm={onConfirm}
       pending={false}
@@ -63,13 +64,14 @@ describe("StoryboardConfirm", () => {
     });
   });
 
-  it("confirms render with selected asset ids derived from scenes", async () => {
+  it("confirms render with the FULL library selection, including unmatched assets", async () => {
     const user = userEvent.setup();
     const { onConfirm } = renderConfirm();
     await user.click(screen.getByRole("button", { name: /确认渲染/ }));
     await waitFor(() => {
+      // asset_b 未被任何分镜匹配，修复前会被丢弃（Bug 2）
       expect(onConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({ selectedAssetIds: expect.arrayContaining(["asset_a"]) }),
+        expect.objectContaining({ selectedAssetIds: ["asset_a", "asset_b"] }),
       );
     });
   });

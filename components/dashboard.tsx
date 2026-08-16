@@ -1343,6 +1343,7 @@ export function Dashboard() {
             draft={storyboardDraft}
             assets={assets}
             bgmTracks={bgmTracks}
+            librarySelectedAssetIds={selectedAssets.map((a) => a.id)}
             onPatch={patchStoryboard}
             onConfirm={confirmAndRender}
             pending={pendingAction === "render"}

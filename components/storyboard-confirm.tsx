@@ -13,13 +13,15 @@ interface Props {
   draft: ScriptDraft;
   assets: Asset[];
   bgmTracks: { id: string; name: string; category: string }[];
+  /** 素材库完整勾选集合（Bug 2 fix：未匹配分镜的素材也必须进入渲染）。 */
+  librarySelectedAssetIds: string[];
   onPatch: (scenes: { order: number; text?: string; matchedAssetId?: string | null }[]) => Promise<void>;
   onConfirm: (selection: { selectedAssetIds: string[]; subtitleStyle: string; bgmTrackId: string }) => Promise<void>;
   pending: boolean;
 }
 
 /** 分镜确认界面：逐镜改文案/换素材 + 全局字幕/BGM + 确认渲染。 */
-export function StoryboardConfirm({ draft, assets, bgmTracks, onPatch, onConfirm, pending }: Props) {
+export function StoryboardConfirm({ draft, assets, bgmTracks, librarySelectedAssetIds, onPatch, onConfirm, pending }: Props) {
   const [textByOrder, setTextByOrder] = useState<Record<number, string>>(() =>
     Object.fromEntries(draft.scenes.map((s) => [s.order, s.text])),
   );
@@ -53,8 +55,8 @@ export function StoryboardConfirm({ draft, assets, bgmTracks, onPatch, onConfirm
       matchedAssetId: assetByOrder[s.order] ?? null,
     }));
     await onPatch(scenes);
-    const selectedAssetIds = [...new Set(scenes.map((s) => s.matchedAssetId).filter((x): x is string => Boolean(x)))];
-    await onConfirm({ selectedAssetIds, subtitleStyle, bgmTrackId });
+    // 渲染素材 = 素材库勾选全集；matchedAssetId 仅作分镜建议位置提示
+    await onConfirm({ selectedAssetIds: librarySelectedAssetIds, subtitleStyle, bgmTrackId });
   }
 
   return (
