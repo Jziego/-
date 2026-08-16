@@ -231,11 +231,20 @@ export const defaultRenderComposite: RenderCompositeFn = async (input) => {
 
     let bgmInputIndex: number | undefined;
     if (input.bgmTrack) {
+      // BGM is an optional enhancement: a missing/unreadable object (e.g. the
+      // ops-uploaded bgm/*.mp3 never reached the bucket) must not fail the
+      // whole render — degrade to voice-only audio instead.
       const p = join(dir, "bgm.mp3");
-      await downloadToFile(input.bgmTrack.storageKey, p);
-      bgmInputIndex = nextIdx;
-      inputs.push({ path: p, isImage: false });
-      nextIdx++;
+      try {
+        await downloadToFile(input.bgmTrack.storageKey, p);
+        bgmInputIndex = nextIdx;
+        inputs.push({ path: p, isImage: false });
+        nextIdx++;
+      } catch (err) {
+        console.warn(
+          `[video_render] BGM download failed (${input.bgmTrack.storageKey}); rendering without music: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
     }
 
     const assPath = join(dir, "subs.ass");
