@@ -32,8 +32,8 @@ export function resolveCompositionMode(talkingHead: VideoOutput | null): Composi
  *
  * Σ segment.durationSec === totalDurationSec by construction (the returned
  * totalDurationSec is the actual accumulated cursor). In presenter mode the
- * total is min(talkingHeadDuration, contentTotal) so the output never exceeds
- * the available footage/voiceover.
+ * total is min(talkingHeadDuration, targetDurationSec?, contentTotal) so the
+ * output never exceeds the available footage/voiceover.
  *
  * Broll assets follow scene.matchedAssetId pinning when present: assets pinned
  * to broll scenes come first in scene order, then remaining pool assets.
@@ -46,6 +46,8 @@ export interface BuildTimelineArgs {
   assetDurations?: Record<string, number>;
   /** Authoritative total when a talking-head product exists (presenter mode). */
   talkingHeadDurationSec?: number;
+  /** 目标成片时长（秒）。提供时 b-roll 循环复用素材铺满；省略时保持单遍旧行为。 */
+  targetDurationSec?: number;
   /** Duration slot for image assets. Default 3. */
   imageDefaultSec?: number;
   /** Cap a single video clip's contribution. Default 12. */
@@ -63,6 +65,10 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
   const maxClipSec = args.maxClipSec ?? 12;
   const hasTalkingHead =
     typeof args.talkingHeadDurationSec === "number" && args.talkingHeadDurationSec > 0;
+  const target =
+    typeof args.targetDurationSec === "number" && args.targetDurationSec > 0
+      ? args.targetDurationSec
+      : undefined;
 
   // Ordered, existing, de-duped selected assets = the broll pool.
   const seen = new Set<string>();
@@ -77,8 +83,7 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
   }
 
   // Scene-pinned ordering: assets matched to broll scenes (via matchedAssetId) come first,
-  // in scene order; any remaining pool assets are appended after. Backward-compatible —
-  // when no scene carries a matchedAssetId, orderedAssets === pool (same order).
+  // in scene order; any remaining pool assets are appended after.
   const poolById = new Map(pool.map((a) => [a.id, a]));
   const usedAssetIds = new Set<string>();
   const orderedAssets: Asset[] = [];
@@ -115,21 +120,45 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
   const presenterScenes = args.scenes.filter((s) => s.role === "presenter");
   const openers = presenterScenes.slice(0, -1);
   const closer = presenterScenes.length > 0 ? presenterScenes[presenterScenes.length - 1] : undefined;
+  const presenterTotal = presenterScenes.reduce(
+    (acc, s) => acc + Math.max(s.durationSeconds, 0.5),
+    0,
+  );
+
+  // B-roll fill: first pass guarantees every selected asset appears; when a
+  // target slot is set, keep looping the pool until the budget (target minus
+  // presenter time, or the whole target in asset_only mode) is filled.
+  // natural >= 0.5 always, so the loop terminates; the 1000-beat guard is a
+  // backstop against pathological inputs.
+  const pushBrollBeats = (budget: number | undefined): void => {
+    if (orderedAssets.length === 0) return;
+    let filled = 0;
+    for (const a of orderedAssets) {
+      const natural = naturalFor(a);
+      beats.push({ role: "broll", assetId: a.id, text: nextText(), natural });
+      filled += natural;
+    }
+    if (budget === undefined) return;
+    let i = 0;
+    while (filled < budget && i < 1000) {
+      const a = orderedAssets[i % orderedAssets.length] as Asset;
+      const natural = naturalFor(a);
+      beats.push({ role: "broll", assetId: a.id, text: nextText(), natural });
+      filled += natural;
+      i++;
+    }
+  };
 
   if (hasTalkingHead) {
     for (const s of openers) {
       beats.push({ role: "presenter", assetId: null, text: s.text, natural: Math.max(s.durationSeconds, 0.5) });
     }
-    for (const a of orderedAssets) {
-      beats.push({ role: "broll", assetId: a.id, text: nextText(), natural: naturalFor(a) });
-    }
+    pushBrollBeats(target !== undefined ? Math.max(target - presenterTotal, 0) : undefined);
     if (closer) {
       beats.push({ role: "presenter", assetId: null, text: closer.text, natural: Math.max(closer.durationSeconds, 0.5) });
     }
   } else {
-    for (const a of orderedAssets) {
-      beats.push({ role: "broll", assetId: a.id, text: nextText(), natural: naturalFor(a) });
-    }
+    pushBrollBeats(target);
     if (pool.length === 0) {
       // No assets selected: one beat per script scene so the video is never empty.
       for (const s of args.scenes) {
@@ -138,10 +167,12 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
     }
   }
 
+  // Total: content caps at the target slot when provided; the talking-head
+  // track always wins when shorter (the voiceover cannot be stretched).
   const contentTotal = beats.reduce((acc, b) => acc + b.natural, 0);
   const total = hasTalkingHead
-    ? Math.min(args.talkingHeadDurationSec as number, contentTotal)
-    : contentTotal;
+    ? Math.min(args.talkingHeadDurationSec as number, target ?? Infinity, contentTotal)
+    : Math.min(target ?? Infinity, contentTotal);
   const scale = contentTotal > 0 ? total / contentTotal : 1;
 
   let cursor = 0;

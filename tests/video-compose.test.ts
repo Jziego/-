@@ -176,6 +176,47 @@ describe("video-compose buildTimeline", () => {
     expect(brollAssetIds).toEqual(["a2", "a1", "a3"]);
     expect(brollAssetIds.filter((id) => id === "a2")).toHaveLength(1);
   });
+
+  it("target slot: asset_only loops the pool to fill the target duration", () => {
+    // 1 个 5s 视频 + 1 张图片（3s），目标 20s：循环复用铺满
+    const { segments, totalDurationSec } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a1", "a2"],
+      assetDurations: { a1: 5 }, targetDurationSec: 20,
+    });
+    expect(totalDurationSec).toBeCloseTo(20, 1);
+    const a1Beats = segments.filter((s) => s.assetId === "a1");
+    expect(a1Beats.length).toBeGreaterThan(1); // 循环复用
+    // 每个素材至少出现一次（第一遍保底）
+    expect(segments.some((s) => s.assetId === "a2")).toBe(true);
+  });
+
+  it("target slot: presenter mode fills broll up to target minus presenter total", () => {
+    // presenter 镜 4+4=8s，目标 30s → broll 填 ≈22s；TH 60s 不限制
+    const { segments, totalDurationSec } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a1"],
+      assetDurations: { a1: 5 }, talkingHeadDurationSec: 60, targetDurationSec: 30,
+    });
+    expect(totalDurationSec).toBeCloseTo(30, 1);
+    const brollSum = segments.filter((s) => s.role === "broll").reduce((acc, s) => acc + s.durationSec, 0);
+    expect(brollSum).toBeGreaterThan(15); // 远大于单遍的 5s
+  });
+
+  it("target slot: talking-head shorter than target still caps the total (voice wins)", () => {
+    const { totalDurationSec } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a1"],
+      assetDurations: { a1: 5 }, talkingHeadDurationSec: 10, targetDurationSec: 30,
+    });
+    expect(totalDurationSec).toBeCloseTo(10, 1);
+  });
+
+  it("target slot omitted: single pass, no looping (backward compatible)", () => {
+    const { segments } = buildTimeline({
+      scenes, assets, selectedAssetIds: ["a1", "a2"],
+      assetDurations: { a1: 5 }, talkingHeadDurationSec: 20,
+    });
+    const brollIds = segments.filter((s) => s.role === "broll").map((s) => s.assetId);
+    expect(brollIds).toEqual(["a1", "a2"]); // 无重复
+  });
 });
 
 describe("buildAss", () => {
