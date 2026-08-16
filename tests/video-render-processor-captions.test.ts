@@ -52,11 +52,11 @@ const talkingHead: VideoOutput = {
   kind: "talking_head", status: "ready", createdAt: "2026-08-16T00:00:00.000Z",
 };
 
-function makeDeps(captured: { input?: RenderCompositeInput }): VideoRenderDeps {
+function makeDeps(captured: { input?: RenderCompositeInput }, th: VideoOutput | null = talkingHead): VideoRenderDeps {
   return {
     renderRepository: {
       findProjectById: async () => project,
-      findTalkingHeadOutputByProject: async () => talkingHead,
+      findTalkingHeadOutputByProject: async () => th,
       createOutput: async (o: VideoOutput) => o,
     } as unknown as VideoRenderDeps["renderRepository"],
     scriptRepository: {
@@ -93,5 +93,15 @@ describe("video_render processor: target duration + voiceover captions", () => {
     expect(ass).toContain("星巴克今天主推冰美式");
     expect(ass).not.toContain("开场展示星巴克门店或招牌");
     expect(ass).not.toContain("展示冰美式制作过程");
+  });
+
+  it("asset_only mode burns no subtitles (no voice track)", async () => {
+    const captured: { input?: RenderCompositeInput } = {};
+    // 无 TH 产物 → asset_only 模式（spec §4.3）：无配音轨，ASS 零 Dialogue 行
+    await processVideoRender(fakeJob, makeDeps(captured, null));
+    const ass = captured.input?.assContent ?? "";
+    expect(ass).toContain("[Events]"); // ASS 文件本身仍存在（头部完整）
+    expect(ass).not.toContain("Dialogue:");
+    expect(ass).not.toContain("星巴克今天主推冰美式");
   });
 });
