@@ -37,7 +37,13 @@ export async function POST(request: Request) {
   const purpose = (body.purpose ?? "store_traffic") as MarketingPurpose;
 
   const script = body.forceTemplate
-    ? createTemplateScriptDraft({ store, assetAnalyses, purpose, reason: "manual_template_mode" })
+    ? createTemplateScriptDraft({
+        store,
+        assetAnalyses,
+        purpose,
+        reason: "manual_template_mode",
+        targetDurationSec: typeof body.targetDurationSec === "number" ? body.targetDurationSec : undefined,
+      })
     : await createScriptDraft({
         store,
         assetAnalyses,

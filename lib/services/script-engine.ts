@@ -11,7 +11,7 @@ interface ScriptDraftInput {
   purpose: MarketingPurpose;
   platform?: Platform;
   forcedRawCopy?: string;
-  /** 目标时长（秒）：15 / 30 / 60，影响 AI 场景数与文案量。 */
+  /** 目标时长（秒）：30 / 45 / 60，影响 AI 场景数与文案量。 */
   targetDurationSec?: number;
 }
 
@@ -20,6 +20,8 @@ interface TemplateDraftInput {
   assetAnalyses: AssetAnalysis[];
   purpose: MarketingPurpose;
   reason: string;
+  /** 目标时长（秒）：30 / 45 / 60，影响模板镜数与文案量。 */
+  targetDurationSec?: number;
 }
 
 // ── AI response schema ─────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ const SYSTEM_PROMPT = `你是为本地实体店创作短视频脚本的营销文
 - 语言自然不僵硬，像真人说话
 - 结尾有明确的行动号召（CTA）
 - 每句配音控制在8-15个字，方便朗读
-- 分3-4个场景，每个场景标注需要的画面素材提示
+- 按【目标时长】决定场景数与配音总字数（中文配音约每秒4.5字），每个场景标注需要的画面素材提示
 - 每个场景标注 role："presenter"=数字人口播镜头（开场/CTA 等真人出镜），"broll"=产品/环境空镜插播。开场和结尾优先 presenter，中间产品展示用 broll
 
 你会收到门店信息、素材分析结果、营销目的和发布平台，请根据这些信息创作脚本。`;
@@ -102,9 +104,9 @@ const SCHEMA_DESCRIPTION = `{
 // ── Prompt builders ────────────────────────────────────────────────────────
 
 function durationGuidance(target?: number): string {
-  if (target === 15) return "约15秒，分2-3个场景，每镜配音不超过12字";
-  if (target === 60) return "约60秒，分6-8个场景，每镜配音约15字";
-  return "约30秒，分3-5个场景，每镜配音8-15字";
+  if (target === 45) return "约45秒，分4-6个场景，配音全文约190-210字";
+  if (target === 60) return "约60秒，分6-8个场景，配音全文约260-280字";
+  return "约30秒，分3-5个场景，配音全文约130-150字";
 }
 
 function buildUserPrompt(input: ScriptDraftInput): string {
@@ -152,6 +154,7 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
       captions: [cleaned.copy],
       cta: purposeCta[input.purpose],
       warnings: cleaned.warnings,
+      targetDurationSec: input.targetDurationSec,
     });
   }
 
@@ -167,6 +170,7 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
         assetAnalyses: input.assetAnalyses,
         purpose: input.purpose,
         reason,
+        targetDurationSec: input.targetDurationSec,
       });
     }
   }
@@ -177,6 +181,7 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
     assetAnalyses: input.assetAnalyses,
     purpose: input.purpose,
     reason: "AI not configured (missing OPENAI_API_KEY)",
+    targetDurationSec: input.targetDurationSec,
   });
 }
 
@@ -221,6 +226,8 @@ export async function createScriptDraftWithAI(
     };
   });
 
+  warnIfDurationOffTarget(scenes, input.targetDurationSec);
+
   return buildDraft({
     store: input.store,
     assetAnalyses: input.assetAnalyses,
@@ -236,17 +243,17 @@ export async function createScriptDraftWithAI(
       : [voiceover.copy],
     cta: String(aiResponse.cta || purposeCta[input.purpose]),
     warnings: voiceover.warnings,
+    targetDurationSec: input.targetDurationSec,
   });
 }
 
 // ── Template fallback ──────────────────────────────────────────────────────
 
 export function createTemplateScriptDraft(input: TemplateDraftInput): ScriptDraft {
-  const primaryProduct = input.store.mainProducts[0] ?? "招牌产品";
   const warnings = [`AI unavailable, used template fallback: ${input.reason}`];
-  const hook = `今天推荐${input.store.name}的${primaryProduct}`;
-  const voiceover = `${input.store.name}今天主推${primaryProduct}，${input.store.sellingPoints[0] ?? "门店现做现卖"}。${purposeCta[input.purpose]}。`;
+  const voiceover = buildTemplateVoiceover(input.store, input.purpose, input.targetDurationSec);
   const cleaned = sanitizeCopy(voiceover, input.store.forbiddenWords);
+  const primaryProduct = input.store.mainProducts[0] ?? "招牌产品";
 
   return buildDraft({
     store: input.store,
@@ -255,13 +262,38 @@ export function createTemplateScriptDraft(input: TemplateDraftInput): ScriptDraf
     platform: "douyin",
     generationMode: "template_fallback",
     title: `${input.store.name}｜${primaryProduct}到店推荐`,
-    hook,
+    hook: `今天推荐${input.store.name}的${primaryProduct}`,
     voiceover: cleaned.copy,
-    scenes: buildTemplateScenes(input.store, input.assetAnalyses),
-    captions: [hook, cleaned.copy, purposeCta[input.purpose]],
+    scenes: buildTemplateScenes(input.store, input.assetAnalyses, input.targetDurationSec),
+    captions: [cleaned.copy],
     cta: purposeCta[input.purpose],
     warnings: [...warnings, ...cleaned.warnings],
+    targetDurationSec: input.targetDurationSec,
   });
+}
+
+/** 模板口播：按档位拼装门店真实字段（产品/卖点/活动/客群），不虚构承诺。 */
+function buildTemplateVoiceover(
+  store: StoreProfile,
+  purpose: MarketingPurpose,
+  targetDurationSec?: number,
+): string {
+  const primaryProduct = store.mainProducts[0] ?? "招牌产品";
+  const target = targetDurationSec ?? 30;
+  const parts: string[] = [
+    `${store.name}今天主推${primaryProduct}，${store.sellingPoints[0] ?? "门店现做现卖"}。`,
+  ];
+  if (target >= 45) {
+    if (store.mainProducts[1]) parts.push(`除了${primaryProduct}，${store.mainProducts[1]}也值得一试。`);
+    else if (store.sellingPoints[1]) parts.push(`${store.sellingPoints[1]}。`);
+    else if (store.location) parts.push(`就在${store.location}，路过进来看看。`);
+  }
+  if (target >= 60) {
+    if (store.promotions?.[0]) parts.push(`现在到店${store.promotions[0]}。`);
+    if (store.targetCustomers[0]) parts.push(`特别适合${store.targetCustomers[0]}。`);
+  }
+  parts.push(`${purposeCta[purpose]}。`);
+  return parts.join("");
 }
 
 // ── Shared builders ────────────────────────────────────────────────────────
@@ -279,6 +311,7 @@ function buildDraft(input: {
   captions: string[];
   cta: string;
   warnings: string[];
+  targetDurationSec?: number;
 }): ScriptDraft {
   const matchInputs: AssetMatchInput[] = input.assetAnalyses.map((a) => ({
     assetId: a.assetId,
@@ -300,40 +333,78 @@ function buildDraft(input: {
     cta: input.cta,
     generationMode: input.generationMode,
     complianceWarnings: input.warnings,
+    ...(input.targetDurationSec ? { targetDurationSec: input.targetDurationSec } : {}),
     createdAt: nowIso(),
   };
+}
+
+/** AI 返回的各镜时长之和偏离目标 >50% 时打警告日志（不重试，仅观测）。 */
+export function warnIfDurationOffTarget(
+  scenes: ScriptScene[],
+  targetDurationSec?: number,
+): void {
+  if (!targetDurationSec || scenes.length === 0) return;
+  const sum = scenes.reduce((acc, s) => acc + (s.durationSeconds || 0), 0);
+  if (Math.abs(sum - targetDurationSec) > targetDurationSec * 0.5) {
+    console.warn(
+      `[script-engine] scene duration sum ${sum}s deviates >50% from target ${targetDurationSec}s`,
+    );
+  }
 }
 
 function buildTemplateScenes(
   store: StoreProfile,
   assetAnalyses: AssetAnalysis[],
+  targetDurationSec?: number,
 ): ScriptScene[] {
   const hints = collectAssetHints(assetAnalyses);
   const primaryProduct = store.mainProducts[0] ?? "招牌产品";
+  const target = targetDurationSec ?? 30;
+  const presenterSec = Math.max(3, Math.round(target * 0.15));
+  const brollSec = Math.max(4, Math.round(target * 0.25));
 
-  return [
+  const scenes: ScriptScene[] = [
     {
       order: 1,
       text: `开场展示${store.name}门店或招牌`,
-      durationSeconds: 4,
+      durationSeconds: presenterSec,
       assetHints: hints.length ? hints : ["门店环境"],
       role: "presenter",
     },
     {
       order: 2,
       text: `展示${primaryProduct}和制作/服务过程`,
-      durationSeconds: 7,
+      durationSeconds: brollSec,
       assetHints: [primaryProduct, ...hints].slice(0, 3),
       role: "broll",
     },
-    {
-      order: 3,
-      text: "展示优惠、地址或到店 CTA",
-      durationSeconds: 4,
-      assetHints: ["促销", "到店引流"],
-      role: "presenter",
-    },
   ];
+  if (target >= 45) {
+    scenes.push({
+      order: scenes.length + 1,
+      text: `展示${store.name}店内环境和氛围`,
+      durationSeconds: brollSec,
+      assetHints: ["门店环境", ...hints].slice(0, 3),
+      role: "broll",
+    });
+  }
+  if (target >= 60) {
+    scenes.push({
+      order: scenes.length + 1,
+      text: `展示${primaryProduct}细节特写和顾客反馈`,
+      durationSeconds: brollSec,
+      assetHints: [primaryProduct, "口碑"].slice(0, 3),
+      role: "broll",
+    });
+  }
+  scenes.push({
+    order: scenes.length + 1,
+    text: "展示优惠、地址或到店 CTA",
+    durationSeconds: presenterSec,
+    assetHints: ["促销", "到店引流"],
+    role: "presenter",
+  });
+  return scenes;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

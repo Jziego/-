@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { createScriptDraft, createTemplateScriptDraft } from "@/lib/services/script-engine";
+import { describe, expect, it, vi } from "vitest";
+import { createScriptDraft, createTemplateScriptDraft, warnIfDurationOffTarget } from "@/lib/services/script-engine";
 import type { AssetAnalysis, StoreProfile } from "@/lib/types";
 
 const store: StoreProfile = {
@@ -116,5 +116,60 @@ describe("script engine", () => {
       targetDurationSec: 15,
     });
     expect(draft.scenes.length).toBeGreaterThan(0);
+  });
+
+  it("template draft carries targetDurationSec and scales scene durations to the slot", () => {
+    const d45 = createTemplateScriptDraft({
+      store, assetAnalyses: analysis, purpose: "store_traffic",
+      reason: "test", targetDurationSec: 45,
+    });
+    expect(d45.targetDurationSec).toBe(45);
+    // 45s 档：4 镜（开场 presenter + 2 broll + 结尾 presenter），presenter 镜各 ≈45*0.15≈7s
+    expect(d45.scenes).toHaveLength(4);
+    const presenters = d45.scenes.filter((s) => s.role === "presenter");
+    expect(presenters).toHaveLength(2);
+    for (const p of presenters) expect(p.durationSeconds).toBe(7);
+  });
+
+  it("template default (no target) keeps the 3-scene 30s layout", () => {
+    const d = createTemplateScriptDraft({
+      store, assetAnalyses: analysis, purpose: "store_traffic", reason: "test",
+    });
+    expect(d.scenes).toHaveLength(3);
+    expect(d.targetDurationSec).toBeUndefined();
+  });
+
+  it("template 60s slot produces 5 scenes and longer voiceover than 30s slot", () => {
+    const d30 = createTemplateScriptDraft({
+      store, assetAnalyses: analysis, purpose: "store_traffic",
+      reason: "test", targetDurationSec: 30,
+    });
+    const d60 = createTemplateScriptDraft({
+      store, assetAnalyses: analysis, purpose: "store_traffic",
+      reason: "test", targetDurationSec: 60,
+    });
+    expect(d60.scenes).toHaveLength(5);
+    expect(d60.voiceover.length).toBeGreaterThan(d30.voiceover.length);
+    // 60s 档口播包含活动信息（store.promotions[0] 存在时）
+    expect(d60.voiceover).toContain("工作日午餐第二份半价");
+  });
+
+  it("warnIfDurationOffTarget warns when scene sum deviates >50% from target", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    warnIfDurationOffTarget(
+      [{ order: 1, text: "x", durationSeconds: 5, assetHints: [], role: "presenter" }],
+      45,
+    );
+    expect(spy).toHaveBeenCalledOnce();
+    spy.mockClear();
+    warnIfDurationOffTarget(
+      [
+        { order: 1, text: "a", durationSeconds: 20, assetHints: [], role: "presenter" },
+        { order: 2, text: "b", durationSeconds: 20, assetHints: [], role: "broll" },
+      ],
+      45,
+    );
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });
