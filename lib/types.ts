@@ -129,6 +129,8 @@ export interface ScriptDraft {
   cta: string;
   generationMode: "ai" | "template_fallback";
   complianceWarnings: string[];
+  /** 目标成片时长（秒）：30 / 45 / 60。 */
+  targetDurationSec?: number;
   createdAt: string;
 }
 
@@ -143,6 +145,8 @@ export interface RenderProject {
   aspectRatio: AspectRatio;
   subtitleStyle: "default" | "bold_bottom" | "minimal";
   bgmTrackId?: string;
+  /** 继承自 ScriptDraft：目标成片时长（秒）。 */
+  targetDurationSec?: number;
   status: RenderStatus;
   createdAt: string;
   updatedAt: string;

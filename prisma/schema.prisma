@@ -143,6 +143,7 @@ model ScriptDraft {
   cta                String
   generationMode     String
   complianceWarnings String[]
+  targetDurationSec  Int?
   createdAt          DateTime        @default(now())
   owner              User            @relation(fields: [ownerId], references: [id])
   store              StoreProfile    @relation(fields: [storeId], references: [id])
@@ -160,6 +161,7 @@ model RenderProject {
   aspectRatio      String
   subtitleStyle    String
   bgmTrackId       String?
+  targetDurationSec Int?
   status           String
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt

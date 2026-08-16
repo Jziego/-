@@ -188,6 +188,7 @@ export function toScriptDraft(row: PrismaScriptDraft): ScriptDraft {
     cta: row.cta,
     generationMode: row.generationMode as ScriptDraft["generationMode"],
     complianceWarnings: row.complianceWarnings,
+    targetDurationSec: row.targetDurationSec ?? undefined,
     createdAt: row.createdAt.toISOString()
   };
 }
@@ -207,6 +208,7 @@ export function toScriptDraftInput(script: ScriptDraft) {
     cta: script.cta,
     generationMode: script.generationMode,
     complianceWarnings: script.complianceWarnings,
+    targetDurationSec: script.targetDurationSec ?? null,
     createdAt: new Date(script.createdAt)
   };
 }
@@ -223,6 +225,7 @@ export function toRenderProject(row: PrismaRenderProject): RenderProject {
     aspectRatio: row.aspectRatio as RenderProject["aspectRatio"],
     subtitleStyle: row.subtitleStyle as RenderProject["subtitleStyle"],
     bgmTrackId: row.bgmTrackId ?? undefined,
+    targetDurationSec: row.targetDurationSec ?? undefined,
     status: row.status as RenderProject["status"],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
@@ -241,6 +244,7 @@ export function toRenderProjectInput(project: RenderProject) {
     aspectRatio: project.aspectRatio,
     subtitleStyle: project.subtitleStyle,
     bgmTrackId: project.bgmTrackId ?? null,
+    targetDurationSec: project.targetDurationSec ?? null,
     status: project.status,
     createdAt: new Date(project.createdAt),
     updatedAt: new Date(project.updatedAt)
