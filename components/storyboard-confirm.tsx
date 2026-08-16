@@ -117,6 +117,7 @@ export function StoryboardConfirm({ draft, assets, bgmTracks, onPatch, onConfirm
         <label>
           背景音乐
           <select value={bgmTrackId} onChange={(e) => setBgmTrackId(e.target.value)}>
+            <option value="">无音乐</option>
             {bgmTracks.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
           </select>
         </label>

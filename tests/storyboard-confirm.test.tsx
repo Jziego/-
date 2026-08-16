@@ -88,6 +88,18 @@ describe("StoryboardConfirm", () => {
     expect(screen.getByText(/已选/)).toBeInTheDocument();
   });
 
+  it("offers a 无音乐 option that confirms with empty bgmTrackId", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderConfirm();
+    await user.selectOptions(screen.getByLabelText(/背景音乐/), "");
+    await user.click(screen.getByRole("button", { name: /确认渲染/ }));
+    await waitFor(() => {
+      expect(onConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({ bgmTrackId: "" }),
+      );
+    });
+  });
+
   it("clearing a match sets matchedAssetId null and shows 待匹配", async () => {
     const user = userEvent.setup();
     const { onPatch } = renderConfirm();
