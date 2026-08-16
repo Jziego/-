@@ -243,12 +243,49 @@ export function resolveSubtitlePreset(style: string | undefined | null): Subtitl
   return style === "bold_bottom" || style === "minimal" ? style : "default";
 }
 
+// ── Voiceover-derived caption cues ─────────────────────────────────────────
+
+export interface CaptionCue {
+  startSec: number;
+  endSec: number;
+  text: string;
+}
+
+/** 按中英文句读切句，保留句尾标点。无标点时整段为一句。 */
+export function splitVoiceoverSentences(voiceover: string): string[] {
+  return voiceover
+    .split(/(?<=[。！？!?；;\n])/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 /**
- * Generate an ASS subtitle file: one Dialogue line per timeline segment,
- * timed by accumulated segment boundaries. Styled by the chosen preset.
- * Requires the CJK font (worker/Dockerfile installs font-noto-cjk).
+ * 字幕 cues 从口播全文派生（Bug 3 fix：字幕必须等于配音内容）。
+ * 按句切分，按句字数加权分摊配音总时长，cues 连续覆盖 [0, totalDurationSec]。
  */
-export function buildAss(segments: TimelineSegment[], preset: SubtitleStylePreset): string {
+export function buildCaptionCues(voiceover: string, totalDurationSec: number): CaptionCue[] {
+  const sentences = splitVoiceoverSentences(voiceover);
+  if (sentences.length === 0 || totalDurationSec <= 0) return [];
+  const weights = sentences.map((s) => Math.max(Array.from(s).length, 1));
+  const weightTotal = weights.reduce((a, b) => a + b, 0);
+  let cursor = 0;
+  return sentences.map((text, i) => {
+    const duration = ((weights[i] as number) / weightTotal) * totalDurationSec;
+    const cue = { startSec: cursor, endSec: cursor + duration, text };
+    cursor += duration;
+    return cue;
+  });
+}
+
+/**
+ * Generate an ASS subtitle file: one Dialogue line per cue (timeline segment
+ * or voiceover caption cue), timed by the cue boundaries. Styled by the
+ * chosen preset. Requires the CJK font (worker/Dockerfile installs font-noto-cjk).
+ */
+export function buildAss(
+  cues: Array<{ startSec: number; endSec: number; text: string }>,
+  preset: SubtitleStylePreset,
+): string {
   const s = SUBTITLE_PRESETS[preset] ?? SUBTITLE_PRESETS.default;
   const header = [
     "[Script Info]",
@@ -263,9 +300,11 @@ export function buildAss(segments: TimelineSegment[], preset: SubtitleStylePrese
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
   ];
-  const dialogues = segments.map((seg) =>
-    `Dialogue: 0,${assTimestamp(seg.startSec)},${assTimestamp(seg.endSec)},Default,,0,0,0,,${seg.text}`
-  );
+  const dialogues = cues
+    .filter((cue) => cue.text.length > 0)
+    .map((cue) =>
+      `Dialogue: 0,${assTimestamp(cue.startSec)},${assTimestamp(cue.endSec)},Default,,0,0,0,,${cue.text}`
+    );
   return [...header, ...dialogues].join("\n");
 }
 

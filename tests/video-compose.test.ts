@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTimeline, resolveCompositionMode, buildAss, resolveSubtitlePreset, buildFilterGraph } from "@/lib/services/video-compose";
+import { buildTimeline, resolveCompositionMode, buildAss, resolveSubtitlePreset, buildFilterGraph, buildCaptionCues, splitVoiceoverSentences } from "@/lib/services/video-compose";
 import type { TimelineSegment } from "@/lib/services/video-compose";
 import type { Asset, ScriptScene, VideoOutput } from "@/lib/types";
 
@@ -303,5 +303,41 @@ describe("buildFilterGraph", () => {
     });
     expect(g.filterComplex).toContain("[0:v]trim=duration=4");
     expect(g.filterComplex).not.toContain("color=c=black");
+  });
+});
+
+describe("buildCaptionCues (voiceover-derived subtitles)", () => {
+  it("splits Chinese voiceover on sentence punctuation, keeping it", () => {
+    expect(splitVoiceoverSentences("第一句。第二句！第三句？")).toEqual([
+      "第一句。",
+      "第二句！",
+      "第三句？",
+    ]);
+  });
+
+  it("returns a single cue for voiceover without punctuation", () => {
+    expect(splitVoiceoverSentences("没有标点的一整段")).toEqual(["没有标点的一整段"]);
+  });
+
+  it("cues are contiguous, cover the full duration, and are weighted by sentence length", () => {
+    const cues = buildCaptionCues("短。这一句比较长一些。", 10);
+    expect(cues).toHaveLength(2);
+    expect(cues[0]?.startSec).toBe(0);
+    expect(cues[0]?.endSec).toBeCloseTo(cues[1]?.startSec ?? -1, 5);
+    expect(cues[1]?.endSec).toBeCloseTo(10, 1);
+    // 长句分到更多时间
+    const d0 = (cues[0]?.endSec ?? 0) - (cues[0]?.startSec ?? 0);
+    const d1 = (cues[1]?.endSec ?? 0) - (cues[1]?.startSec ?? 0);
+    expect(d1).toBeGreaterThan(d0);
+  });
+
+  it("empty voiceover or non-positive duration yields no cues", () => {
+    expect(buildCaptionCues("", 10)).toEqual([]);
+    expect(buildCaptionCues("句子。", 0)).toEqual([]);
+  });
+
+  it("buildAss renders cues with voiceover text (not scene descriptions)", () => {
+    const ass = buildAss(buildCaptionCues("星巴克今天主推冰美式。", 8), "default");
+    expect(ass).toContain("Dialogue: 0,0:00:00.00,0:00:08.00,Default,,0,0,0,,星巴克今天主推冰美式。");
   });
 });
