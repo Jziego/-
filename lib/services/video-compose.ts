@@ -31,9 +31,9 @@ export function resolveCompositionMode(talkingHead: VideoOutput | null): Composi
  * stream now equals totalDurationSec, so the tail no longer freezes).
  *
  * Σ segment.durationSec === totalDurationSec by construction (the returned
- * totalDurationSec is the actual accumulated cursor). In presenter mode the
- * total is min(talkingHeadDuration, targetDurationSec?, contentTotal) so the
- * output never exceeds the available footage/voiceover.
+ * totalDurationSec is the actual accumulated cursor): the total is
+ * min(talkingHeadDuration, contentTotal) in presenter mode (voice wins),
+ * min(targetDurationSec?, contentTotal) in asset_only mode.
  *
  * Broll assets follow scene.matchedAssetId pinning when present: assets pinned
  * to broll scenes come first in scene order, then remaining pool assets.
@@ -153,7 +153,7 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
     for (const s of openers) {
       beats.push({ role: "presenter", assetId: null, text: s.text, natural: Math.max(s.durationSeconds, 0.5) });
     }
-    pushBrollBeats(target !== undefined ? Math.max(target - presenterTotal, 0) : undefined);
+    pushBrollBeats(target !== undefined ? Math.max(Math.max(target, args.talkingHeadDurationSec as number) - presenterTotal, 0) : undefined);
     if (closer) {
       beats.push({ role: "presenter", assetId: null, text: closer.text, natural: Math.max(closer.durationSeconds, 0.5) });
     }
@@ -167,11 +167,10 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
     }
   }
 
-  // Total: content caps at the target slot when provided; the talking-head
-  // track always wins when shorter (the voiceover cannot be stretched).
+  // Total: the talking-head track is authoritative in both directions (spec §4.1 — the voiceover is never truncated); asset_only caps at the target slot.
   const contentTotal = beats.reduce((acc, b) => acc + b.natural, 0);
   const total = hasTalkingHead
-    ? Math.min(args.talkingHeadDurationSec as number, target ?? Infinity, contentTotal)
+    ? Math.min(args.talkingHeadDurationSec as number, contentTotal)
     : Math.min(target ?? Infinity, contentTotal);
   const scale = contentTotal > 0 ? total / contentTotal : 1;
 

@@ -4,6 +4,7 @@ import { POST as createAsset } from "@/app/api/assets/route";
 import { POST as createScriptDraft } from "@/app/api/script-drafts/route";
 import { GET as listStoreProfiles } from "@/app/api/store-profiles/route";
 import * as repositories from "@/lib/repositories";
+import { MemoryScriptRepository, MemoryStoreRepository } from "@/lib/repositories/memory";
 import { resetRuntimeStateForTests } from "@/lib/runtime-store";
 
 function jsonRequest(url: string, body?: unknown): Request {
@@ -28,6 +29,29 @@ describe("API error handling", () => {
 
     expect(response.status).toBe(404);
     expect(body.error).toBe("Store profile not found");
+  });
+
+  it("whitelists targetDurationSec to the 30/45/60 slots (3600 never reaches the engine)", async () => {
+    const stores = new MemoryStoreRepository();
+    await stores.upsert({
+      id: "store_slot", ownerId: "demo_user", name: "n", industry: "i",
+      mainProducts: [], targetCustomers: [], sellingPoints: [], brandTone: "t",
+      forbiddenWords: [], createdAt: "2026-08-16T00:00:00.000Z", updatedAt: "2026-08-16T00:00:00.000Z",
+    });
+    vi.spyOn(repositories, "getStoreRepository").mockImplementation(() => stores);
+    vi.spyOn(repositories, "getScriptRepository").mockImplementation(() => new MemoryScriptRepository());
+
+    const rejected = await createScriptDraft(
+      jsonRequest("http://localhost/api/script-drafts", { storeId: "store_slot", forceTemplate: true, targetDurationSec: 3600 })
+    );
+    expect(rejected.status).toBe(201);
+    expect((await rejected.json()).script.targetDurationSec).toBeUndefined();
+
+    const accepted = await createScriptDraft(
+      jsonRequest("http://localhost/api/script-drafts", { storeId: "store_slot", forceTemplate: true, targetDurationSec: 45 })
+    );
+    expect(accepted.status).toBe(201);
+    expect((await accepted.json()).script.targetDurationSec).toBe(45);
   });
 
   it("returns 400 when asset schema validation fails", async () => {

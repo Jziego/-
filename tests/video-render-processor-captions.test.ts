@@ -82,8 +82,8 @@ describe("video_render processor: target duration + voiceover captions", () => {
   it("normalizes the timeline to the project's target duration slot", async () => {
     const captured: { input?: RenderCompositeInput } = {};
     await processVideoRender(fakeJob, makeDeps(captured));
-    // 素材仅 5s、目标 45s、TH 50s → 循环复用后总时长 ≈45s（修复前为 ≈20s）
-    expect(captured.input?.totalDurationSec).toBeCloseTo(45, 0);
+    // 素材仅 5s、目标 45s、TH 50s → 口播超目标，成片以口播为准 ≈50s（spec §4.1）；修复前 ≈19s
+    expect(captured.input?.totalDurationSec).toBeCloseTo(50, 0);
   });
 
   it("burns subtitles from the voiceover, never from scene descriptions", async () => {

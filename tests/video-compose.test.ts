@@ -190,13 +190,13 @@ describe("video-compose buildTimeline", () => {
     expect(segments.some((s) => s.assetId === "a2")).toBe(true);
   });
 
-  it("target slot: presenter mode fills broll up to target minus presenter total", () => {
-    // presenter 镜 4+4=8s，目标 30s → broll 填 ≈22s；TH 60s 不限制
+  it("target slot: presenter mode total follows the talking-head voice (voice never truncated)", () => {
+    // TH 60s > target 30s → 成片以口播为准 ≈60s（spec §4.1：口播不可截断）；broll 预算 = max(target, TH) − presenterTotal
     const { segments, totalDurationSec } = buildTimeline({
       scenes, assets, selectedAssetIds: ["a1"],
       assetDurations: { a1: 5 }, talkingHeadDurationSec: 60, targetDurationSec: 30,
     });
-    expect(totalDurationSec).toBeCloseTo(30, 1);
+    expect(totalDurationSec).toBeCloseTo(60, 1);
     const brollSum = segments.filter((s) => s.role === "broll").reduce((acc, s) => acc + s.durationSec, 0);
     expect(brollSum).toBeGreaterThan(15); // 远大于单遍的 5s
   });

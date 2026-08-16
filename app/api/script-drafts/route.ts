@@ -5,6 +5,11 @@ import { getOwnerId } from "@/lib/auth-helpers";
 import { createScriptDraft, createTemplateScriptDraft } from "@/lib/services/script-engine";
 import type { MarketingPurpose, Platform } from "@/lib/types";
 
+// targetDurationSec drives worker render loops — only the UI duration slots are accepted.
+const DURATION_SLOTS = [30, 45, 60];
+const durationSlot = (v: unknown): number | undefined =>
+  typeof v === "number" && DURATION_SLOTS.includes(v) ? v : undefined;
+
 export async function GET(request: Request) {
   const ownerId = await getOwnerId();
   const limited = await applyRateLimit(request, ownerId);
@@ -42,14 +47,14 @@ export async function POST(request: Request) {
         assetAnalyses,
         purpose,
         reason: "manual_template_mode",
-        targetDurationSec: typeof body.targetDurationSec === "number" ? body.targetDurationSec : undefined,
+        targetDurationSec: durationSlot(body.targetDurationSec),
       })
     : await createScriptDraft({
         store,
         assetAnalyses,
         purpose,
         platform: (body.platform ?? "douyin") as Platform,
-        targetDurationSec: typeof body.targetDurationSec === "number" ? body.targetDurationSec : undefined,
+        targetDurationSec: durationSlot(body.targetDurationSec),
       });
 
   const saved = await getScriptRepository().create(script);
