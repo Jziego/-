@@ -118,4 +118,33 @@ describe("render pipeline", () => {
     expect(jobs.map((job) => job.type)).toEqual(["video_render"]);
     expect(jobs[0]?.dependsOnJobIds).toEqual([]);
   });
+
+  it("createRenderProject inherits targetDurationSec from the script draft", () => {
+    const draft: ScriptDraft = {
+      id: "script_t",
+      ownerId: "u",
+      storeId: "s",
+      purpose: "store_traffic",
+      platform: "douyin",
+      title: "t",
+      hook: "h",
+      scenes: [],
+      voiceover: "v",
+      captions: [],
+      cta: "c",
+      generationMode: "ai",
+      complianceWarnings: [],
+      targetDurationSec: 45,
+      createdAt: "2026-08-16T00:00:00.000Z",
+    };
+    const project = createRenderProject({
+      ownerId: "u",
+      storeId: "s",
+      scriptDraft: draft,
+      selectedAssetIds: [],
+      aspectRatio: "9:16",
+      subtitleStyle: "default",
+    });
+    expect(project.targetDurationSec).toBe(45);
+  });
 });

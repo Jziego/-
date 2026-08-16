@@ -26,6 +26,7 @@ export function createRenderProject(input: CreateRenderProjectInput): RenderProj
     aspectRatio: input.aspectRatio,
     subtitleStyle: input.subtitleStyle,
     bgmTrackId: input.bgmTrackId,
+    targetDurationSec: input.scriptDraft.targetDurationSec,
     status: "queued",
     createdAt: now,
     updatedAt: now
