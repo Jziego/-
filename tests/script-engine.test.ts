@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createScriptDraft, createTemplateScriptDraft, warnIfDurationOffTarget } from "@/lib/services/script-engine";
+import { createScriptDraft, createTemplateScriptDraft, warnIfVoiceoverOffTarget } from "@/lib/services/script-engine";
 import * as aiClient from "@/lib/services/ai-client";
 import type { AssetAnalysis, StoreProfile } from "@/lib/types";
 
@@ -38,7 +38,7 @@ const analysis: AssetAnalysis[] = [
   }
 ];
 
-describe("script engine", () => {
+describe("script engine (voiceover-centric)", () => {
   it("creates structured short-video copy from store profile and asset analysis", async () => {
     const draft = await createScriptDraft({
       store,
@@ -49,23 +49,27 @@ describe("script engine", () => {
 
     expect(draft.title).toContain("阿姨手作面馆");
     expect(draft.hook).toContain("牛肉面");
-    expect(draft.scenes).toHaveLength(3);
     expect(draft.voiceover).toContain("现熬牛骨汤");
     expect(draft.cta).toContain("到店");
     expect(draft.complianceWarnings).not.toContain("全网第一");
+    // Phase 2：口播为中心——30s 模板 2 句 → 2 segments / 2 presenter scenes
+    expect(draft.segments ?? []).toHaveLength(2);
+    expect(draft.highlights).toEqual(expect.arrayContaining(["牛肉面", "现熬牛骨汤"]));
+    expect(draft.scenes).toHaveLength(2);
+    expect(draft.scenes.every((s) => s.role === "presenter")).toBe(true);
+    expect(draft.scenes[0]?.text).toBe(draft.segments?.[0]?.text);
   });
 
   it("falls back to a deterministic industry template when AI generation is unavailable", () => {
     const draft = createTemplateScriptDraft({
       store,
-      assetAnalyses: analysis,
       purpose: "new_product",
       reason: "ai_unavailable"
     });
 
     expect(draft.generationMode).toBe("template_fallback");
     expect(draft.title).toContain("牛肉面");
-    expect(draft.scenes[0]?.assetHints).toContain("招牌菜");
+    expect(draft.voiceover).toContain("牛肉面");
   });
 
   it("removes forbidden words from generated copy", async () => {
@@ -80,34 +84,18 @@ describe("script engine", () => {
     expect(draft.voiceover).not.toContain("全网第一");
     expect(draft.voiceover).not.toContain("最便宜");
     expect(draft.complianceWarnings).toContain("Removed forbidden words: 最便宜, 全网第一");
+    expect(draft.highlights).toEqual(["牛肉面"]);
   });
 
-  it("assigns presenter to hook+cta scenes and broll to the product scene", () => {
-    const draft = createTemplateScriptDraft({
-      store,
-      assetAnalyses: analysis,
-      purpose: "promotion",
-      reason: "test"
-    });
-
-    expect(draft.scenes.map((s) => s.role)).toEqual(["presenter", "broll", "presenter"]);
+  it("derives presenter scenes from the first and last voiceover sentences", () => {
+    const draft = createTemplateScriptDraft({ store, purpose: "promotion", reason: "test" });
+    const segments = draft.segments ?? [];
+    expect(draft.scenes.map((s) => s.role)).toEqual(["presenter", "presenter"]);
+    expect(draft.scenes[0]?.text).toBe(segments[0]?.text);
+    expect(draft.scenes[1]?.text).toBe(segments[segments.length - 1]?.text);
   });
 
-  it("fills matchedAssetId on generated scenes via tag overlap", async () => {
-    const draft = await createScriptDraft({
-      store,
-      assetAnalyses: analysis,
-      purpose: "store_traffic",
-      platform: "douyin",
-      forcedRawCopy: "现熬牛骨汤，午市出餐快",
-    });
-    // template scenes 的 hints 含 analysis 的 businessTags（招牌菜/到店引流）
-    const matched = draft.scenes.map((s) => s.matchedAssetId ?? null);
-    expect(matched).toContain("asset_1");
-  });
-
-  it("accepts targetDurationSec and threads a duration hint into the prompt", async () => {
-    // forcedRawCopy 路径不依赖 AI，仅验证入参被接受且不抛错
+  it("accepts targetDurationSec and carries it onto the draft", async () => {
     const draft = await createScriptDraft({
       store,
       assetAnalyses: analysis,
@@ -116,93 +104,107 @@ describe("script engine", () => {
       forcedRawCopy: "短文案测试",
       targetDurationSec: 15,
     });
-    expect(draft.scenes.length).toBeGreaterThan(0);
+    expect(draft.targetDurationSec).toBe(15);
+    expect((draft.segments ?? []).length).toBeGreaterThan(0);
   });
 
-  it("template draft carries targetDurationSec and scales scene durations to the slot", () => {
+  it("template 45s slot: 3 segments, 2 derived presenter scenes with estimated durations", () => {
     const d45 = createTemplateScriptDraft({
-      store, assetAnalyses: analysis, purpose: "store_traffic",
-      reason: "test", targetDurationSec: 45,
+      store, purpose: "store_traffic", reason: "test", targetDurationSec: 45,
     });
     expect(d45.targetDurationSec).toBe(45);
-    // 45s 档：4 镜（开场 presenter + 2 broll + 结尾 presenter），presenter 镜各 ≈45*0.15≈7s
-    expect(d45.scenes).toHaveLength(4);
-    const presenters = d45.scenes.filter((s) => s.role === "presenter");
-    expect(presenters).toHaveLength(2);
-    for (const p of presenters) expect(p.durationSeconds).toBe(7);
+    // 45s 档口播 3 句（主推 + 第二产品 + CTA）
+    expect(d45.segments ?? []).toHaveLength(3);
+    expect(d45.scenes).toHaveLength(2);
+    // 首句 20 字 ≈ 4s；末句 15 字 ≈ 3s
+    expect(d45.scenes.map((s) => s.durationSeconds)).toEqual([4, 3]);
   });
 
-  it("template default (no target) keeps the 3-scene 30s layout", () => {
-    const d = createTemplateScriptDraft({
-      store, assetAnalyses: analysis, purpose: "store_traffic", reason: "test",
-    });
-    expect(d.scenes).toHaveLength(3);
+  it("template default (no target) keeps the 30s 2-sentence layout", () => {
+    const d = createTemplateScriptDraft({ store, purpose: "store_traffic", reason: "test" });
+    expect(d.segments ?? []).toHaveLength(2);
+    expect(d.scenes).toHaveLength(2);
     expect(d.targetDurationSec).toBeUndefined();
   });
 
-  it("template 60s slot produces 5 scenes and longer voiceover than 30s slot", () => {
+  it("template 60s slot produces more segments and store-field highlights", () => {
     const d30 = createTemplateScriptDraft({
-      store, assetAnalyses: analysis, purpose: "store_traffic",
-      reason: "test", targetDurationSec: 30,
+      store, purpose: "store_traffic", reason: "test", targetDurationSec: 30,
     });
     const d60 = createTemplateScriptDraft({
-      store, assetAnalyses: analysis, purpose: "store_traffic",
-      reason: "test", targetDurationSec: 60,
+      store, purpose: "store_traffic", reason: "test", targetDurationSec: 60,
     });
-    expect(d60.scenes).toHaveLength(5);
+    expect((d60.segments ?? []).length).toBeGreaterThan((d30.segments ?? []).length);
     expect(d60.voiceover.length).toBeGreaterThan(d30.voiceover.length);
-    // 60s 档口播包含活动信息（store.promotions[0] 存在时）
     expect(d60.voiceover).toContain("工作日午餐第二份半价");
+    expect(d60.highlights).toEqual(expect.arrayContaining(["工作日午餐第二份半价", "葱油拌面"]));
   });
 
-  it("warnIfDurationOffTarget warns when scene sum deviates >50% from target", () => {
+  it("warnIfVoiceoverOffTarget warns when voiceover length deviates >50% from the slot", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    warnIfDurationOffTarget(
-      [{ order: 1, text: "x", durationSeconds: 5, assetHints: [], role: "presenter" }],
-      45,
-    );
+    warnIfVoiceoverOffTarget("太短了。", 45); // 4 字 vs 预期 ≈202 字
     expect(spy).toHaveBeenCalledOnce();
     spy.mockClear();
-    warnIfDurationOffTarget(
-      [
-        { order: 1, text: "a", durationSeconds: 20, assetHints: [], role: "presenter" },
-        { order: 2, text: "b", durationSeconds: 20, assetHints: [], role: "broll" },
-      ],
-      45,
-    );
+    warnIfVoiceoverOffTarget("字".repeat(200), 45); // 200 字 ≈ 预期 202 字
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 
-  it("AI empty-scenes fallback scales template scenes to the target slot", async () => {
+  it("AI path filters highlights to words present in the voiceover and derives segments/scenes", async () => {
     const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
     const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
       title: "测试标题",
       hook: "测试钩子",
-      scenes: [],
-      voiceover: "测试配音文案",
-      captions: ["测试配音文案"],
+      voiceover: "第一句口播内容。第二句口播内容。第三句口播内容。",
+      highlights: ["口播", "稿里不存在的词"],
+      onCameraSentences: ["第二句口播内容。"],
       cta: "到店体验",
     });
     try {
       const draft = await createScriptDraft({
-        store, assetAnalyses: analysis, purpose: "store_traffic",
-        platform: "douyin", targetDurationSec: 60,
+        store, assetAnalyses: analysis, purpose: "store_traffic", platform: "douyin",
       });
-      // 走了 AI 路径（非模板降级），但 AI 返回空 scenes → 兜底模板镜应按 60s 档出 5 镜
       expect(draft.generationMode).toBe("ai");
-      expect(draft.scenes).toHaveLength(5);
+      expect(draft.highlights).toEqual(["口播"]);
+      const segments = draft.segments ?? [];
+      expect(segments.map((s) => s.text)).toEqual(["第一句口播内容。", "第二句口播内容。", "第三句口播内容。"]);
+      expect(segments.map((s) => s.onCamera)).toEqual([false, true, false]);
+      expect(segments.every((s) => s.speakerIndex === 0)).toBe(true);
+      expect(draft.scenes).toHaveLength(2);
+      expect(draft.scenes[0]?.text).toBe("第一句口播内容。");
     } finally {
       hasAISpy.mockRestore();
       aiSpy.mockRestore();
     }
   });
 
-  it("forcedRawCopy path scales template scenes to the target slot", async () => {
-    const draft = await createScriptDraft({
-      store, assetAnalyses: analysis, purpose: "promotion",
-      platform: "douyin", forcedRawCopy: "现熬牛骨汤，午市出餐快", targetDurationSec: 60,
+  it("AI path tolerates missing highlights/onCameraSentences (defaults: first+last on-camera)", async () => {
+    const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      title: "t",
+      hook: "h",
+      voiceover: "开场一句。中间一句。结尾一句。",
+      cta: "到店",
     });
-    expect(draft.scenes).toHaveLength(5);
+    try {
+      const draft = await createScriptDraft({
+        store, assetAnalyses: analysis, purpose: "store_traffic", platform: "douyin",
+      });
+      expect(draft.highlights).toEqual([]);
+      expect((draft.segments ?? []).map((s) => s.onCamera)).toEqual([true, false, true]);
+    } finally {
+      hasAISpy.mockRestore();
+      aiSpy.mockRestore();
+    }
+  });
+
+  it("forcedRawCopy path derives segments, scenes and store-field highlights", async () => {
+    const draft = await createScriptDraft({
+      store, assetAnalyses: analysis, purpose: "promotion", platform: "douyin",
+      forcedRawCopy: "现熬牛骨汤，午市出餐快。欢迎来尝。",
+    });
+    expect(draft.segments ?? []).toHaveLength(2);
+    expect(draft.scenes.map((s) => s.role)).toEqual(["presenter", "presenter"]);
+    expect(draft.highlights).toEqual(expect.arrayContaining(["现熬牛骨汤", "午市出餐快"]));
   });
 });

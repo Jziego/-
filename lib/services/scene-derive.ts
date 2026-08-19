@@ -1,14 +1,13 @@
+import { SPEECH_CHARS_PER_SECOND } from "@/lib/speech-rate";
 import { splitVoiceoverSentences } from "@/lib/services/video-compose";
 import type { ScriptScene, ScriptSegment } from "@/lib/types";
 
-/** 中文口播语速假设：约 4.5 字/秒（spec §4.1，Phase 1 上线后按实测校准）。 */
-const CHARS_PER_SECOND = 4.5;
 /** presenter 镜最短时长，避免退化 trim 窗口。 */
 const MIN_PRESENTER_SEC = 3;
 
 /** 口播句时长估算：字数 / 4.5，下限 3s。 */
 export function estimateSegmentSeconds(text: string): number {
-  return Math.max(MIN_PRESENTER_SEC, Math.round(Array.from(text).length / CHARS_PER_SECOND));
+  return Math.max(MIN_PRESENTER_SEC, Math.round(Array.from(text).length / SPEECH_CHARS_PER_SECOND));
 }
 
 /**

@@ -44,7 +44,6 @@ export async function POST(request: Request) {
   const script = body.forceTemplate
     ? createTemplateScriptDraft({
         store,
-        assetAnalyses,
         purpose,
         reason: "manual_template_mode",
         targetDurationSec: durationSlot(body.targetDurationSec),

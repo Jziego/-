@@ -1,7 +1,12 @@
 import { createId, nowIso } from "@/lib/ids";
+import { SPEECH_CHARS_PER_SECOND } from "@/lib/speech-rate";
 import { hasAI, chatCompletionJSON, sanitizePromptField } from "@/lib/services/ai-client";
-import { matchAssetsToScenes, type AssetMatchInput } from "@/lib/services/script-match";
-import type { AssetAnalysis, MarketingPurpose, Platform, SceneRole, ScriptDraft, ScriptScene, StoreProfile } from "@/lib/types";
+import {
+  deriveScenesFromSegments,
+  deriveSegmentsFromVoiceover,
+  filterActiveHighlights,
+} from "@/lib/services/scene-derive";
+import type { AssetAnalysis, MarketingPurpose, Platform, ScriptDraft, ScriptSegment, StoreProfile } from "@/lib/types";
 
 // ── Public input types ─────────────────────────────────────────────────────
 
@@ -11,16 +16,15 @@ interface ScriptDraftInput {
   purpose: MarketingPurpose;
   platform?: Platform;
   forcedRawCopy?: string;
-  /** 目标时长（秒）：30 / 45 / 60，影响 AI 场景数与文案量。 */
+  /** 目标时长（秒）：30 / 45 / 60，影响 AI 文案量。 */
   targetDurationSec?: number;
 }
 
 interface TemplateDraftInput {
   store: StoreProfile;
-  assetAnalyses: AssetAnalysis[];
   purpose: MarketingPurpose;
   reason: string;
-  /** 目标时长（秒）：30 / 45 / 60，影响模板镜数与文案量。 */
+  /** 目标时长（秒）：30 / 45 / 60，影响模板文案量。 */
   targetDurationSec?: number;
 }
 
@@ -29,15 +33,11 @@ interface TemplateDraftInput {
 interface AIScriptResponse {
   title: string;
   hook: string;
-  scenes: Array<{
-    order: number;
-    text: string;
-    durationSeconds: number;
-    assetHints: string[];
-    role?: string;
-  }>;
   voiceover: string;
-  captions: string[];
+  /** 口播稿中需标黄的关键词原文（产品名/价格/活动/CTA）。 */
+  highlights?: string[];
+  /** 适合真人出镜的口播句原文（开场/CTA 优先）。 */
+  onCameraSentences?: string[];
   cta: string;
 }
 
@@ -70,43 +70,35 @@ const platformNames: Record<Platform, string> = {
 
 // ── System prompt ──────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `你是为本地实体店创作短视频脚本的营销文案专家。
-你的文案必须口语化、有网感、适合短视频配音。视频时长按用户给的【目标时长】控制，场景数与每镜配音字数匹配目标时长。
+const SYSTEM_PROMPT = `你是为本地实体店创作短视频口播稿的营销文案专家。
+你的文案必须口语化、有网感、适合短视频配音。口播稿总长度按用户给的【目标时长】控制（中文配音约每秒4.5字）。
 
 要求：
 - 开头3秒内抓住注意力（hook）
 - 突出产品卖点和门店特色
 - 语言自然不僵硬，像真人说话
 - 结尾有明确的行动号召（CTA）
-- 每句配音控制在8-15个字，方便朗读
-- 按【目标时长】决定场景数与配音总字数（中文配音约每秒4.5字），每个场景标注需要的画面素材提示
-- 每个场景标注 role："presenter"=数字人口播镜头（开场/CTA 等真人出镜），"broll"=产品/环境空镜插播。开场和结尾优先 presenter，中间产品展示用 broll
+- 每句控制在8-15个字，方便朗读，句与句之间用中文句号分隔
+- highlights：从口播稿中挑出需要字幕标黄的关键词（产品名/价格/活动/CTA），必须逐字摘自你写好的口播稿
+- onCameraSentences：从口播稿中挑出适合真人出镜的句子（开场与结尾 CTA 优先），必须逐字摘自你写好的口播稿
 
-你会收到门店信息、素材分析结果、营销目的和发布平台，请根据这些信息创作脚本。`;
+你会收到门店信息、素材分析结果、营销目的和发布平台，请根据这些信息创作口播稿。`;
 
 const SCHEMA_DESCRIPTION = `{
   "title": "视频标题（10字以内）",
   "hook": "开头吸引句（15字以内）",
-  "scenes": [
-    {
-      "order": 1,
-      "text": "场景描述",
-      "durationSeconds": 4,
-      "assetHints": ["需要的画面素材标签"],
-      "role": "presenter"
-    }
-  ],
-  "voiceover": "完整配音文案",
-  "captions": ["字幕行1", "字幕行2"],
+  "voiceover": "完整口播文案（按目标时长控制总字数）",
+  "highlights": ["口播稿中需标黄的关键词原文"],
+  "onCameraSentences": ["适合真人出镜的口播句原文"],
   "cta": "行动号召文案"
 }`;
 
 // ── Prompt builders ────────────────────────────────────────────────────────
 
 function durationGuidance(target?: number): string {
-  if (target === 45) return "约45秒，分4-6个场景，配音全文约190-210字";
-  if (target === 60) return "约60秒，分6-8个场景，配音全文约260-280字";
-  return "约30秒，分3-5个场景，配音全文约130-150字";
+  if (target === 45) return "约45秒，口播全文约190-210字";
+  if (target === 60) return "约60秒，口播全文约260-280字";
+  return "约30秒，口播全文约130-150字";
 }
 
 function buildUserPrompt(input: ScriptDraftInput): string {
@@ -143,15 +135,14 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
     const cleaned = sanitizeCopy(input.forcedRawCopy, input.store.forbiddenWords);
     return buildDraft({
       store: input.store,
-      assetAnalyses: input.assetAnalyses,
       purpose: input.purpose,
       platform: input.platform ?? "douyin",
       generationMode: "ai",
       title: `${input.store.name}本期推荐`,
       hook: cleaned.copy,
       voiceover: cleaned.copy,
-      scenes: buildTemplateScenes(input.store, input.assetAnalyses, input.targetDurationSec),
-      captions: [cleaned.copy],
+      highlights: storeFieldHighlights(input.store, cleaned.copy),
+      segments: deriveSegmentsFromVoiceover(cleaned.copy),
       cta: purposeCta[input.purpose],
       warnings: cleaned.warnings,
       targetDurationSec: input.targetDurationSec,
@@ -167,7 +158,6 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
       console.warn(`[script-engine] AI generation failed, falling back to template: ${reason}`);
       return createTemplateScriptDraft({
         store: input.store,
-        assetAnalyses: input.assetAnalyses,
         purpose: input.purpose,
         reason,
         targetDurationSec: input.targetDurationSec,
@@ -178,7 +168,6 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
   // 3. No AI configured — use template
   return createTemplateScriptDraft({
     store: input.store,
-    assetAnalyses: input.assetAnalyses,
     purpose: input.purpose,
     reason: "AI not configured (missing OPENAI_API_KEY)",
     targetDurationSec: input.targetDurationSec,
@@ -201,46 +190,35 @@ export async function createScriptDraftWithAI(
     throw new Error("AI returned empty response");
   }
 
-  // Validate and sanitize
   const voiceover = sanitizeCopy(
     aiResponse.voiceover || `${input.store.name}欢迎你`,
     input.store.forbiddenWords,
   );
+  warnIfVoiceoverOffTarget(voiceover.copy, input.targetDurationSec);
 
-  const scenes: ScriptScene[] = (aiResponse.scenes?.length
-    ? aiResponse.scenes
-    : buildTemplateScenes(input.store, input.assetAnalyses, input.targetDurationSec)
-  ).map((s, i, arr) => {
-    // Default: first and last scenes are presenter (hook/CTA), middle are broll.
-    const isEdge = i === 0 || i === arr.length - 1;
-    const role: SceneRole =
-      s.role === "presenter" ? "presenter"
-      : s.role === "broll" ? "broll"
-      : isEdge ? "presenter" : "broll";
-    return {
-      order: s.order ?? i + 1,
-      text: String(s.text ?? ""),
-      durationSeconds: Number(s.durationSeconds) || 5,
-      assetHints: Array.isArray(s.assetHints) ? s.assetHints.map(String) : [],
-      role,
-    };
+  // 标黄词必须逐字出现在最终口播稿中（用户改稿后同理），否则渲染端无法命中。
+  const highlights = filterActiveHighlights(
+    (Array.isArray(aiResponse.highlights) ? aiResponse.highlights : []).map((h) =>
+      String(h).slice(0, 20),
+    ),
+    voiceover.copy,
+  ).slice(0, 10);
+  const segments = deriveSegmentsFromVoiceover(voiceover.copy, {
+    onCameraTexts: Array.isArray(aiResponse.onCameraSentences)
+      ? aiResponse.onCameraSentences.map(String)
+      : [],
   });
-
-  warnIfDurationOffTarget(scenes, input.targetDurationSec);
 
   return buildDraft({
     store: input.store,
-    assetAnalyses: input.assetAnalyses,
     purpose: input.purpose,
     platform: input.platform ?? "douyin",
     generationMode: "ai",
     title: String(aiResponse.title || `${input.store.name}推荐`).slice(0, 30),
     hook: String(aiResponse.hook || voiceover.copy.slice(0, 15)),
     voiceover: voiceover.copy,
-    scenes,
-    captions: Array.isArray(aiResponse.captions)
-      ? aiResponse.captions.map(String)
-      : [voiceover.copy],
+    highlights,
+    segments,
     cta: String(aiResponse.cta || purposeCta[input.purpose]),
     warnings: voiceover.warnings,
     targetDurationSec: input.targetDurationSec,
@@ -257,15 +235,14 @@ export function createTemplateScriptDraft(input: TemplateDraftInput): ScriptDraf
 
   return buildDraft({
     store: input.store,
-    assetAnalyses: input.assetAnalyses,
     purpose: input.purpose,
     platform: "douyin",
     generationMode: "template_fallback",
     title: `${input.store.name}｜${primaryProduct}到店推荐`,
     hook: `今天推荐${input.store.name}的${primaryProduct}`,
     voiceover: cleaned.copy,
-    scenes: buildTemplateScenes(input.store, input.assetAnalyses, input.targetDurationSec),
-    captions: [cleaned.copy],
+    highlights: storeFieldHighlights(input.store, cleaned.copy),
+    segments: deriveSegmentsFromVoiceover(cleaned.copy),
     cta: purposeCta[input.purpose],
     warnings: [...warnings, ...cleaned.warnings],
     targetDurationSec: input.targetDurationSec,
@@ -300,25 +277,18 @@ function buildTemplateVoiceover(
 
 function buildDraft(input: {
   store: StoreProfile;
-  assetAnalyses: AssetAnalysis[];
   purpose: MarketingPurpose;
   platform: Platform;
   generationMode: "ai" | "template_fallback";
   title: string;
   hook: string;
   voiceover: string;
-  scenes: ScriptScene[];
-  captions: string[];
+  highlights: string[];
+  segments: ScriptSegment[];
   cta: string;
   warnings: string[];
   targetDurationSec?: number;
 }): ScriptDraft {
-  const matchInputs: AssetMatchInput[] = input.assetAnalyses.map((a) => ({
-    assetId: a.assetId,
-    features: [...new Set([...a.businessTags, ...a.keywords, ...a.visualTags])],
-  }));
-  const scenes = matchAssetsToScenes(input.scenes, matchInputs);
-
   return {
     id: createId("script"),
     ownerId: input.store.ownerId,
@@ -327,9 +297,11 @@ function buildDraft(input: {
     platform: input.platform,
     title: input.title,
     hook: input.hook,
-    scenes,
+    scenes: deriveScenesFromSegments(input.segments),
     voiceover: input.voiceover,
-    captions: input.captions,
+    highlights: input.highlights,
+    segments: input.segments,
+    captions: [input.voiceover],
     cta: input.cta,
     generationMode: input.generationMode,
     complianceWarnings: input.warnings,
@@ -338,73 +310,24 @@ function buildDraft(input: {
   };
 }
 
-/** AI 返回的各镜时长之和偏离目标 >50% 时打警告日志（不重试，仅观测）。 */
-export function warnIfDurationOffTarget(
-  scenes: ScriptScene[],
-  targetDurationSec?: number,
-): void {
-  if (!targetDurationSec || scenes.length === 0) return;
-  const sum = scenes.reduce((acc, s) => acc + (s.durationSeconds || 0), 0);
-  if (Math.abs(sum - targetDurationSec) > targetDurationSec * 0.5) {
-    console.warn(
-      `[script-engine] scene duration sum ${sum}s deviates >50% from target ${targetDurationSec}s`,
-    );
-  }
+/** 模板/强制文案路径的标黄词：门店真实字段（产品/活动/卖点）命中口播稿的部分。 */
+function storeFieldHighlights(store: StoreProfile, voiceover: string): string[] {
+  return filterActiveHighlights(
+    [...store.mainProducts, ...(store.promotions ?? []), ...store.sellingPoints],
+    voiceover,
+  );
 }
 
-function buildTemplateScenes(
-  store: StoreProfile,
-  assetAnalyses: AssetAnalysis[],
-  targetDurationSec?: number,
-): ScriptScene[] {
-  const hints = collectAssetHints(assetAnalyses);
-  const primaryProduct = store.mainProducts[0] ?? "招牌产品";
-  const target = targetDurationSec ?? 30;
-  const presenterSec = Math.max(3, Math.round(target * 0.15));
-  const brollSec = Math.max(4, Math.round(target * 0.25));
-
-  const scenes: ScriptScene[] = [
-    {
-      order: 1,
-      text: `开场展示${store.name}门店或招牌`,
-      durationSeconds: presenterSec,
-      assetHints: hints.length ? hints : ["门店环境"],
-      role: "presenter",
-    },
-    {
-      order: 2,
-      text: `展示${primaryProduct}和制作/服务过程`,
-      durationSeconds: brollSec,
-      assetHints: [primaryProduct, ...hints].slice(0, 3),
-      role: "broll",
-    },
-  ];
-  if (target >= 45) {
-    scenes.push({
-      order: scenes.length + 1,
-      text: `展示${store.name}店内环境和氛围`,
-      durationSeconds: brollSec,
-      assetHints: ["门店环境", ...hints].slice(0, 3),
-      role: "broll",
-    });
+/** AI 口播字数偏离目标档位（约 4.5 字/秒）>50% 时打警告日志（不重试，仅观测）。 */
+export function warnIfVoiceoverOffTarget(voiceover: string, targetDurationSec?: number): void {
+  if (!targetDurationSec) return;
+  const chars = Array.from(voiceover).length;
+  const expected = targetDurationSec * SPEECH_CHARS_PER_SECOND;
+  if (Math.abs(chars - expected) > expected * 0.5) {
+    console.warn(
+      `[script-engine] voiceover ${chars} chars deviates >50% from target ${targetDurationSec}s (~${Math.round(expected)} chars)`,
+    );
   }
-  if (target >= 60) {
-    scenes.push({
-      order: scenes.length + 1,
-      text: `展示${primaryProduct}细节特写和顾客反馈`,
-      durationSeconds: brollSec,
-      assetHints: [primaryProduct, "口碑"].slice(0, 3),
-      role: "broll",
-    });
-  }
-  scenes.push({
-    order: scenes.length + 1,
-    text: "展示优惠、地址或到店 CTA",
-    durationSeconds: presenterSec,
-    assetHints: ["促销", "到店引流"],
-    role: "presenter",
-  });
-  return scenes;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
