@@ -61,3 +61,31 @@ describe("mappers: targetDurationSec persistence", () => {
     expect(back.targetDurationSec).toBe(45);
   });
 });
+
+describe("mappers: highlights/segments persistence (Phase 2)", () => {
+  it("toScriptDraftInput / toScriptDraft roundtrip highlights + segments", () => {
+    const draftWithHl: ScriptDraft = {
+      ...draft,
+      highlights: ["牛肉面", "第二份半价"],
+      segments: [
+        { index: 0, text: "第一句。", speakerIndex: 0, onCamera: true },
+        { index: 1, text: "第二句。", speakerIndex: 0, onCamera: false },
+      ],
+    };
+    const dbInput = toScriptDraftInput(draftWithHl);
+    expect(dbInput.highlights).toEqual(["牛肉面", "第二份半价"]);
+    const row = { ...dbInput, createdAt: new Date("2026-08-16T00:00:00.000Z") };
+    const back = toScriptDraft(row as never);
+    expect(back.highlights).toEqual(["牛肉面", "第二份半价"]);
+    expect(back.segments).toEqual([
+      { index: 0, text: "第一句。", speakerIndex: 0, onCamera: true },
+      { index: 1, text: "第二句。", speakerIndex: 0, onCamera: false },
+    ]);
+  });
+
+  it("defaults highlights/segments to empty when absent on the domain object", () => {
+    const dbInput = toScriptDraftInput({ ...draft, highlights: undefined, segments: undefined });
+    expect(dbInput.highlights).toEqual([]);
+    expect(dbInput.segments).toEqual([]);
+  });
+});

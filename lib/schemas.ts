@@ -106,6 +106,13 @@ export const scriptSceneSchema = z.object({
   assetHints: z.array(z.string()).default([])
 });
 
+export const scriptSegmentSchema = z.object({
+  index: z.number().int().nonnegative(),
+  text: z.string().min(1),
+  speakerIndex: z.number().int().nonnegative(),
+  onCamera: z.boolean()
+});
+
 export const scriptDraftSchema = z.object({
   id: z.string().min(1),
   ownerId: z.string().min(1),
@@ -120,6 +127,9 @@ export const scriptDraftSchema = z.object({
   cta: z.string().min(1),
   generationMode: z.enum(["ai", "template_fallback"]),
   complianceWarnings: z.array(z.string()).default([]),
+  targetDurationSec: z.number().int().positive().optional(),
+  highlights: z.array(z.string()).optional(),
+  segments: z.array(scriptSegmentSchema).optional(),
   createdAt: isoDateString
 });
 

@@ -115,6 +115,17 @@ export interface ScriptScene {
   matchTag?: string | null;
 }
 
+export interface ScriptSegment {
+  /** 句序号（0 起，按口播稿句序）。 */
+  index: number;
+  /** 该句口播原文。 */
+  text: string;
+  /** 说话形象下标（Phase 2 恒 0；Phase 3 多形象轮播使用）。 */
+  speakerIndex: number;
+  /** 是否真人出镜段（Phase 2 渲染忽略；Phase 3 分段生成使用）。 */
+  onCamera: boolean;
+}
+
 export interface ScriptDraft {
   id: string;
   ownerId: string;
@@ -131,6 +142,10 @@ export interface ScriptDraft {
   complianceWarnings: string[];
   /** 目标成片时长（秒）：30 / 45 / 60。 */
   targetDurationSec?: number;
+  /** 标黄关键词（AI 产出；用户改稿后文中不存在的词由服务端过滤失效）。 */
+  highlights?: string[];
+  /** 口播按句分段（服务端从 voiceover 派生/重切）。 */
+  segments?: ScriptSegment[];
   createdAt: string;
 }
 

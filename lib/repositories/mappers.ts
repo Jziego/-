@@ -8,6 +8,7 @@ import type {
   RenderProject,
   ScriptDraft,
   ScriptScene,
+  ScriptSegment,
   StoreProfile,
   VideoOutput
 } from "@/lib/types";
@@ -189,6 +190,8 @@ export function toScriptDraft(row: PrismaScriptDraft): ScriptDraft {
     generationMode: row.generationMode as ScriptDraft["generationMode"],
     complianceWarnings: row.complianceWarnings,
     targetDurationSec: row.targetDurationSec ?? undefined,
+    highlights: row.highlights ?? [],
+    segments: (row.segments as unknown as ScriptSegment[] | null) ?? [],
     createdAt: row.createdAt.toISOString()
   };
 }
@@ -209,6 +212,8 @@ export function toScriptDraftInput(script: ScriptDraft) {
     generationMode: script.generationMode,
     complianceWarnings: script.complianceWarnings,
     targetDurationSec: script.targetDurationSec ?? null,
+    highlights: script.highlights ?? [],
+    segments: (script.segments ?? []) as object,
     createdAt: new Date(script.createdAt)
   };
 }
