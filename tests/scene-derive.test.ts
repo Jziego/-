@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+import {
+  deriveScenesFromSegments,
+  deriveSegmentsFromVoiceover,
+  estimateSegmentSeconds,
+  filterActiveHighlights,
+} from "@/lib/services/scene-derive";
+
+describe("deriveSegmentsFromVoiceover", () => {
+  it("splits by sentence with index/speakerIndex=0 and defaults onCamera to first+last", () => {
+    const segments = deriveSegmentsFromVoiceover("开场一句。中间一句。结尾一句。");
+    expect(segments.map((s) => s.text)).toEqual(["开场一句。", "中间一句。", "结尾一句。"]);
+    expect(segments.map((s) => s.index)).toEqual([0, 1, 2]);
+    expect(segments.every((s) => s.speakerIndex === 0)).toBe(true);
+    expect(segments.map((s) => s.onCamera)).toEqual([true, false, true]);
+  });
+
+  it("single sentence → single onCamera segment", () => {
+    const segments = deriveSegmentsFromVoiceover("只有一句没有标点");
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.onCamera).toBe(true);
+  });
+
+  it("AI onCameraTexts win over the first/last default", () => {
+    const segments = deriveSegmentsFromVoiceover("开场一句。中间一句。结尾一句。", {
+      onCameraTexts: ["中间一句。"],
+    });
+    expect(segments.map((s) => s.onCamera)).toEqual([false, true, false]);
+  });
+
+  it("unchanged sentences inherit onCamera from prev; new sentences fall back to default", () => {
+    const prev = deriveSegmentsFromVoiceover("旧开场。旧结尾。"); // [true, true]
+    const segments = deriveSegmentsFromVoiceover("旧开场。新中段。新收尾。", { prev });
+    expect(segments.map((s) => s.onCamera)).toEqual([true, false, true]);
+  });
+
+  it("empty voiceover → no segments", () => {
+    expect(deriveSegmentsFromVoiceover("")).toEqual([]);
+  });
+});
+
+describe("filterActiveHighlights", () => {
+  it("keeps only words present in the voiceover, trimmed and deduped", () => {
+    expect(
+      filterActiveHighlights(["牛肉面", "不存在词", " 牛肉面 ", ""], "今天牛肉面半价"),
+    ).toEqual(["牛肉面"]);
+  });
+});
+
+describe("deriveScenesFromSegments", () => {
+  it("empty → empty", () => {
+    expect(deriveScenesFromSegments([])).toEqual([]);
+  });
+
+  it("single segment → single presenter scene", () => {
+    const scenes = deriveScenesFromSegments([
+      { index: 0, text: "唯一一句口播在这里。", speakerIndex: 0, onCamera: true },
+    ]);
+    expect(scenes).toHaveLength(1);
+    expect(scenes[0]?.role).toBe("presenter");
+    expect(scenes[0]?.text).toBe("唯一一句口播在这里。");
+  });
+
+  it("three segments → first/last presenter scenes with estimated durations", () => {
+    const scenes = deriveScenesFromSegments([
+      { index: 0, text: "阿姨手作面馆今天主推牛肉面，现熬牛骨汤。", speakerIndex: 0, onCamera: true },
+      { index: 1, text: "除了牛肉面，葱油拌面也值得一试。", speakerIndex: 0, onCamera: false },
+      { index: 2, text: "现在到店，直接报视频里的活动。", speakerIndex: 0, onCamera: true },
+    ]);
+    expect(scenes).toHaveLength(2);
+    expect(scenes.map((s) => s.role)).toEqual(["presenter", "presenter"]);
+    expect(scenes.map((s) => s.order)).toEqual([1, 2]);
+    // 20 字 / 4.5 ≈ 4s；15 字 / 4.5 ≈ 3s
+    expect(scenes.map((s) => s.durationSeconds)).toEqual([4, 3]);
+    expect(scenes.every((s) => s.assetHints.length === 0)).toBe(true);
+  });
+});
+
+describe("estimateSegmentSeconds", () => {
+  it("rounds chars/4.5 with a 3s floor", () => {
+    expect(estimateSegmentSeconds("短句。")).toBe(3); // 3 字 → floor 3
+    expect(estimateSegmentSeconds("阿姨手作面馆今天主推牛肉面，现熬牛骨汤。")).toBe(4); // 20 字
+  });
+});
