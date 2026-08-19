@@ -60,6 +60,8 @@ describe("PATCH /api/script-drafts/[id] (voiceover-centric)", () => {
     expect(json.script.scenes).toHaveLength(2);
     expect(json.script.scenes[0].text).toBe("全新的开场。");
     expect(json.script.scenes[0].role).toBe("presenter");
+    // captions 统一落 [voiceover]，不滞留旧文本
+    expect(json.script.captions).toEqual(["全新的开场。全新的收尾。"]);
   });
 
   it("keeps highlights still present and inherits onCamera for unchanged sentences", async () => {
@@ -87,6 +89,15 @@ describe("PATCH /api/script-drafts/[id] (voiceover-centric)", () => {
       const res = await PATCH(request, ctx);
       expect(res.status).toBe(400);
     }
+  });
+
+  it("returns 400 when voiceover exceeds 2000 chars, 2000 chars is accepted", async () => {
+    const scripts = new MemoryScriptRepository();
+    await scripts.create(draftRow("script_patch", "demo_user"));
+    const [tooLongReq, tooLongCtx] = req({ voiceover: "字".repeat(2001) }, "script_patch");
+    expect((await PATCH(tooLongReq, tooLongCtx)).status).toBe(400);
+    const [okReq, okCtx] = req({ voiceover: "字".repeat(2000) }, "script_patch");
+    expect((await PATCH(okReq, okCtx)).status).toBe(200);
   });
 
   it("returns 404 for a draft owned by someone else (no existence leak)", async () => {

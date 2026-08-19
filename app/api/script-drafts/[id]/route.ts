@@ -49,6 +49,7 @@ export async function PATCH(
   const highlights = filterActiveHighlights(draft.highlights ?? [], voiceover);
   const scenes = deriveScenesFromSegments(segments);
 
-  const updated = await getScriptRepository().update(id, { voiceover, segments, highlights, scenes });
+  // captions 统一落 [voiceover]（spec §5），与创建路径 buildDraft 一致，不滞留旧文本
+  const updated = await getScriptRepository().update(id, { voiceover, segments, highlights, scenes, captions: [voiceover] });
   return jsonOk({ script: updated });
 }
