@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   deriveScenesFromSegments,
   deriveSegmentsFromVoiceover,
@@ -26,6 +26,16 @@ describe("deriveSegmentsFromVoiceover", () => {
       onCameraTexts: ["中间一句。"],
     });
     expect(segments.map((s) => s.onCamera)).toEqual([false, true, false]);
+  });
+
+  it("falls back to first/last default (with a warn) when AI onCameraTexts match nothing", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const segments = deriveSegmentsFromVoiceover("开场一句。中间一句。结尾一句。", {
+      onCameraTexts: ["完全不相关的句子。"],
+    });
+    expect(segments.map((s) => s.onCamera)).toEqual([true, false, true]);
+    expect(spy).toHaveBeenCalledOnce();
+    spy.mockRestore();
   });
 
   it("unchanged sentences inherit onCamera from prev; new sentences fall back to default", () => {
