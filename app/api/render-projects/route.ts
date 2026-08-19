@@ -55,6 +55,22 @@ export async function POST(request: Request) {
     return jsonError("Script draft not found", 404);
   }
 
+  // Phase 2：avatarProfileIds[]（本期单选，长度 ≤1）；legacy avatarProfileId 兼容。
+  const avatarIds = Array.isArray(body.avatarProfileIds)
+    ? (body.avatarProfileIds as unknown[]).filter((x): x is string => typeof x === "string")
+    : undefined;
+  if (avatarIds && avatarIds.length > 1) {
+    return jsonError("avatarProfileIds supports a single avatar in this phase", 400);
+  }
+  const avatarProfileId = avatarIds?.[0] ?? (body.avatarProfileId as string | undefined);
+  const avatarProfile = avatarProfileId
+    ? ((await getAvatarRepository().findById(avatarProfileId)) ?? undefined)
+    : undefined;
+  // IDOR guard：foreign/不存在一律 404，不泄漏存在性（调整前为静默降级 asset_only）。
+  if (avatarProfileId && (!avatarProfile || avatarProfile.ownerId !== ownerId)) {
+    return jsonError("Avatar profile not found", 404);
+  }
+
   // Quota consumption — throws QuotaExhaustedError if exhausted (402)
   try {
     await consumeQuota(ownerId);
@@ -65,9 +81,6 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  const avatarProfile = body.avatarProfileId
-    ? (await getAvatarRepository().findById(body.avatarProfileId as string)) ?? undefined
-    : undefined;
   const project = createRenderProject({
     ownerId,
     storeId: scriptDraft.storeId,

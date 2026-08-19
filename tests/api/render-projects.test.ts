@@ -193,6 +193,119 @@ describe("POST /api/render-projects", () => {
     expect(jobs.length).toBeGreaterThanOrEqual(1);
     expect(jobs.every((j) => j.status === "queued")).toBe(true);
   });
+
+  it("accepts avatarProfileIds (single) and plans the avatar pipeline", async () => {
+    const store = createTestStore();
+    await getStoreRepository().upsert(store);
+    const script = createTestScript(store.id);
+    await getScriptRepository().create(script);
+
+    const avatar: AvatarProfile = {
+      id: createId("avatar"),
+      ownerId: "demo_user",
+      storeId: store.id,
+      provider: "heygen",
+      providerAvatarId: "ext_avatar_1",
+      providerVoiceId: "ext_voice_1",
+      consentAcceptedAt: nowIso(),
+      trainingStatus: "ready",
+      fallbackMode: "tts_voiceover",
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    };
+    await getAvatarRepository().create(avatar);
+
+    const req = new Request("http://localhost/api/render-projects", {
+      method: "POST",
+      body: JSON.stringify({
+        scriptDraftId: script.id,
+        selectedAssetIds: [],
+        avatarProfileIds: [avatar.id],
+        aspectRatio: "9:16",
+        subtitleStyle: "bold_bottom"
+      })
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.project.avatarProfileId).toBe(avatar.id);
+    const jobTypes = body.jobs.map((j: { type: string }) => j.type);
+    expect(jobTypes).toContain("avatar_generation");
+    expect(jobTypes).toContain("video_render");
+  });
+
+  it("returns 400 when avatarProfileIds has more than one entry (single-avatar phase)", async () => {
+    const store = createTestStore();
+    await getStoreRepository().upsert(store);
+    const script = createTestScript(store.id);
+    await getScriptRepository().create(script);
+
+    const req = new Request("http://localhost/api/render-projects", {
+      method: "POST",
+      body: JSON.stringify({
+        scriptDraftId: script.id,
+        selectedAssetIds: [],
+        avatarProfileIds: ["avatar_a", "avatar_b"]
+      })
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 when the avatar belongs to another owner (IDOR guard)", async () => {
+    const store = createTestStore();
+    await getStoreRepository().upsert(store);
+    const script = createTestScript(store.id);
+    await getScriptRepository().create(script);
+
+    const foreign: AvatarProfile = {
+      id: createId("avatar"),
+      ownerId: "user_other",
+      storeId: store.id,
+      provider: "heygen",
+      providerAvatarId: "ext_avatar_x",
+      providerVoiceId: "ext_voice_x",
+      consentAcceptedAt: nowIso(),
+      trainingStatus: "ready",
+      fallbackMode: "tts_voiceover",
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    };
+    await getAvatarRepository().create(foreign);
+
+    const req = new Request("http://localhost/api/render-projects", {
+      method: "POST",
+      body: JSON.stringify({
+        scriptDraftId: script.id,
+        selectedAssetIds: [],
+        avatarProfileIds: [foreign.id]
+      })
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the avatar does not exist", async () => {
+    const store = createTestStore();
+    await getStoreRepository().upsert(store);
+    const script = createTestScript(store.id);
+    await getScriptRepository().create(script);
+
+    const req = new Request("http://localhost/api/render-projects", {
+      method: "POST",
+      body: JSON.stringify({
+        scriptDraftId: script.id,
+        selectedAssetIds: [],
+        avatarProfileIds: ["avatar_missing"]
+      })
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("GET /api/render-projects", () => {
