@@ -1,18 +1,19 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { getOwnerId } from "@/lib/auth-helpers";
-import { getAssetRepository, getScriptRepository } from "@/lib/repositories";
-import type { ScriptScene } from "@/lib/types";
+import { getScriptRepository } from "@/lib/repositories";
+import {
+  deriveScenesFromSegments,
+  deriveSegmentsFromVoiceover,
+  filterActiveHighlights,
+} from "@/lib/services/scene-derive";
 
-interface PatchScene {
-  order: number;
-  text?: string;
-  matchedAssetId?: string | null;
-}
+const MAX_VOICEOVER_CHARS = 2000;
 
 /**
- * 编辑已生成分镜：逐镜改口播文案 / 换匹配素材。IDOR：他人或不存在的 draft
- * 一律 404，不泄漏存在性。matchedAssetId 必须属于本人素材库。
+ * 编辑口播稿全文（Phase 2：编辑对象从逐镜 scene.text 改为 voiceover）。
+ * 保存后服务端重切 segments（未改句继承 onCamera）、过滤失效标黄词、
+ * 重新派生渲染用 scenes。IDOR：他人或不存在的 draft 一律 404，不泄漏存在性。
  */
 export async function PATCH(
   request: Request,
@@ -36,37 +37,18 @@ export async function PATCH(
     return jsonError("Script draft not found", 404);
   }
 
-  if (!Array.isArray(body.scenes)) {
-    return jsonError("scenes array is required", 400);
+  const voiceover = typeof body.voiceover === "string" ? body.voiceover.trim() : "";
+  if (!voiceover) {
+    return jsonError("voiceover is required", 400);
   }
-  const patchScenes = body.scenes as PatchScene[];
-
-  // 校验所有 swapped matchedAssetId 属于本人
-  const swappedIds = patchScenes
-    .map((s) => s.matchedAssetId)
-    .filter((x): x is string => typeof x === "string");
-  if (swappedIds.length) {
-    const ownerAssets = await getAssetRepository().listByOwner(ownerId);
-    const ownerAssetIds = new Set(ownerAssets.map((a) => a.id));
-    for (const aid of swappedIds) {
-      if (!ownerAssetIds.has(aid)) {
-        return jsonError("Asset not found", 404);
-      }
-    }
+  if (Array.from(voiceover).length > MAX_VOICEOVER_CHARS) {
+    return jsonError(`voiceover must be at most ${MAX_VOICEOVER_CHARS} characters`, 400);
   }
 
-  // 按 order 合并：未提交的镜保持原样
-  const byOrder = new Map(patchScenes.map((s) => [Number(s.order), s]));
-  const mergedScenes: ScriptScene[] = draft.scenes.map((scene) => {
-    const p = byOrder.get(scene.order);
-    if (!p) return scene;
-    return {
-      ...scene,
-      ...(typeof p.text === "string" ? { text: String(p.text).slice(0, 500) } : {}),
-      ...(p.matchedAssetId !== undefined ? { matchedAssetId: p.matchedAssetId } : {}),
-    };
-  });
+  const segments = deriveSegmentsFromVoiceover(voiceover, { prev: draft.segments });
+  const highlights = filterActiveHighlights(draft.highlights ?? [], voiceover);
+  const scenes = deriveScenesFromSegments(segments);
 
-  const updated = await getScriptRepository().update(id, { scenes: mergedScenes });
+  const updated = await getScriptRepository().update(id, { voiceover, segments, highlights, scenes });
   return jsonOk({ script: updated });
 }

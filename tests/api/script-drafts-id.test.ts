@@ -1,28 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PATCH } from "@/app/api/script-drafts/[id]/route";
 import * as repositories from "@/lib/repositories";
-import { MemoryScriptRepository, MemoryAssetRepository } from "@/lib/repositories/memory";
+import { MemoryScriptRepository } from "@/lib/repositories/memory";
 import { resetRuntimeStateForTests } from "@/lib/runtime-store";
-import type { Asset, ScriptDraft } from "@/lib/types";
+import type { ScriptDraft } from "@/lib/types";
 
 function draftRow(id: string, ownerId: string): ScriptDraft {
   return {
     id, ownerId, storeId: "store_1", purpose: "store_traffic", platform: "douyin",
     title: "t", hook: "h",
-    scenes: [
-      { order: 1, text: "镜1", durationSeconds: 4, assetHints: ["招牌"], role: "presenter", matchedAssetId: null },
-      { order: 2, text: "镜2", durationSeconds: 5, assetHints: ["产品"], role: "broll", matchedAssetId: null },
+    scenes: [{ order: 1, text: "旧镜", durationSeconds: 4, assetHints: [], role: "presenter" }],
+    voiceover: "开场介绍产品词。结尾欢迎光临。",
+    highlights: ["产品词", "已删词"],
+    segments: [
+      { index: 0, text: "开场介绍产品词。", speakerIndex: 0, onCamera: true },
+      { index: 1, text: "结尾欢迎光临。", speakerIndex: 0, onCamera: false },
     ],
-    voiceover: "v", captions: [], cta: "c", generationMode: "ai", complianceWarnings: [],
-    createdAt: "2026-07-23T00:00:00.000Z",
-  };
-}
-
-function assetRow(id: string, ownerId: string): Asset {
-  return {
-    id, ownerId, storeId: "store_1", type: "image", originalFilename: "a.jpg",
-    storageKey: "k", mimeType: "image/jpeg", sizeBytes: 1, tags: [], businessTags: [],
-    status: "ready", createdAt: "2026-07-23T00:00:00.000Z",
+    captions: [], cta: "c", generationMode: "ai", complianceWarnings: [],
+    createdAt: "2026-08-19T00:00:00.000Z",
   };
 }
 
@@ -37,57 +32,72 @@ function req(body: unknown, id: string): [Request, { params: Promise<{ id: strin
   ];
 }
 
-describe("PATCH /api/script-drafts/[id]", () => {
+describe("PATCH /api/script-drafts/[id] (voiceover-centric)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     resetRuntimeStateForTests();
     vi.spyOn(repositories, "getScriptRepository").mockImplementation(() => new MemoryScriptRepository());
-    vi.spyOn(repositories, "getAssetRepository").mockImplementation(() => new MemoryAssetRepository());
   });
 
-  it("updates scene text and matchedAssetId, returns updated draft", async () => {
+  it("rewrites voiceover, re-derives segments/scenes and drops stale highlights", async () => {
     const scripts = new MemoryScriptRepository();
-    const assets = new MemoryAssetRepository();
     await scripts.create(draftRow("script_patch", "demo_user"));
-    await assets.create(assetRow("asset_own", "demo_user"));
+
+    const [request, ctx] = req({ voiceover: "全新的开场。全新的收尾。" }, "script_patch");
+    const res = await PATCH(request, ctx);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.script.voiceover).toBe("全新的开场。全新的收尾。");
+    expect(json.script.segments.map((s: { text: string }) => s.text)).toEqual([
+      "全新的开场。", "全新的收尾。",
+    ]);
+    expect(
+      json.script.segments.every((s: { speakerIndex: number }) => s.speakerIndex === 0),
+    ).toBe(true);
+    // 旧标黄词均不在新稿 → 全部失效
+    expect(json.script.highlights).toEqual([]);
+    // scenes 重派生：首/末句 presenter
+    expect(json.script.scenes).toHaveLength(2);
+    expect(json.script.scenes[0].text).toBe("全新的开场。");
+    expect(json.script.scenes[0].role).toBe("presenter");
+  });
+
+  it("keeps highlights still present and inherits onCamera for unchanged sentences", async () => {
+    const scripts = new MemoryScriptRepository();
+    await scripts.create(draftRow("script_patch", "demo_user"));
 
     const [request, ctx] = req(
-      { scenes: [{ order: 1, text: "改后文案", matchedAssetId: "asset_own" }] },
+      { voiceover: "开场介绍产品词。全新中段。全新收尾。" },
       "script_patch",
     );
     const res = await PATCH(request, ctx);
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.script.scenes[0].text).toBe("改后文案");
-    expect(json.script.scenes[0].matchedAssetId).toBe("asset_own");
-    expect(json.script.scenes[1].text).toBe("镜2"); // 未提交的镜保持不变
+    expect(json.script.highlights).toEqual(["产品词"]);
+    expect(json.script.segments.map((s: { onCamera: boolean }) => s.onCamera)).toEqual([
+      true, false, true,
+    ]);
+  });
+
+  it("returns 400 when voiceover is missing or empty", async () => {
+    const scripts = new MemoryScriptRepository();
+    await scripts.create(draftRow("script_patch", "demo_user"));
+    for (const body of [{}, { voiceover: "   " }, { voiceover: 42 }]) {
+      const [request, ctx] = req(body, "script_patch");
+      const res = await PATCH(request, ctx);
+      expect(res.status).toBe(400);
+    }
   });
 
   it("returns 404 for a draft owned by someone else (no existence leak)", async () => {
     const scripts = new MemoryScriptRepository();
     await scripts.create(draftRow("script_other", "user_other"));
-    const [request, ctx] = req({ scenes: [] }, "script_other");
-    const res = await PATCH(request, ctx);
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 404 when matchedAssetId belongs to another owner", async () => {
-    const scripts = new MemoryScriptRepository();
-    const assets = new MemoryAssetRepository();
-    await scripts.create(draftRow("script_patch", "demo_user"));
-    await assets.create(assetRow("asset_foreign", "user_other"));
-    const [request, ctx] = req(
-      { scenes: [{ order: 1, matchedAssetId: "asset_foreign" }] },
-      "script_patch",
-    );
+    const [request, ctx] = req({ voiceover: "x" }, "script_other");
     const res = await PATCH(request, ctx);
     expect(res.status).toBe(404);
   });
 
   it("returns 400 when body is not valid JSON", async () => {
-    const scripts = new MemoryScriptRepository();
-    await scripts.create(draftRow("script_patch", "demo_user"));
-
     const request = new Request("http://localhost/api/script-drafts/script_patch", {
       method: "PATCH",
       body: "not json",
