@@ -159,7 +159,7 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
     projectId,
     mode,
     segments,
-    assContent: buildAss(captionCues, resolveSubtitlePreset(project.subtitleStyle)),
+    assContent: buildAss(captionCues, resolveSubtitlePreset(project.subtitleStyle), draft.highlights),
     subtitleStyle: project.subtitleStyle,
     talkingHead,
     assets,

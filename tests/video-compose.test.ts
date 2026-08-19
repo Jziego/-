@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTimeline, resolveCompositionMode, buildAss, resolveSubtitlePreset, buildFilterGraph, buildCaptionCues, splitVoiceoverSentences } from "@/lib/services/video-compose";
+import { buildTimeline, resolveCompositionMode, buildAss, wrapHighlightsInAss, resolveSubtitlePreset, buildFilterGraph, buildCaptionCues, splitVoiceoverSentences } from "@/lib/services/video-compose";
 import type { TimelineSegment } from "@/lib/services/video-compose";
 import type { Asset, ScriptScene, VideoOutput } from "@/lib/types";
 
@@ -339,5 +339,43 @@ describe("buildCaptionCues (voiceover-derived subtitles)", () => {
   it("buildAss renders cues with voiceover text (not scene descriptions)", () => {
     const ass = buildAss(buildCaptionCues("星巴克今天主推冰美式。", 8), "default");
     expect(ass).toContain("Dialogue: 0,0:00:00.00,0:00:08.00,Default,,0,0,0,,星巴克今天主推冰美式。");
+  });
+});
+
+describe("buildAss highlights (Phase 2)", () => {
+  it("wraps active highlight words in yellow ASS override and resets to preset color", () => {
+    const ass = buildAss(
+      [{ startSec: 0, endSec: 2, text: "牛肉面今天半价" }],
+      "default",
+      ["牛肉面"],
+    );
+    expect(ass).toContain("{\\c&H00FFFF&}牛肉面{\\c&H00FFFFFF&}");
+  });
+
+  it("ignores highlights not present in the cue text", () => {
+    const ass = buildAss([{ startSec: 0, endSec: 2, text: "普通一句话" }], "default", ["不存在"]);
+    expect(ass).not.toContain("\\c&H00FFFF&");
+  });
+
+  it("resets to the preset primary colour (bold_bottom is itself yellowish)", () => {
+    const ass = buildAss(
+      [{ startSec: 0, endSec: 2, text: "第二份半价" }],
+      "bold_bottom",
+      ["半价"],
+    );
+    expect(ass).toContain("{\\c&H00FFFF&}半价{\\c&H0000F4FF&}");
+  });
+
+  it("wraps every occurrence and prefers longer words on overlap", () => {
+    const out = wrapHighlightsInAss("牛肉面配牛肉汤", ["牛肉", "牛肉面"], "&H00FFFFFF");
+    expect(out).toBe(
+      "{\\c&H00FFFF&}牛肉面{\\c&H00FFFFFF&}配{\\c&H00FFFF&}牛肉{\\c&H00FFFFFF&}汤",
+    );
+  });
+
+  it("omitting highlights keeps cue text untouched", () => {
+    const ass = buildAss([{ startSec: 0, endSec: 2, text: "没有标黄" }], "default");
+    expect(ass).toContain("没有标黄");
+    expect(ass).not.toContain("\\c&H00FFFF&");
   });
 });

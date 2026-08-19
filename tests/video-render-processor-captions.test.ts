@@ -104,4 +104,18 @@ describe("video_render processor: target duration + voiceover captions", () => {
     expect(ass).not.toContain("Dialogue:");
     expect(ass).not.toContain("星巴克今天主推冰美式");
   });
+
+  it("burns yellow ASS overrides for the draft's active highlights", async () => {
+    const captured: { input?: RenderCompositeInput } = {};
+    const hlDraft: ScriptDraft = { ...draft, highlights: ["冰美式", "稿外词"] };
+    const deps = makeDeps(captured);
+    deps.scriptRepository = {
+      findById: async () => hlDraft,
+    } as unknown as VideoRenderDeps["scriptRepository"];
+    await processVideoRender(fakeJob, deps);
+    const ass = captured.input?.assContent ?? "";
+    expect(ass).toContain("{\\c&H00FFFF&}冰美式{\\c&H00FFFFFF&}");
+    // 不出现在口播稿中的词不会被包裹（也不会凭空出现）
+    expect(ass).not.toContain("稿外词");
+  });
 });

@@ -1,4 +1,5 @@
 import type { Asset, SceneRole, ScriptScene, VideoOutput } from "@/lib/types";
+import { findHighlightRanges } from "@/lib/highlight-ranges";
 
 export type CompositionMode = "presenter_broll" | "asset_only";
 
@@ -277,6 +278,23 @@ export function buildCaptionCues(voiceover: string, totalDurationSec: number): C
 }
 
 /**
+ * 标黄包裹：命中词前插 {\c&H00FFFF&}（黄），词后 reset 回预设主色。
+ * 命中区间由 findHighlightRanges 提供（长词优先、跳过重叠）。
+ */
+export function wrapHighlightsInAss(text: string, highlights: string[], resetColor: string): string {
+  const ranges = findHighlightRanges(text, highlights);
+  if (ranges.length === 0) return text;
+  let out = "";
+  let cursor = 0;
+  for (const [s, e] of ranges) {
+    out += text.slice(cursor, s);
+    out += `{\\c&H00FFFF&}${text.slice(s, e)}{\\c${resetColor}&}`;
+    cursor = e;
+  }
+  return out + text.slice(cursor);
+}
+
+/**
  * Generate an ASS subtitle file: one Dialogue line per cue (timeline segment
  * or voiceover caption cue), timed by the cue boundaries. Styled by the
  * chosen preset. Requires the CJK font (worker/Dockerfile installs font-noto-cjk).
@@ -284,6 +302,7 @@ export function buildCaptionCues(voiceover: string, totalDurationSec: number): C
 export function buildAss(
   cues: Array<{ startSec: number; endSec: number; text: string }>,
   preset: SubtitleStylePreset,
+  highlights?: string[],
 ): string {
   const s = SUBTITLE_PRESETS[preset] ?? SUBTITLE_PRESETS.default;
   const header = [
@@ -301,9 +320,12 @@ export function buildAss(
   ];
   const dialogues = cues
     .filter((cue) => cue.text.length > 0)
-    .map((cue) =>
-      `Dialogue: 0,${assTimestamp(cue.startSec)},${assTimestamp(cue.endSec)},Default,,0,0,0,,${cue.text}`
-    );
+    .map((cue) => {
+      const text = highlights?.length
+        ? wrapHighlightsInAss(cue.text, highlights, s.primaryColour)
+        : cue.text;
+      return `Dialogue: 0,${assTimestamp(cue.startSec)},${assTimestamp(cue.endSec)},Default,,0,0,0,,${text}`;
+    });
   return [...header, ...dialogues].join("\n");
 }
 
