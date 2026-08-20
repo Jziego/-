@@ -202,6 +202,8 @@ interface AssStyleSpec {
   fontname: string;
   fontsize: number;
   primaryColour: string; // &H00BBGGRR (ASS alpha+BGR)
+  /** 关键词高亮 override 色（{\c...&}）；须与 primaryColour 对比明显（黄底预设用红）。 */
+  highlightColour: string;
   outlineColour: string;
   bold: 0 | 1;
   outline: number;
@@ -212,9 +214,9 @@ interface AssStyleSpec {
 const CJK_FONT = "Noto Sans CJK SC";
 
 const SUBTITLE_PRESETS: Record<SubtitleStylePreset, AssStyleSpec> = {
-  default: { fontname: CJK_FONT, fontsize: 72, primaryColour: "&H00FFFFFF", outlineColour: "&H00000000", bold: 1, outline: 4, alignment: 2, marginV: 80 },
-  bold_bottom: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000F4FF", outlineColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60 },
-  minimal: { fontname: CJK_FONT, fontsize: 56, primaryColour: "&H00EEEEEE", outlineColour: "&H80000000", bold: 0, outline: 2, alignment: 2, marginV: 100 }
+  default: { fontname: CJK_FONT, fontsize: 72, primaryColour: "&H00FFFFFF", highlightColour: "&H00FFFF", outlineColour: "&H00000000", bold: 1, outline: 4, alignment: 2, marginV: 80 },
+  bold_bottom: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000F4FF", highlightColour: "&H000000FF", outlineColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60 },
+  minimal: { fontname: CJK_FONT, fontsize: 56, primaryColour: "&H00EEEEEE", highlightColour: "&H00FFFF", outlineColour: "&H80000000", bold: 0, outline: 2, alignment: 2, marginV: 100 }
 };
 
 function assTimestamp(sec: number): string {
@@ -278,17 +280,25 @@ export function buildCaptionCues(voiceover: string, totalDurationSec: number): C
 }
 
 /**
- * 标黄包裹：命中词前插 {\c&H00FFFF&}（黄），词后 reset 回预设主色。
+ * 高亮包裹：命中词前插 {\c<highlightColour>&} override，词后 reset 回预设主色。
  * 命中区间由 findHighlightRanges 提供（长词优先、跳过重叠）。
+ *
+ * ASS 颜色约定：highlightColour / resetColour 均为带 `&H` 前缀、不带结尾 `&`
+ * 的 ASS 颜色串（alpha+BBGGRR），例如 "&H00FFFFFF"；本函数负责补上结尾的 `&`。
  */
-export function wrapHighlightsInAss(text: string, highlights: string[], resetColor: string): string {
+export function wrapHighlightsInAss(
+  text: string,
+  highlights: string[],
+  highlightColour: string,
+  resetColour: string,
+): string {
   const ranges = findHighlightRanges(text, highlights);
   if (ranges.length === 0) return text;
   let out = "";
   let cursor = 0;
   for (const [s, e] of ranges) {
     out += text.slice(cursor, s);
-    out += `{\\c&H00FFFF&}${text.slice(s, e)}{\\c${resetColor}&}`;
+    out += `{\\c${highlightColour}&}${text.slice(s, e)}{\\c${resetColour}&}`;
     cursor = e;
   }
   return out + text.slice(cursor);
@@ -322,7 +332,7 @@ export function buildAss(
     .filter((cue) => cue.text.length > 0)
     .map((cue) => {
       const text = highlights?.length
-        ? wrapHighlightsInAss(cue.text, highlights, s.primaryColour)
+        ? wrapHighlightsInAss(cue.text, highlights, s.highlightColour, s.primaryColour)
         : cue.text;
       return `Dialogue: 0,${assTimestamp(cue.startSec)},${assTimestamp(cue.endSec)},Default,,0,0,0,,${text}`;
     });

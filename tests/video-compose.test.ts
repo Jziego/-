@@ -357,17 +357,26 @@ describe("buildAss highlights (Phase 2)", () => {
     expect(ass).not.toContain("\\c&H00FFFF&");
   });
 
-  it("resets to the preset primary colour (bold_bottom is itself yellowish)", () => {
+  it("uses a contrasting highlight colour on the yellowish bold_bottom preset", () => {
     const ass = buildAss(
       [{ startSec: 0, endSec: 2, text: "第二份半价" }],
       "bold_bottom",
       ["半价"],
     );
-    expect(ass).toContain("{\\c&H00FFFF&}半价{\\c&H0000F4FF&}");
+    expect(ass).toContain("{\\c&H000000FF&}半价{\\c&H0000F4FF&}");
+  });
+
+  it("keeps yellow highlights on the minimal preset and resets to its own primary", () => {
+    const ass = buildAss(
+      [{ startSec: 0, endSec: 2, text: "第二份半价" }],
+      "minimal",
+      ["半价"],
+    );
+    expect(ass).toContain("{\\c&H00FFFF&}半价{\\c&H00EEEEEE&}");
   });
 
   it("wraps every occurrence and prefers longer words on overlap", () => {
-    const out = wrapHighlightsInAss("牛肉面配牛肉汤", ["牛肉", "牛肉面"], "&H00FFFFFF");
+    const out = wrapHighlightsInAss("牛肉面配牛肉汤", ["牛肉", "牛肉面"], "&H00FFFF", "&H00FFFFFF");
     expect(out).toBe(
       "{\\c&H00FFFF&}牛肉面{\\c&H00FFFFFF&}配{\\c&H00FFFF&}牛肉{\\c&H00FFFFFF&}汤",
     );

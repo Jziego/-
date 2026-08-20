@@ -84,7 +84,7 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
     <div className="scriptConfirm" id="script-confirm">
       <h3>确认口播稿</h3>
       <p className="scriptMeta">
-        约 {charCount} / {MAX_VOICEOVER_CHARS} 字 · 预计 {estimatedSec}s · 黄色为关键词高亮
+        约 {charCount} / {MAX_VOICEOVER_CHARS} 字 · 预计 {estimatedSec}s · 高亮处为关键词
       </p>
 
       <div className="voiceoverPreview" role="group" aria-label="口播稿预览">
