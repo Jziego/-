@@ -1,7 +1,7 @@
 # 口播稿为中心的视频管线重构设计
 
 日期：2026-08-16
-状态：已确认（三期设计均已获用户批准）
+状态：已确认（三期设计均已获用户批准）。Phase 1 已上线（2026-08-17）；Phase 2 已实施（2026-08-20）。
 关联：[2026-07-23-video-pipeline-overhaul-roadmap.md](./2026-07-23-video-pipeline-overhaul-roadmap.md)、[2026-07-23-storyboard-confirm-flow-design.md](./2026-07-23-storyboard-confirm-flow-design.md)
 
 ## 1. 背景
