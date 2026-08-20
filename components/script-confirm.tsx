@@ -46,7 +46,7 @@ function highlightParts(text: string, words: string[]): Array<{ text: string; hi
 
 /**
  * 口播确认卡片（Phase 2 去分镜）：标黄高亮预览 + 整稿编辑 + 形象单选 +
- * 字幕样式 + BGM（自 StoryboardConfirm 挪入）→ 确认生成。
+ * 字幕样式 + BGM（自旧分镜确认卡片挪入）→ 确认生成。
  */
 export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetIds, onConfirm, pending }: Props) {
   const [voiceover, setVoiceover] = useState(draft.voiceover);

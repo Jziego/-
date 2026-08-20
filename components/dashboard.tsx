@@ -29,7 +29,7 @@ import {
   updateScriptDraftApi,
   uploadFileToStorage
 } from "@/lib/api-client";
-import { StoryboardConfirm } from "@/components/storyboard-confirm";
+import { ScriptConfirm } from "@/components/script-confirm";
 import { MAX_ASSETS_PER_STORE, clampUploadBatch } from "@/lib/asset-library";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
 import {
@@ -278,7 +278,7 @@ export function Dashboard() {
   const [selectedPurpose, setSelectedPurpose] = useState<MarketingPurpose>("store_traffic");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [clearingJobs, setClearingJobs] = useState(false);
-  const [storyboardDraft, setStoryboardDraft] = useState<ScriptDraft | null>(null);
+  const [confirmDraft, setConfirmDraft] = useState<ScriptDraft | null>(null);
   const [bgmTracks, setBgmTracks] = useState<
     { id: string; name: string; category: string; durationSeconds: number }[]
   >([]);
@@ -402,6 +402,13 @@ export function Dashboard() {
 
   const avatar =
     localAvatar ?? (store ? (serverAvatars.find((item) => item.storeId === store.id) ?? null) : null);
+  // 形象选择器数据源：本店形象列表（含本会话新建、尚未回源的）。
+  const storeAvatars = useMemo(() => {
+    const list = store ? serverAvatars.filter((a) => a.storeId === store.id) : [];
+    return localAvatar && !list.some((a) => a.id === localAvatar.id)
+      ? [localAvatar, ...list]
+      : list;
+  }, [serverAvatars, localAvatar, store]);
   const script =
     localScript ??
     (store
@@ -820,7 +827,7 @@ export function Dashboard() {
     }
   }
 
-  async function generateStoryboard() {
+  async function generateScript() {
     if (pendingAction || generating) return;
     if (!store) {
       setMessage("请先完成门店档案。");
@@ -842,43 +849,48 @@ export function Dashboard() {
         platform: "douyin",
         targetDurationSec: targetDuration
       });
-      setStoryboardDraft(draft);
+      setConfirmDraft(draft);
       setLocalScript(draft);
       await queryClient.invalidateQueries({ queryKey: ["script-drafts"] });
-      setMessage("分镜脚本已生成，请确认后再渲染。");
+      setMessage("脚本已生成：确认口播稿与出镜形象后，点「确认生成」出片。");
     } finally {
       setGenerating(false);
     }
   }
 
-  async function patchStoryboard(
-    scenes: { order: number; text?: string; matchedAssetId?: string | null }[]
-  ) {
-    if (!storyboardDraft) return;
-    const updated = await updateScriptDraftApi({ scriptDraftId: storyboardDraft.id, scenes });
-    setStoryboardDraft(updated);
-    setLocalScript(updated);
-  }
-
-  async function confirmAndRender(selection: {
+  async function confirmScriptAndRender(selection: {
+    voiceover: string;
     selectedAssetIds: string[];
+    avatarProfileIds: string[];
     subtitleStyle: string;
     bgmTrackId: string;
   }) {
-    if (!storyboardDraft) return;
+    if (!confirmDraft) return;
     setPendingAction("render");
 
     try {
+      // 口播稿有改动先落库（服务端重切 segments / 过滤失效标黄 / 重派生 scenes），
+      // 再建渲染项目——worker 读的始终是最新 draft。
+      let draftToRender = confirmDraft;
+      if (selection.voiceover !== confirmDraft.voiceover) {
+        draftToRender = await updateScriptDraftApi({
+          scriptDraftId: confirmDraft.id,
+          voiceover: selection.voiceover
+        });
+        setConfirmDraft(draftToRender);
+        setLocalScript(draftToRender);
+      }
+
       const { jobs: plannedJobs } = await createRenderProjectApi({
-        scriptDraftId: storyboardDraft.id,
+        scriptDraftId: draftToRender.id,
         selectedAssetIds: selection.selectedAssetIds,
-        avatarProfileId: avatar?.id,
+        avatarProfileIds: selection.avatarProfileIds.length > 0 ? selection.avatarProfileIds : undefined,
         aspectRatio: "9:16",
         subtitleStyle: selection.subtitleStyle,
         bgmTrackId: selection.bgmTrackId || undefined
       });
       setLocalJobs(plannedJobs);
-      setStoryboardDraft(null);
+      setConfirmDraft(null);
       await queryClient.invalidateQueries({ queryKey: ["jobs"] });
       setMessage("AI 正在生成你的视频：自动写文案、剪画面、加字幕、配音乐。");
     } finally {
@@ -1318,7 +1330,7 @@ export function Dashboard() {
           <button
             className="primaryButton"
             disabled={renderLocked || Boolean(renderMissingAssets) || generating || Boolean(pendingAction)}
-            onClick={generateStoryboard}
+            onClick={generateScript}
             type="button"
           >
             {generating ? <span className="spinner" aria-hidden="true" /> : null}
@@ -1326,8 +1338,20 @@ export function Dashboard() {
               ? "请先完成门店档案"
               : renderMissingAssets
                 ? "请至少勾选一个素材"
-                : "生成分镜脚本"}
+                : "生成脚本"}
           </button>
+
+          {confirmDraft ? (
+            <ScriptConfirm
+              key={confirmDraft.id}
+              draft={confirmDraft}
+              avatars={storeAvatars}
+              bgmTracks={bgmTracks}
+              librarySelectedAssetIds={selectedAssets.map((a) => a.id)}
+              onConfirm={confirmScriptAndRender}
+              pending={pendingAction === "render"}
+            />
+          ) : null}
 
           {script ? (
             <div className="result">
@@ -1336,19 +1360,6 @@ export function Dashboard() {
             </div>
           ) : null}
         </article>
-
-        {storyboardDraft ? (
-          <StoryboardConfirm
-            key={storyboardDraft.id}
-            draft={storyboardDraft}
-            assets={assets}
-            bgmTracks={bgmTracks}
-            librarySelectedAssetIds={selectedAssets.map((a) => a.id)}
-            onPatch={patchStoryboard}
-            onConfirm={confirmAndRender}
-            pending={pendingAction === "render"}
-          />
-        ) : null}
       </section>
 
       <section className="statusPanel" aria-live="polite">

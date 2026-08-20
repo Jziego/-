@@ -1263,7 +1263,7 @@ describe("AI video assistant dashboard", () => {
     await user.click(screen.getByLabelText("选择素材 only.mp4"));
 
     expect(screen.getByText("已选 1 / 共 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "生成分镜脚本" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "生成脚本" })).toBeEnabled();
   });
 
   it("renders a video element for a video asset thumbnail", async () => {
@@ -1441,7 +1441,7 @@ describe("AI video assistant dashboard", () => {
     renderDashboard();
 
     await screen.findByText("已选 2 / 共 2");
-    await user.click(screen.getByRole("button", { name: "生成分镜脚本" }));
+    await user.click(screen.getByRole("button", { name: "生成脚本" }));
 
     await waitFor(() => {
       expect(fetchedBodies["/api/script-drafts"]).toBeDefined();
@@ -1450,7 +1450,7 @@ describe("AI video assistant dashboard", () => {
       assetAnalysisIds: expect.arrayContaining(["analysis_p1", "analysis_p2"])
     });
     expect((fetchedBodies["/api/script-drafts"] as { assetAnalysisIds: string[] }).assetAnalysisIds).toHaveLength(2);
-    // 改造后：点击「生成分镜脚本」只生成草稿，不立即建渲染项目
+    // 改造后：点击「生成脚本」只生成草稿，不立即建渲染项目
     expect(fetchedBodies["/api/render-projects"]).toBeUndefined();
   });
 
@@ -1674,5 +1674,104 @@ describe("AI video assistant dashboard", () => {
     expect(screen.getByRole("button", { name: /约30秒/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /约60秒/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /约15秒/ })).not.toBeInTheDocument();
+  });
+
+  it("confirm card: edits voiceover, PATCHes, then creates render project with full selection", async () => {
+    const user = userEvent.setup();
+    const savedStore = {
+      id: "store_confirm",
+      ownerId: "demo_user",
+      name: "确认店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_c1", ownerId: "demo_user", storeId: "store_confirm", type: "video", originalFilename: "c1.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "asset_c2", ownerId: "demo_user", storeId: "store_confirm", type: "image", originalFilename: "c2.jpg", storageKey: "k2", mimeType: "image/jpeg", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+    const savedAnalyses = [
+      { id: "analysis_c1", assetId: "asset_c1", visualTags: ["food"], businessTags: ["招牌菜"], keywords: [], confidence: 0.9, recommendedUses: [], analysisStatus: "succeeded", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "analysis_c2", assetId: "asset_c2", visualTags: ["food"], businessTags: ["招牌菜"], keywords: [], confidence: 0.9, recommendedUses: [], analysisStatus: "succeeded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+    const scriptPayload = {
+      id: "script_confirm",
+      ownerId: "demo_user",
+      storeId: "store_confirm",
+      purpose: "store_traffic",
+      platform: "douyin",
+      title: "引流",
+      hook: "来店",
+      scenes: [],
+      voiceover: "原口播稿。",
+      highlights: ["口播"],
+      segments: [{ index: 0, text: "原口播稿。", speakerIndex: 0, onCamera: true }],
+      captions: [],
+      cta: "到店",
+      generationMode: "ai",
+      complianceWarnings: [],
+      createdAt: "2026-01-02T00:00:00.000Z"
+    };
+    const fetchedBodies: Record<string, unknown> = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method !== "GET") {
+          fetchedBodies[`${method} ${url}`] = init?.body ? JSON.parse(init.body as string) : {};
+        }
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/script-drafts" && method === "POST") return { script: scriptPayload };
+            if (url === `/api/script-drafts/${scriptPayload.id}` && method === "PATCH") {
+              const patchBody = JSON.parse(init?.body as string) as { voiceover: string };
+              return { script: { ...scriptPayload, voiceover: patchBody.voiceover } };
+            }
+            if (url === "/api/render-projects" && method === "POST") {
+              return { project: { id: "proj_confirm" }, jobs: [] };
+            }
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: savedAssets };
+            if (url === "/api/asset-analyses") return { analyses: savedAnalyses };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    await screen.findByText("已选 2 / 共 2");
+    await user.click(screen.getByRole("button", { name: "生成脚本" }));
+
+    // 确认卡片出现：口播稿可编辑
+    const editor = await screen.findByLabelText("口播稿编辑");
+    await user.clear(editor);
+    await user.type(editor, "改后的口播稿。");
+    await user.click(screen.getByRole("button", { name: /确认生成/ }));
+
+    // 先 PATCH 改后的口播稿，再建渲染项目（avatars 为空 → 不带 avatarProfileIds）
+    await waitFor(() => {
+      expect(fetchedBodies[`PATCH /api/script-drafts/${scriptPayload.id}`]).toEqual({
+        voiceover: "改后的口播稿。"
+      });
+    });
+    await waitFor(() => {
+      expect(fetchedBodies["POST /api/render-projects"]).toMatchObject({
+        scriptDraftId: "script_confirm",
+        selectedAssetIds: expect.arrayContaining(["asset_c1", "asset_c2"])
+      });
+    });
   });
 });
