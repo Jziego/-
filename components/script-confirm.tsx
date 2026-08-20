@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { findHighlightRanges } from "@/lib/highlight-ranges";
+import { SPEECH_CHARS_PER_SECOND } from "@/lib/speech-rate";
 import type { AvatarProfile, ScriptDraft } from "@/lib/types";
 
 const SUBTITLE_OPTIONS = [
@@ -9,9 +10,6 @@ const SUBTITLE_OPTIONS = [
   { value: "default", label: "标准白字" },
   { value: "minimal", label: "极简小字" },
 ];
-
-/** 中文口播语速假设（与 scene-derive 一致），仅用于预估时长提示。 */
-const CHARS_PER_SECOND = 4.5;
 
 export interface ScriptConfirmSelection {
   voiceover: string;
@@ -64,7 +62,8 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
     [voiceover, draft.highlights],
   );
   const charCount = Array.from(voiceover).length;
-  const estimatedSec = Math.round(charCount / CHARS_PER_SECOND);
+  // 预估时长：语速取全局唯一来源 lib/speech-rate.ts
+  const estimatedSec = Math.round(charCount / SPEECH_CHARS_PER_SECOND);
   const canConfirm = voiceover.trim().length > 0 && !pending;
 
   async function handleConfirm() {
@@ -84,7 +83,7 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
         约 {charCount} 字 · 预计 {estimatedSec}s · 黄色为关键词高亮
       </p>
 
-      <div className="voiceoverPreview" aria-label="口播稿预览">
+      <div className="voiceoverPreview" role="group" aria-label="口播稿预览">
         {parts.map((p, i) =>
           p.hit ? <mark key={i}>{p.text}</mark> : <span key={i}>{p.text}</span>,
         )}
