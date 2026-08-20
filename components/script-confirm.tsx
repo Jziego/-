@@ -11,6 +11,10 @@ const SUBTITLE_OPTIONS = [
   { value: "minimal", label: "极简小字" },
 ];
 
+// 镜像服务端上限（app/api/script-drafts/[id]/route.ts 的 MAX_VOICEOVER_CHARS），
+// 编辑器本地截断，避免 PATCH 被 400 拒绝。
+const MAX_VOICEOVER_CHARS = 2000;
+
 export interface ScriptConfirmSelection {
   voiceover: string;
   selectedAssetIds: string[];
@@ -80,7 +84,7 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
     <div className="scriptConfirm" id="script-confirm">
       <h3>确认口播稿</h3>
       <p className="scriptMeta">
-        约 {charCount} 字 · 预计 {estimatedSec}s · 黄色为关键词高亮
+        约 {charCount} / {MAX_VOICEOVER_CHARS} 字 · 预计 {estimatedSec}s · 黄色为关键词高亮
       </p>
 
       <div className="voiceoverPreview" role="group" aria-label="口播稿预览">
@@ -91,6 +95,7 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
 
       <textarea
         aria-label="口播稿编辑"
+        maxLength={MAX_VOICEOVER_CHARS}
         value={voiceover}
         onChange={(e) => setVoiceover(e.target.value)}
         rows={5}

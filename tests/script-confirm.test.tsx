@@ -121,4 +121,10 @@ describe("ScriptConfirm", () => {
     await user.clear(editor);
     expect(screen.getByRole("button", { name: /确认生成/ })).toBeDisabled();
   });
+
+  it("caps the voiceover editor at 2000 chars and shows the cap in the meta line", () => {
+    renderConfirm();
+    expect(screen.getByLabelText("口播稿编辑")).toHaveAttribute("maxLength", "2000");
+    expect(screen.getByText(/约 \d+ \/ 2000 字 · 预计 \d+s/)).toBeInTheDocument();
+  });
 });

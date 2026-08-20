@@ -1774,4 +1774,101 @@ describe("AI video assistant dashboard", () => {
       });
     });
   });
+
+  it("confirm card: surfaces an error when the voiceover PATCH fails and never creates a render project", async () => {
+    const user = userEvent.setup();
+    const savedStore = {
+      id: "store_cfail",
+      ownerId: "demo_user",
+      name: "确认失败店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_f1", ownerId: "demo_user", storeId: "store_cfail", type: "video", originalFilename: "f1.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+    const savedAnalyses = [
+      { id: "analysis_f1", assetId: "asset_f1", visualTags: ["food"], businessTags: ["招牌菜"], keywords: [], confidence: 0.9, recommendedUses: [], analysisStatus: "succeeded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+    const scriptPayload = {
+      id: "script_cfail",
+      ownerId: "demo_user",
+      storeId: "store_cfail",
+      purpose: "store_traffic",
+      platform: "douyin",
+      title: "引流",
+      hook: "来店",
+      scenes: [],
+      voiceover: "原口播稿。",
+      highlights: ["口播"],
+      segments: [{ index: 0, text: "原口播稿。", speakerIndex: 0, onCamera: true }],
+      captions: [],
+      cta: "到店",
+      generationMode: "ai",
+      complianceWarnings: [],
+      createdAt: "2026-01-02T00:00:00.000Z"
+    };
+    const fetchedBodies: Record<string, unknown> = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method !== "GET") {
+          fetchedBodies[`${method} ${url}`] = init?.body ? JSON.parse(init.body as string) : {};
+        }
+        // PATCH 超长口播稿 → 服务端 400（与 MAX_VOICEOVER_CHARS 拒绝路径同形）
+        if (url === `/api/script-drafts/${scriptPayload.id}` && method === "PATCH") {
+          return {
+            ok: false,
+            json: async () => ({ error: "voiceover must be at most 2000 characters" })
+          };
+        }
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/script-drafts" && method === "POST") return { script: scriptPayload };
+            if (url === "/api/render-projects" && method === "POST") {
+              return { project: { id: "proj_cfail" }, jobs: [] };
+            }
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: savedAssets };
+            if (url === "/api/asset-analyses") return { analyses: savedAnalyses };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    await screen.findByText("已选 1 / 共 1");
+    await user.click(screen.getByRole("button", { name: "生成脚本" }));
+
+    const editor = await screen.findByLabelText("口播稿编辑");
+    await user.clear(editor);
+    await user.type(editor, "改后的口播稿。");
+    await user.click(screen.getByRole("button", { name: /确认生成/ }));
+
+    // 失败可见（house style：<动作>失败：<服务端 error>）；渲染项目绝不创建；
+    // 确认卡片保留、按钮恢复可点，用户可改稿重试。
+    expect(
+      await within(screen.getByRole("status")).findByText(
+        "确认生成失败：voiceover must be at most 2000 characters"
+      )
+    ).toBeInTheDocument();
+    expect(fetchedBodies["POST /api/render-projects"]).toBeUndefined();
+    expect(screen.getByLabelText("口播稿编辑")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /确认生成/ })).toBeEnabled();
+  });
 });
