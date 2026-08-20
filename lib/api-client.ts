@@ -235,7 +235,8 @@ export async function createScriptDraftApi(input: {
 export async function createRenderProjectApi(input: {
   scriptDraftId: string;
   selectedAssetIds: string[];
-  avatarProfileId?: string;
+  /** Phase 2：形象选择（本期单选，长度 ≤1；空/缺省 = 不用数字人）。 */
+  avatarProfileIds?: string[];
   aspectRatio?: string;
   subtitleStyle?: string;
   bgmTrackId?: string;
@@ -267,11 +268,11 @@ export async function fetchVideoOutputUrl(outputId: string): Promise<string> {
 
 export async function updateScriptDraftApi(input: {
   scriptDraftId: string;
-  scenes: { order: number; text?: string; matchedAssetId?: string | null }[];
+  voiceover: string;
 }): Promise<ScriptDraft> {
   const data = await api<{ script: ScriptDraft }>(
     `/api/script-drafts/${encodeURIComponent(input.scriptDraftId)}`,
-    { method: "PATCH", body: JSON.stringify({ scenes: input.scenes }) },
+    { method: "PATCH", body: JSON.stringify({ voiceover: input.voiceover }) },
   );
   return data.script;
 }
