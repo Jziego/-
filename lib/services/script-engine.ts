@@ -71,7 +71,7 @@ const platformNames: Record<Platform, string> = {
 // ── System prompt ──────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `你是为本地实体店创作短视频口播稿的营销文案专家。
-你的文案必须口语化、有网感、适合短视频配音。口播稿总长度按用户给的【目标时长】控制（中文配音约每秒4.5字）。
+你的文案必须口语化、有网感、适合短视频配音。口播稿长度严格按用户给的【目标时长】要求的句数执行：逐句写满规定句数，不得少写（中文配音约每秒4.5字）。
 
 要求：
 - 开头3秒内抓住注意力（hook）
@@ -96,9 +96,9 @@ const SCHEMA_DESCRIPTION = `{
 // ── Prompt builders ────────────────────────────────────────────────────────
 
 function durationGuidance(target?: number): string {
-  if (target === 45) return "约45秒，口播全文约190-210字";
-  if (target === 60) return "约60秒，口播全文约260-280字";
-  return "约30秒，口播全文约130-150字";
+  if (target === 45) return "约45秒：口播全文写满14-15句，每句8-15字（全文约190-210字）";
+  if (target === 60) return "约60秒：口播全文写满18-20句，每句8-15字（全文约260-280字）";
+  return "约30秒：口播全文写满10-12句，每句8-15字（全文约130-150字）";
 }
 
 function buildUserPrompt(input: ScriptDraftInput): string {
@@ -183,7 +183,9 @@ export async function createScriptDraftWithAI(
   const aiResponse = await chatCompletionJSON<AIScriptResponse>(
     SYSTEM_PROMPT,
     userPrompt,
-    { schemaDescription: SCHEMA_DESCRIPTION, temperature: 0.8, maxTokens: 1500 },
+    // maxTokens 3000：reasoning_effort=low 下推理仍会偶发尖峰（实测可达 ~1000+），
+    // 给 60 秒档 ~280 字口播 JSON 留足余量，避免 content 截断。按实际用量计费，无副作用。
+    { schemaDescription: SCHEMA_DESCRIPTION, temperature: 0.8, maxTokens: 3000 },
   );
 
   if (!aiResponse) {

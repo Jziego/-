@@ -60,6 +60,16 @@ export function hasAvatarProvider(): boolean {
   return Boolean(name && name !== "mock-avatar" && key);
 }
 
+export function getAIReasoningEffort(): "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
+  // AI_REASONING_EFFORT：推理强度。默认 low——deepseek-v4-flash 推理 token 计入
+  // max_tokens，不限制时 reasoning 会耗尽预算导致 content 为空/截断。
+  // 设为 "off" 则不传该参数（用于不识别的 OpenAI 兼容端点）。
+  const v = process.env.AI_REASONING_EFFORT?.trim().toLowerCase();
+  if (v === "off") return undefined;
+  if (v === "none" || v === "minimal" || v === "low" || v === "medium" || v === "high" || v === "xhigh") return v;
+  return "low";
+}
+
 // ── HeyGen (avatar provider) tuning ──────────────────────────────────────────
 
 export function getHeygenAvatarTemplateId(): string | undefined {

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { getAIReasoningEffort } from "@/lib/env";
 
 // ── Environment ────────────────────────────────────────────────────────────
 
@@ -68,6 +69,17 @@ function getClient(): OpenAI | null {
   return _client;
 }
 
+// ── Business-level retry ─────────────────────────────────────────────────────
+// Reasoning models (e.g. deepseek-v4-flash) can exhaust the token budget on
+// reasoning and return empty/truncated content. That is a successful HTTP
+// response, so the SDK does not retry it — we do, with a short backoff.
+// Network/SDK errors are NOT retried here (SDK maxRetries: 1 covers those).
+
+const MAX_ATTEMPTS = 3;
+const RETRY_BACKOFF_MS = [500, 1500];
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface ChatCompletionOptions {
@@ -101,23 +113,37 @@ export async function chatCompletion(
     { role: "user", content: userPrompt },
   ];
 
-  try {
-    const completion = await client.chat.completions.create(
-      {
-        model: getModel(),
-        messages,
-        temperature: options.temperature ?? 0.7,
-        max_tokens: options.maxTokens ?? 2000,
-      },
-      { timeout: options.timeout ?? 30_000 },
-    );
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const completion = await client.chat.completions.create(
+        {
+          model: getModel(),
+          messages,
+          temperature: options.temperature ?? 0.7,
+          max_tokens: options.maxTokens ?? 2000,
+          reasoning_effort: getAIReasoningEffort(),
+        },
+        { timeout: options.timeout ?? 30_000 },
+      );
 
-    return completion.choices[0]?.message?.content?.trim() ?? null;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[ai-client] chat completion failed: ${message}`);
-    throw error;
+      const content = completion.choices[0]?.message?.content?.trim();
+      if (content) return content;
+
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(
+          `[ai-client] chat completion returned empty content (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`,
+        );
+        await sleep(RETRY_BACKOFF_MS[attempt - 1]);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[ai-client] chat completion failed: ${message}`);
+      throw error;
+    }
   }
+
+  console.warn(`[ai-client] chat completion returned empty content after ${MAX_ATTEMPTS} attempts`);
+  return null;
 }
 
 /**
@@ -142,25 +168,44 @@ export async function chatCompletionJSON<T>(
     { role: "user", content: userPrompt },
   ];
 
-  try {
-    const completion = await client.chat.completions.create(
-      {
-        model: getModel(),
-        messages,
-        temperature: options.temperature ?? 0.4,
-        max_tokens: options.maxTokens ?? 2000,
-        response_format: { type: "json_object" },
-      },
-      { timeout: options.timeout ?? 30_000 },
-    );
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const completion = await client.chat.completions.create(
+        {
+          model: getModel(),
+          messages,
+          temperature: options.temperature ?? 0.4,
+          max_tokens: options.maxTokens ?? 2000,
+          response_format: { type: "json_object" },
+          reasoning_effort: getAIReasoningEffort(),
+        },
+        { timeout: options.timeout ?? 30_000 },
+      );
 
-    const raw = completion.choices[0]?.message?.content?.trim();
-    if (!raw) return null;
-
-    return JSON.parse(raw) as T;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[ai-client] JSON completion failed: ${message}`);
-    throw error;
+      const raw = completion.choices[0]?.message?.content?.trim();
+      if (raw) {
+        try {
+          return JSON.parse(raw) as T;
+        } catch {
+          if (attempt >= MAX_ATTEMPTS) break;
+          console.warn(
+            `[ai-client] JSON completion returned unparseable content (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`,
+          );
+        }
+      } else {
+        if (attempt >= MAX_ATTEMPTS) break;
+        console.warn(
+          `[ai-client] JSON completion returned empty content (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`,
+        );
+      }
+      await sleep(RETRY_BACKOFF_MS[attempt - 1]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[ai-client] JSON completion failed: ${message}`);
+      throw error;
+    }
   }
+
+  console.warn(`[ai-client] JSON completion unusable after ${MAX_ATTEMPTS} attempts`);
+  return null;
 }
