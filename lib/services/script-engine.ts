@@ -180,13 +180,30 @@ export async function createScriptDraftWithAI(
   input: ScriptDraftInput,
 ): Promise<ScriptDraft> {
   const userPrompt = buildUserPrompt(input);
-  const aiResponse = await chatCompletionJSON<AIScriptResponse>(
+  // 阶梯策略：先试 high 推理（字数/标黄质量更好：实测 222-300 字、标黄 5-6 个，
+  // 优于 low 的 198-234 字/0-6 个）。high 推理长度不可控且计入 max_tokens（实测峰值
+  // ~6.6k tokens/48s，8000 预算约 1/3 概率耗尽→空响应）→ 大预算 16000 + 超时 150s +
+  // 单次尝试；失败立即回退默认 low 档（~4s，实测 7/7 稳定），避免用户等数分钟后只拿到模板。
+  let aiResponse = await chatCompletionJSON<AIScriptResponse>(
     SYSTEM_PROMPT,
     userPrompt,
-    // maxTokens 3000：reasoning_effort=low 下推理仍会偶发尖峰（实测可达 ~1000+），
-    // 给 60 秒档 ~280 字口播 JSON 留足余量，避免 content 截断。按实际用量计费，无副作用。
-    { schemaDescription: SCHEMA_DESCRIPTION, temperature: 0.8, maxTokens: 3000 },
+    {
+      schemaDescription: SCHEMA_DESCRIPTION,
+      temperature: 0.8,
+      maxTokens: 16000,
+      timeout: 150_000,
+      reasoningEffort: "high",
+      maxAttempts: 1,
+    },
   );
+  if (!aiResponse) {
+    console.warn("[script-engine] high-effort generation unusable, retrying with default (low) effort");
+    aiResponse = await chatCompletionJSON<AIScriptResponse>(
+      SYSTEM_PROMPT,
+      userPrompt,
+      { schemaDescription: SCHEMA_DESCRIPTION, temperature: 0.8, maxTokens: 3000 },
+    );
+  }
 
   if (!aiResponse) {
     throw new Error("AI returned empty response");

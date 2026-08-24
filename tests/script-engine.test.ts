@@ -198,6 +198,55 @@ describe("script engine (voiceover-centric)", () => {
     }
   });
 
+  it("AI path tries high reasoning effort first with raised budget/timeout (deepseek reasoning eats max_tokens)", async () => {
+    const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      title: "t",
+      hook: "h",
+      voiceover: "开场一句。中间一句。结尾一句。",
+      cta: "到店",
+    });
+    try {
+      await createScriptDraft({
+        store, assetAnalyses: analysis, purpose: "store_traffic", platform: "douyin",
+      });
+      expect(aiSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({ reasoningEffort: "high", maxTokens: 16000, timeout: 150_000, maxAttempts: 1 }),
+      );
+    } finally {
+      hasAISpy.mockRestore();
+      aiSpy.mockRestore();
+    }
+  });
+
+  it("falls back to a low-effort call when the high-effort attempt returns null", async () => {
+    const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON")
+      .mockResolvedValueOnce(null) // high-effort attempt: empty/truncated
+      .mockResolvedValueOnce({
+        title: "t",
+        hook: "h",
+        voiceover: "开场一句。中间一句。结尾一句。",
+        cta: "到店",
+      });
+    try {
+      const draft = await createScriptDraft({
+        store, assetAnalyses: analysis, purpose: "store_traffic", platform: "douyin",
+      });
+      expect(draft.generationMode).toBe("ai");
+      expect(aiSpy).toHaveBeenCalledTimes(2);
+      // Second call: default (low) effort, moderate budget — no high-effort overrides.
+      const secondCallOptions = aiSpy.mock.calls[1]?.[2] as Record<string, unknown>;
+      expect(secondCallOptions.reasoningEffort).toBeUndefined();
+      expect(secondCallOptions.maxTokens).toBe(3000);
+    } finally {
+      hasAISpy.mockRestore();
+      aiSpy.mockRestore();
+    }
+  });
+
   it("forcedRawCopy path derives segments, scenes and store-field highlights", async () => {
     const draft = await createScriptDraft({
       store, assetAnalyses: analysis, purpose: "promotion", platform: "douyin",

@@ -76,6 +76,37 @@ describe("ai-client", () => {
     expect(params.reasoning_effort).toBeUndefined();
   });
 
+  it("per-call reasoningEffort option overrides the env default", async () => {
+    const mod = await importFreshClient();
+    mocks.create.mockResolvedValue(completion("hello"));
+
+    await mod.chatCompletion("sys", "user", { reasoningEffort: "high" });
+
+    const params = mocks.create.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params.reasoning_effort).toBe("high");
+  });
+
+  it("per-call reasoningEffort beats AI_REASONING_EFFORT env when both set", async () => {
+    process.env.AI_REASONING_EFFORT = "minimal";
+    const mod = await importFreshClient();
+    mocks.create.mockResolvedValue(completion('{"a":1}'));
+
+    await mod.chatCompletionJSON("sys", "user", { reasoningEffort: "high" });
+
+    const params = mocks.create.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params.reasoning_effort).toBe("high");
+  });
+
+  it("respects per-call maxAttempts (no retry when maxAttempts=1)", async () => {
+    const mod = await importFreshClient();
+    mocks.create.mockResolvedValue(completion(""));
+
+    const result = await mod.chatCompletionJSON("sys", "user", { maxAttempts: 1 });
+
+    expect(result).toBeNull();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+
   it("returns parsed JSON on first success without retrying", async () => {
     const mod = await importFreshClient();
     mocks.create.mockResolvedValue(completion('{"a":1}'));

@@ -91,6 +91,10 @@ export interface ChatCompletionOptions {
   temperature?: number;
   /** Maximum tokens override. */
   maxTokens?: number;
+  /** Per-call reasoning effort; overrides the AI_REASONING_EFFORT env default. */
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  /** Per-call cap on business-level retry attempts (default 3). Use 1 to disable retry. */
+  maxAttempts?: number;
 }
 
 // ── Chat completion ────────────────────────────────────────────────────────
@@ -113,7 +117,8 @@ export async function chatCompletion(
     { role: "user", content: userPrompt },
   ];
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  const maxAttempts = Math.max(1, options.maxAttempts ?? MAX_ATTEMPTS);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const completion = await client.chat.completions.create(
         {
@@ -121,7 +126,7 @@ export async function chatCompletion(
           messages,
           temperature: options.temperature ?? 0.7,
           max_tokens: options.maxTokens ?? 2000,
-          reasoning_effort: getAIReasoningEffort(),
+          reasoning_effort: options.reasoningEffort ?? getAIReasoningEffort(),
         },
         { timeout: options.timeout ?? 30_000 },
       );
@@ -129,9 +134,9 @@ export async function chatCompletion(
       const content = completion.choices[0]?.message?.content?.trim();
       if (content) return content;
 
-      if (attempt < MAX_ATTEMPTS) {
+      if (attempt < maxAttempts) {
         console.warn(
-          `[ai-client] chat completion returned empty content (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`,
+          `[ai-client] chat completion returned empty content (attempt ${attempt}/${maxAttempts}), retrying`,
         );
         await sleep(RETRY_BACKOFF_MS[attempt - 1]);
       }
@@ -142,7 +147,7 @@ export async function chatCompletion(
     }
   }
 
-  console.warn(`[ai-client] chat completion returned empty content after ${MAX_ATTEMPTS} attempts`);
+  console.warn(`[ai-client] chat completion returned empty content after ${maxAttempts} attempts`);
   return null;
 }
 
@@ -168,7 +173,8 @@ export async function chatCompletionJSON<T>(
     { role: "user", content: userPrompt },
   ];
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  const maxAttempts = Math.max(1, options.maxAttempts ?? MAX_ATTEMPTS);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const completion = await client.chat.completions.create(
         {
@@ -177,7 +183,7 @@ export async function chatCompletionJSON<T>(
           temperature: options.temperature ?? 0.4,
           max_tokens: options.maxTokens ?? 2000,
           response_format: { type: "json_object" },
-          reasoning_effort: getAIReasoningEffort(),
+          reasoning_effort: options.reasoningEffort ?? getAIReasoningEffort(),
         },
         { timeout: options.timeout ?? 30_000 },
       );
@@ -187,15 +193,15 @@ export async function chatCompletionJSON<T>(
         try {
           return JSON.parse(raw) as T;
         } catch {
-          if (attempt >= MAX_ATTEMPTS) break;
+          if (attempt >= maxAttempts) break;
           console.warn(
-            `[ai-client] JSON completion returned unparseable content (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`,
+            `[ai-client] JSON completion returned unparseable content (attempt ${attempt}/${maxAttempts}), retrying`,
           );
         }
       } else {
-        if (attempt >= MAX_ATTEMPTS) break;
+        if (attempt >= maxAttempts) break;
         console.warn(
-          `[ai-client] JSON completion returned empty content (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`,
+          `[ai-client] JSON completion returned empty content (attempt ${attempt}/${maxAttempts}), retrying`,
         );
       }
       await sleep(RETRY_BACKOFF_MS[attempt - 1]);
@@ -206,6 +212,6 @@ export async function chatCompletionJSON<T>(
     }
   }
 
-  console.warn(`[ai-client] JSON completion unusable after ${MAX_ATTEMPTS} attempts`);
+  console.warn(`[ai-client] JSON completion unusable after ${maxAttempts} attempts`);
   return null;
 }
