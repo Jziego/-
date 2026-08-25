@@ -15,6 +15,7 @@ import {
   fetchAssetAnalyses,
   fetchAssetPreviewUrl,
   fetchAssets,
+  fetchAvatarStatusApi,
   fetchAvatars,
   fetchBgmTracks,
   fetchJobs,
@@ -23,7 +24,7 @@ import {
   fetchStores,
   fetchVideoOutputUrl,
   reanalyzeAssetApi,
-  requestTalkingHeadApi,
+  reissueAvatarConsentApi,
   saveStore,
   suggestStoreProfileApi,
   updateScriptDraftApi,
@@ -32,6 +33,7 @@ import {
 import { ScriptConfirm } from "@/components/script-confirm";
 import { MAX_ASSETS_PER_STORE, clampUploadBatch } from "@/lib/asset-library";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
+import { isPlatformAvatarId } from "@/lib/services/platform-avatar";
 import {
   clearStoreDraft,
   loadStoreDraft,
@@ -287,6 +289,10 @@ export function Dashboard() {
   const draftClearedRef = useRef(false);
   const savedStoreHydratedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const footageInputRef = useRef<HTMLInputElement>(null);
+  const [footageUploading, setFootageUploading] = useState(false);
+  const [selectedFootageId, setSelectedFootageId] = useState("");
+  const [avatarName, setAvatarName] = useState("");
 
   const { data: stores = [], isPending: storesPending } = useQuery({
     queryKey: ["stores"],
@@ -344,6 +350,7 @@ export function Dashboard() {
   const store = localStore ?? stores[0] ?? null;
   // Asset library is a per-store pool (DB-persisted + this session's uploads,
   // deduped by id). Selection is a subset the user ticks for rendering.
+  // 素材库只展示/参与选择 material；avatar_footage 是数字分身训练素材，走 AI 分身区。
   const assets = useMemo(() => {
     const seen = new Set<string>();
     const merged: Asset[] = [];
@@ -353,7 +360,19 @@ export function Dashboard() {
       seen.add(asset.id);
       merged.push(asset);
     }
-    return merged;
+    return merged.filter((a) => (a.category ?? "material") === "material");
+  }, [localAssets, serverAssets, store]);
+
+  // AI 分身区的人像视频池（本店 + category=avatar_footage；与素材库同规则按 id 去重，
+  // 否则本会话上传的 footage 在 assets 回源后会本地/服务端各出现一次）。
+  const footageAssets = useMemo(() => {
+    const storeAssets = store ? serverAssets.filter((item) => item.storeId === store.id) : [];
+    const seen = new Set<string>();
+    return [...localAssets, ...storeAssets].filter((a) => {
+      if (a.category !== "avatar_footage" || seen.has(a.id)) return false;
+      seen.add(a.id);
+      return true;
+    });
   }, [localAssets, serverAssets, store]);
 
   const analysesByAssetId = useMemo(() => {
@@ -400,15 +419,20 @@ export function Dashboard() {
     };
   }, []);
 
-  const avatar =
-    localAvatar ?? (store ? (serverAvatars.find((item) => item.storeId === store.id) ?? null) : null);
-  // 形象选择器数据源：本店形象列表（含本会话新建、尚未回源的）。
+  // 形象选择器数据源：本店形象列表（含本会话新建、尚未回源的；平台公共形象跨店可见）。
   const storeAvatars = useMemo(() => {
-    const list = store ? serverAvatars.filter((a) => a.storeId === store.id) : [];
+    const list = store
+      ? serverAvatars.filter((a) => a.storeId === store.id || isPlatformAvatarId(a.id))
+      : [];
     return localAvatar && !list.some((a) => a.id === localAvatar.id)
       ? [localAvatar, ...list]
       : list;
   }, [serverAvatars, localAvatar, store]);
+  // 步骤完成度判断用的单数概念：有任一 ready 形象即视为「AI 分身」步完成。
+  const avatar = useMemo(
+    () => storeAvatars.find((a) => a.trainingStatus === "ready") ?? null,
+    [storeAvatars]
+  );
   const script =
     localScript ??
     (store
@@ -492,6 +516,39 @@ export function Dashboard() {
       setAvatarConsent(true);
     }
   }, [avatar]);
+
+  // 分身状态轮询：有待授权/训练中的形象时每 10s 打 status 端点收敛状态机，
+  // 全部终态后自动停止。避免刷新页面后授权进度丢失。
+  const pendingAvatars = useMemo(
+    () =>
+      storeAvatars.filter(
+        (a) =>
+          !isPlatformAvatarId(a.id) &&
+          (a.consentStatus === "awaiting_user" ||
+            a.trainingStatus === "pending" ||
+            a.trainingStatus === "processing")
+      ),
+    [storeAvatars]
+  );
+  useEffect(() => {
+    if (pendingAvatars.length === 0) return;
+    let cancelled = false;
+    const tick = async () => {
+      for (const a of pendingAvatars) {
+        try {
+          await fetchAvatarStatusApi(a.id);
+        } catch {
+          /* 单次失败下轮再来 */
+        }
+      }
+      if (!cancelled) await queryClient.invalidateQueries({ queryKey: ["avatars"] });
+    };
+    const timer = setInterval(() => void tick(), 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pendingAvatars, queryClient]);
 
   useEffect(() => {
     if (script) {
@@ -725,7 +782,8 @@ export function Dashboard() {
           storeId: store.id,
           filename: file.name,
           contentType: file.type,
-          sizeBytes: file.size
+          sizeBytes: file.size,
+          category: "material"
         });
 
         await uploadFileToStorage(intent.uploadUrl, file, intent.headers, (ratio) => {
@@ -742,7 +800,8 @@ export function Dashboard() {
           originalFilename: file.name,
           mimeType: file.type,
           type: inferAssetType(file.type),
-          sizeBytes: file.size
+          sizeBytes: file.size,
+          category: "material"
         });
 
         const analyzed = await analyzeAssetApi({
@@ -787,43 +846,112 @@ export function Dashboard() {
     }
   }
 
-  async function simulateAvatarClone() {
+  async function handleFootageUpload(file: File) {
     if (!store) {
       setMessage("请先完成门店档案。");
       return;
     }
+    if (!file.type.startsWith("video/")) {
+      setMessage("人像素材仅支持视频文件。");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setMessage("视频不超过 200MB。");
+      return;
+    }
+    setFootageUploading(true);
+    try {
+      const intent = await createUploadIntentApi({
+        ownerId: store.ownerId,
+        storeId: store.id,
+        filename: file.name,
+        contentType: file.type,
+        sizeBytes: file.size,
+        category: "avatar_footage"
+      });
+      await uploadFileToStorage(intent.uploadUrl, file, intent.headers);
+      const uploaded = await confirmAssetUpload({
+        assetId: intent.assetId,
+        storeId: store.id,
+        ownerId: store.ownerId,
+        storageKey: intent.storageKey,
+        originalFilename: file.name,
+        mimeType: file.type,
+        type: "video",
+        sizeBytes: file.size,
+        category: "avatar_footage"
+      });
+      setLocalAssets((prev) => (prev.some((a) => a.id === uploaded.id) ? prev : [...prev, uploaded]));
+      setSelectedFootageId(uploaded.id);
+      await queryClient.invalidateQueries({ queryKey: ["assets"] });
+      setMessage("人像视频已上传。填写形象名字并确认授权后，创建你的 AI 分身。");
+    } catch {
+      setMessage("人像视频上传失败，请重试。");
+    } finally {
+      setFootageUploading(false);
+    }
+  }
 
+  async function handleCreateAvatar() {
+    if (!store) {
+      setMessage("请先完成门店档案。");
+      return;
+    }
+    if (!selectedFootageId) {
+      setMessage("请先上传并选择一段人像视频。");
+      return;
+    }
+    if (!avatarName.trim()) {
+      setMessage("请给形象起个名字（如：店主、店长小姐姐）。");
+      return;
+    }
     if (!avatarConsent) {
       setMessage("请先确认肖像和声音授权。");
       return;
     }
-
     setPendingAction("avatar");
-
     try {
-      const profile = await createAvatarApi({
-        ownerId: store.ownerId,
+      const { avatar: profile, consentUrl } = await createAvatarApi({
         storeId: store.id,
-        trainingVideoAssetId:
-          selectedAssets.find((a) => a.type === "video")?.id ?? "asset_training_demo",
+        footageAssetId: selectedFootageId,
+        name: avatarName.trim(),
         consentAccepted: true
       });
       setLocalAvatar(profile);
       await queryClient.invalidateQueries({ queryKey: ["avatars"] });
-
-      if (!script) {
-        setMessage("AI 形象已创建。请先生成脚本，再合成数字人口播视频。");
-        return;
-      }
-
-      const th = await requestTalkingHeadApi({
-        avatarProfileId: profile.id,
-        scriptDraftId: script.id
-      });
-      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      setMessage(`已提交数字人口播任务（作业 ${th.jobId}），可在进度面板查看实时进度，完成后在产物中预览。`);
+      // HeyGen webcam 授权：新窗口打开（24h 有效），用户念授权词完成授权。
+      window.open(consentUrl, "_blank", "noopener,noreferrer");
+      setMessage("已创建分身任务：请在新窗口完成真人授权（念一段授权词），完成后回到这里自动刷新状态。");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "请稍后重试";
+      setMessage(`创建 AI 分身失败：${detail}`);
     } finally {
       setPendingAction(null);
+    }
+  }
+
+  async function handleOpenConsent(avatarId: string) {
+    try {
+      const { consentUrl } = await fetchAvatarStatusApi(avatarId);
+      if (consentUrl) {
+        window.open(consentUrl, "_blank", "noopener,noreferrer");
+        setMessage("请在新窗口完成真人授权。");
+      } else {
+        setMessage("授权链接已轮换，请点击「重新发起授权」。");
+      }
+    } catch {
+      setMessage("获取授权链接失败，请稍后重试。");
+    }
+  }
+
+  async function handleReissueConsent(avatarId: string) {
+    try {
+      const { consentUrl } = await reissueAvatarConsentApi(avatarId);
+      await queryClient.invalidateQueries({ queryKey: ["avatars"] });
+      window.open(consentUrl, "_blank", "noopener,noreferrer");
+      setMessage("已重新发起授权：请在新窗口完成真人授权。");
+    } catch {
+      setMessage("重新发起授权失败，请稍后重试。");
     }
   }
 
@@ -1243,47 +1371,122 @@ export function Dashboard() {
           <div className="cardHeader">
             <div>
               <h2>AI 分身</h2>
-              <p>上传一段真人视频，AI 学习你的形象和声音，以后不用出镜也能“真人”出镜</p>
+              <p>上传一段你本人讲话的视频，AI 克隆你的形象和声音，以后不用出镜也能“真人”出镜</p>
             </div>
-            <span className={avatar ? "statusBadge success" : "statusBadge warning"}>{avatar ? "已完成" : "待完成"}</span>
+            <span className={storeAvatars.some((a) => a.trainingStatus === "ready") ? "statusBadge success" : "statusBadge warning"}>
+              {storeAvatars.some((a) => a.trainingStatus === "ready") ? "已完成" : "待完成"}
+            </span>
           </div>
 
-          {!avatar ? (
-            <div className="emptyState avatarEmpty">
-              <svg aria-hidden="true" viewBox="0 0 110 110">
-                <circle cx="55" cy="42" r="18" />
-                <path d="M24 90c5-19 17-29 31-29s26 10 31 29" />
-                <path d="M20 54c0-23 15-39 35-39s35 16 35 39" />
-              </svg>
-              <span>还没有 AI 形象时，可先上传授权视频。</span>
-            </div>
-          ) : (
-            <div className="result">
-              <strong>AI 形象已创建</strong>
-              <span>{avatar.trainingStatus === "ready" ? "已完成" : "正在训练你的 AI 形象…"}</span>
-              <span className="resultHint">预计需要 5-10 分钟，完成后会通知你。</span>
-            </div>
-          )}
+          <input
+            ref={footageInputRef}
+            accept="video/*"
+            className="srOnly"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void handleFootageUpload(f);
+            }}
+            type="file"
+          />
+
+          <div className="footageSection">
+            <p className="resultHint">拍摄要求：30秒–5分钟、正脸面对镜头、光线充足、人声清晰、无背景音乐。</p>
+            {footageAssets.length > 0 ? (
+              <div className="mediaGrid" role="list" aria-label="人像视频列表">
+                {footageAssets.map((item) => (
+                  <label className={`mediaItem ${selectedFootageId === item.id ? "selected" : ""}`} key={item.id} role="listitem">
+                    <input
+                      aria-label={`选择人像视频 ${item.originalFilename}`}
+                      checked={selectedFootageId === item.id}
+                      onChange={() => setSelectedFootageId(item.id)}
+                      type="radio"
+                      name="footage"
+                    />
+                    <span className="mediaMeta"><strong>{item.originalFilename}</strong></span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="emptyState avatarEmpty">
+                <span>还没有人像视频。上传一段你本人讲话的视频开始克隆。</span>
+              </div>
+            )}
+            <button
+              className="secondaryButton"
+              disabled={!store || footageUploading || Boolean(pendingAction)}
+              onClick={() => footageInputRef.current?.click()}
+              type="button"
+            >
+              {footageUploading ? <span className="spinner" aria-hidden="true" /> : null}
+              上传人像视频
+            </button>
+          </div>
+
+          {storeAvatars.filter((a) => !isPlatformAvatarId(a.id)).length > 0 ? (
+            <ul className="analysisStatusList" aria-label="我的 AI 分身">
+              {storeAvatars.filter((a) => !isPlatformAvatarId(a.id)).map((a) => (
+                <li key={a.id}>
+                  <span className={
+                    a.trainingStatus === "ready" ? "statusBadge success"
+                    : a.trainingStatus === "failed" ? "statusBadge warning"
+                    : "statusBadge"
+                  }>
+                    {a.name || "未命名形象"}·
+                    {a.trainingStatus === "ready" ? "已就绪"
+                      : a.trainingStatus === "failed" ? `失败${a.statusReason ? `：${a.statusReason}` : ""}`
+                      : a.consentStatus === "awaiting_user" ? "待真人授权"
+                      : "训练中"}
+                  </span>
+                  {a.consentStatus === "awaiting_user" ? (
+                    <button
+                      className="secondaryButton"
+                      onClick={() => void handleOpenConsent(a.id)}
+                      type="button"
+                    >
+                      去完成授权
+                    </button>
+                  ) : null}
+                  {a.trainingStatus === "failed" ? (
+                    <button
+                      className="secondaryButton"
+                      onClick={() => void handleReissueConsent(a.id)}
+                      type="button"
+                    >
+                      重新发起授权
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          <label>
+            形象名字
+            <input
+              aria-label="形象名字"
+              maxLength={20}
+              onChange={(e) => setAvatarName(e.target.value)}
+              placeholder="如：店主、店长小姐姐"
+              type="text"
+              value={avatarName}
+            />
+          </label>
 
           <label className="consentBox">
             <input checked={avatarConsent} onChange={(event) => setAvatarConsent(event.target.checked)} type="checkbox" />
-            <span>我已确认拥有该视频的肖像/声音使用权，同意生成 AI 形象</span>
+            <span>我是视频中的本人（或已获其授权），同意克隆肖像和声音生成 AI 分身</span>
           </label>
 
           <button
             className="primaryButton"
-            disabled={!store || !avatarConsent || Boolean(pendingAction)}
-            onClick={simulateAvatarClone}
+            disabled={!store || !selectedFootageId || !avatarName.trim() || !avatarConsent || Boolean(pendingAction)}
+            onClick={handleCreateAvatar}
             type="button"
           >
             {pendingAction === "avatar" ? <span className="spinner" aria-hidden="true" /> : null}
-            创建 AI 形象
+            创建 AI 分身
           </button>
-
-          <details className="advancedNote">
-            <summary>高级说明 (?)</summary>
-            <p>接入主流 AI 形象服务；如果暂未就绪，会自动启用备用配音方案，保证视频按时出片。</p>
-          </details>
         </article>
 
         <article className="card cardFeatured" id="one-click-video">

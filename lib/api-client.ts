@@ -96,6 +96,7 @@ export interface ConfirmAssetInput {
   mimeType: string;
   type: "video" | "image" | "audio";
   sizeBytes?: number;
+  category?: "material" | "avatar_footage";
 }
 
 export async function createUploadIntentApi(input: {
@@ -104,6 +105,7 @@ export async function createUploadIntentApi(input: {
   filename: string;
   contentType: string;
   sizeBytes: number;
+  category?: "material" | "avatar_footage";
 }): Promise<UploadIntentResponse> {
   const data = await api<{ intent: UploadIntentResponse }>("/api/assets/upload-intent", {
     method: "POST",
@@ -196,16 +198,32 @@ export async function reanalyzeAssetApi(assetId: string): Promise<AssetAnalysis>
 }
 
 export async function createAvatarApi(input: {
-  ownerId: string;
   storeId: string;
-  trainingVideoAssetId: string;
+  footageAssetId: string;
+  name: string;
   consentAccepted: boolean;
-}): Promise<AvatarProfile> {
-  const data = await api<{ avatar: AvatarProfile }>("/api/avatars", {
+}): Promise<{ avatar: AvatarProfile; consentUrl: string }> {
+  return api<{ avatar: AvatarProfile; consentUrl: string }>("/api/avatars", {
     method: "POST",
     body: JSON.stringify(input)
   });
-  return data.avatar;
+}
+
+export async function fetchAvatarStatusApi(
+  avatarId: string
+): Promise<{ avatar: AvatarProfile; consentUrl?: string }> {
+  return api<{ avatar: AvatarProfile; consentUrl?: string }>(
+    `/api/avatars/${encodeURIComponent(avatarId)}/status`
+  );
+}
+
+export async function reissueAvatarConsentApi(
+  avatarId: string
+): Promise<{ avatar: AvatarProfile; consentUrl: string }> {
+  return api<{ avatar: AvatarProfile; consentUrl: string }>(
+    `/api/avatars/${encodeURIComponent(avatarId)}/consent`,
+    { method: "POST" }
+  );
 }
 
 export async function requestTalkingHeadApi(input: {

@@ -81,7 +81,7 @@ describe("AI video assistant dashboard", () => {
       screen.getByText("0 基础也能做。自动写脚本、配音乐、加字幕，你只管传素材，剩下的 AI 全包，让顾客主动找到你。")
     ).toBeInTheDocument();
     expect(screen.getByText("上传你的视频、图片或音频，AI 自动看懂内容并分类，找素材时一搜就有")).toBeInTheDocument();
-    expect(screen.getByText("我已确认拥有该视频的肖像/声音使用权，同意生成 AI 形象")).toBeInTheDocument();
+    expect(screen.getByText("我是视频中的本人（或已获其授权），同意克隆肖像和声音生成 AI 分身")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "请先完成门店档案" })).toBeDisabled();
   });
 
@@ -456,9 +456,11 @@ describe("AI video assistant dashboard", () => {
       id: "avatar_saved",
       ownerId: "demo_user",
       storeId: savedStore.id,
+      name: "店主",
       provider: "mock-avatar" as const,
+      consentStatus: "approved" as const,
       consentAcceptedAt: "2026-01-01T00:00:00.000Z",
-      trainingStatus: "processing" as const,
+      trainingStatus: "ready" as const,
       fallbackMode: "tts_voiceover" as const,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z"
@@ -505,9 +507,332 @@ describe("AI video assistant dashboard", () => {
       expect(within(stepper).getByRole("link", { name: /AI 分身/ })).toHaveTextContent("已完成");
     });
     expect(within(stepper).getByRole("link", { name: /智能成片/ })).toHaveTextContent("已完成");
-    expect(screen.getByText("AI 形象已创建")).toBeInTheDocument();
+    expect(screen.getByText(/店主·已就绪/)).toBeInTheDocument();
     expect(screen.getByText("今天上新，欢迎来尝")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /我已确认拥有该视频的肖像/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /我是视频中的本人/ })).toBeChecked();
+  });
+
+  it("keeps avatar footage out of the material library and lists it in the footage pool", async () => {
+    const savedStore = {
+      id: "store_cat",
+      ownerId: "demo_user",
+      name: "分类店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_mat", ownerId: "demo_user", storeId: "store_cat", type: "video", originalFilename: "mat.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", category: "material", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "asset_foot", ownerId: "demo_user", storeId: "store_cat", type: "video", originalFilename: "foot.mp4", storageKey: "k2", mimeType: "video/mp4", sizeBytes: 3000, tags: [], businessTags: [], status: "uploaded", category: "avatar_footage", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: savedAssets };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [] };
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      }))
+    );
+
+    renderDashboard();
+
+    // 素材库只统计/展示 material；人像视频不进素材网格。
+    expect(await screen.findByText("已选 1 / 共 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择素材 mat.mp4")).toBeInTheDocument();
+    expect(screen.queryByLabelText("选择素材 foot.mp4")).not.toBeInTheDocument();
+    // 人像视频出现在 AI 分身区的人像视频列表里。
+    expect(screen.getByLabelText("选择人像视频 foot.mp4")).toBeInTheDocument();
+  });
+
+  it("uploads footage and creates an AI avatar with the new contract, opening the consent window", async () => {
+    const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const savedStore = {
+      id: "store_av",
+      ownerId: "demo_user",
+      name: "分身店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const createdAvatar = {
+      id: "avatar_new",
+      ownerId: "demo_user",
+      storeId: "store_av",
+      name: "店主",
+      provider: "heygen",
+      consentStatus: "awaiting_user",
+      trainingStatus: "pending",
+      consentAcceptedAt: "2026-01-01T00:00:00.000Z",
+      fallbackMode: "tts_voiceover",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    const fetchedBodies: Record<string, unknown> = {};
+    const serverAssets: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method !== "GET") {
+          fetchedBodies[`${method} ${url}`] = init?.body ? JSON.parse(init.body as string) : {};
+        }
+
+        if (url === "/api/assets/upload-intent" && method === "POST") {
+          return {
+            ok: true,
+            json: async () => ({
+              intent: {
+                assetId: "asset_foot1",
+                storageKey: "stores/store_av/assets/asset_foot1-me.mp4",
+                uploadUrl: "https://storage.example/upload",
+                headers: { "Content-Type": "video/mp4" },
+                maxSizeBytes: 200 * 1024 * 1024,
+                expiresInSeconds: 900
+              }
+            })
+          };
+        }
+
+        if (url === "/api/assets/confirm" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const confirmed = {
+            id: body.assetId,
+            ownerId: savedStore.ownerId,
+            storeId: savedStore.id,
+            type: "video",
+            originalFilename: body.originalFilename,
+            storageKey: body.storageKey,
+            mimeType: body.mimeType,
+            sizeBytes: body.sizeBytes ?? 1000,
+            tags: [],
+            businessTags: [],
+            status: "uploaded",
+            category: body.category ?? "material",
+            createdAt: new Date().toISOString()
+          };
+          // 确认后素材即入服务端库，下一次 GET /api/assets 会带回它。
+          serverAssets.push(confirmed);
+          return { ok: true, json: async () => ({ asset: confirmed }) };
+        }
+
+        if (url === "/api/avatars" && method === "POST") {
+          return { ok: true, json: async () => ({ avatar: createdAvatar, consentUrl: "https://consent/xyz" }) };
+        }
+
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: serverAssets };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    vi.spyOn(apiClient, "uploadFileToStorage").mockImplementation(async () => {});
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "上传人像视频" })).toBeEnabled();
+    });
+
+    const footageInput = document.querySelector('input[accept="video/*"]') as HTMLInputElement;
+    await user.upload(footageInput, new File(["video"], "me.mp4", { type: "video/mp4" }));
+
+    expect(
+      await within(screen.getByRole("status")).findByText("人像视频已上传。填写形象名字并确认授权后，创建你的 AI 分身。")
+    ).toBeInTheDocument();
+    // footage 上传链路带 category=avatar_footage，且不做素材 AI 分析。
+    expect(fetchedBodies["POST /api/assets/upload-intent"]).toMatchObject({ category: "avatar_footage" });
+    expect(fetchedBodies["POST /api/assets/confirm"]).toMatchObject({ category: "avatar_footage" });
+    expect(fetchedBodies["POST /api/assets/analyze"]).toBeUndefined();
+    // 上传成功后自动选中该人像视频；invalidate 回源后同一条素材不重复出现。
+    expect(screen.getByLabelText("选择人像视频 me.mp4")).toBeChecked();
+    await waitFor(() => {
+      expect(screen.getAllByLabelText("选择人像视频 me.mp4")).toHaveLength(1);
+    });
+
+    await user.type(screen.getByLabelText("形象名字"), "店主");
+    await user.click(screen.getByRole("checkbox", { name: /我是视频中的本人/ }));
+    await user.click(screen.getByRole("button", { name: "创建 AI 分身" }));
+
+    expect(
+      await within(screen.getByRole("status")).findByText(/已创建分身任务/)
+    ).toBeInTheDocument();
+    expect(fetchedBodies["POST /api/avatars"]).toEqual({
+      storeId: "store_av",
+      footageAssetId: "asset_foot1",
+      name: "店主",
+      consentAccepted: true
+    });
+    expect(openSpy).toHaveBeenCalledWith("https://consent/xyz", "_blank", "noopener,noreferrer");
+  });
+
+  it("shows a 去完成授权 button for an awaiting-consent avatar and opens the consent url", async () => {
+    const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const savedStore = {
+      id: "store_consent",
+      ownerId: "demo_user",
+      name: "授权店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const awaitingAvatar = {
+      id: "avatar_wait",
+      ownerId: "demo_user",
+      storeId: "store_consent",
+      name: "店长",
+      provider: "heygen",
+      consentStatus: "awaiting_user",
+      trainingStatus: "pending",
+      consentAcceptedAt: "2026-01-01T00:00:00.000Z",
+      fallbackMode: "tts_voiceover",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: [] };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [awaitingAvatar] };
+          if (url === "/api/avatars/avatar_wait/status") {
+            return { avatar: awaitingAvatar, consentUrl: "https://consent/live" };
+          }
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      }))
+    );
+
+    renderDashboard();
+
+    const consentButton = await screen.findByRole("button", { name: "去完成授权" });
+    expect(screen.getByText(/店长·待真人授权/)).toBeInTheDocument();
+    await user.click(consentButton);
+
+    await waitFor(() => {
+      expect(openSpy).toHaveBeenCalledWith("https://consent/live", "_blank", "noopener,noreferrer");
+    });
+  });
+
+  it("shows the failure reason for a failed avatar and reissues consent on demand", async () => {
+    const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const savedStore = {
+      id: "store_failed",
+      ownerId: "demo_user",
+      name: "失败店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const failedAvatar = {
+      id: "avatar_fail",
+      ownerId: "demo_user",
+      storeId: "store_failed",
+      name: "老板",
+      provider: "heygen",
+      consentStatus: "expired",
+      statusReason: "授权超时",
+      trainingStatus: "failed",
+      consentAcceptedAt: "2026-01-01T00:00:00.000Z",
+      fallbackMode: "tts_voiceover",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    let reissued = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (url === "/api/avatars/avatar_fail/consent" && method === "POST") {
+          reissued = true;
+          return {
+            ok: true,
+            json: async () => ({
+              avatar: { ...failedAvatar, consentStatus: "awaiting_user", trainingStatus: "pending" },
+              consentUrl: "https://consent/new"
+            })
+          };
+        }
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [failedAvatar] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    const reissueButton = await screen.findByRole("button", { name: "重新发起授权" });
+    expect(screen.getByText(/失败：授权超时/)).toBeInTheDocument();
+    await user.click(reissueButton);
+
+    await waitFor(() => {
+      expect(reissued).toBe(true);
+    });
+    expect(openSpy).toHaveBeenCalledWith("https://consent/new", "_blank", "noopener,noreferrer");
   });
 
   it("uploads a selected file through intent, storage PUT and confirm", async () => {
