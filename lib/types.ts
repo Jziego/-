@@ -10,6 +10,8 @@ export type AvatarTrainingStatus = "pending" | "processing" | "ready" | "failed"
 
 export type AvatarFallbackMode = "template_avatar" | "tts_voiceover" | "broll_subtitles";
 
+export type AvatarConsentStatus = "awaiting_user" | "approved" | "rejected" | "expired";
+
 export type MarketingPurpose =
   | "store_traffic"
   | "new_product"
@@ -93,9 +95,19 @@ export interface AvatarProfile {
   id: string;
   ownerId: string;
   storeId: string;
+  /** 用户起的形象名（多形象 prompt 人设与 UI 展示用）；老数据为 ""。 */
+  name: string;
   provider: AvatarProviderName;
   providerAvatarId?: string;
   providerVoiceId?: string;
+  /** HeyGen avatar group id（digital_twin 创建时返回；授权/训练状态轮询的句柄）。 */
+  providerGroupId?: string;
+  /** 授权状态机：awaiting_user → approved | rejected | expired。老数据视为 approved。 */
+  consentStatus: AvatarConsentStatus;
+  /** 训练用人像视频（Asset.category="avatar_footage"）。 */
+  trainingVideoAssetId?: string;
+  /** 失败/被拒原因（UI 展示）。 */
+  statusReason?: string;
   consentAcceptedAt: string;
   trainingStatus: AvatarTrainingStatus;
   fallbackMode: AvatarFallbackMode;

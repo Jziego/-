@@ -166,6 +166,20 @@ export class PrismaAvatarRepository implements AvatarRepository {
     const row = await this.prisma.avatarProfile.findUnique({ where: { id } });
     return row ? toAvatarProfile(row) : null;
   }
+
+  async update(id: string, data: Partial<AvatarProfile>): Promise<AvatarProfile> {
+    const prismaData: Record<string, unknown> = {};
+    if (data.name !== undefined) prismaData.name = data.name;
+    if (data.providerAvatarId !== undefined) prismaData.providerAvatarId = data.providerAvatarId ?? null;
+    if (data.providerVoiceId !== undefined) prismaData.providerVoiceId = data.providerVoiceId ?? null;
+    if (data.providerGroupId !== undefined) prismaData.providerGroupId = data.providerGroupId ?? null;
+    if (data.consentStatus !== undefined) prismaData.consentStatus = data.consentStatus;
+    if (data.trainingStatus !== undefined) prismaData.trainingStatus = data.trainingStatus;
+    if (data.statusReason !== undefined) prismaData.statusReason = data.statusReason ?? null;
+    if (data.updatedAt !== undefined) prismaData.updatedAt = new Date(data.updatedAt);
+    const row = await this.prisma.avatarProfile.update({ where: { id }, data: prismaData });
+    return toAvatarProfile(row);
+  }
 }
 
 export class PrismaScriptRepository implements ScriptRepository {

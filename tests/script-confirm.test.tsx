@@ -20,14 +20,14 @@ const draft: ScriptDraft = {
 
 const avatars: AvatarProfile[] = [
   {
-    id: "avatar_ready", ownerId: "u", storeId: "s", provider: "heygen",
-    providerAvatarId: "x", consentAcceptedAt: "2026-08-01T00:00:00.000Z",
+    id: "avatar_ready", ownerId: "u", storeId: "s", name: "", provider: "heygen",
+    providerAvatarId: "x", consentStatus: "approved", consentAcceptedAt: "2026-08-01T00:00:00.000Z",
     trainingStatus: "ready", fallbackMode: "tts_voiceover",
     createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z",
   },
   {
-    id: "avatar_training", ownerId: "u", storeId: "s", provider: "heygen",
-    consentAcceptedAt: "2026-08-01T00:00:00.000Z",
+    id: "avatar_training", ownerId: "u", storeId: "s", name: "", provider: "heygen",
+    consentStatus: "approved", consentAcceptedAt: "2026-08-01T00:00:00.000Z",
     trainingStatus: "processing", fallbackMode: "tts_voiceover",
     createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z",
   },

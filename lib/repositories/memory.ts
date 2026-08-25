@@ -107,12 +107,28 @@ export class MemoryAvatarRepository implements AvatarRepository {
   }
 
   async create(avatar: AvatarProfile): Promise<AvatarProfile> {
-    getRuntimeState().avatars.push(avatar);
-    return avatar;
+    // Mirror Prisma's `@default("")` / `@default("approved")` so both repos share
+    // Phase 3 field semantics for legacy literals that omit them.
+    const stored = {
+      ...avatar,
+      name: avatar.name ?? "",
+      consentStatus: avatar.consentStatus ?? "approved"
+    };
+    getRuntimeState().avatars.push(stored);
+    return stored;
   }
 
   async findById(id: string): Promise<AvatarProfile | null> {
     return getRuntimeState().avatars.find((avatar) => avatar.id === id) ?? null;
+  }
+
+  async update(id: string, data: Partial<AvatarProfile>): Promise<AvatarProfile> {
+    const state = getRuntimeState();
+    const index = state.avatars.findIndex((a) => a.id === id);
+    if (index < 0) throw new Error(`AvatarProfile not found: ${id}`);
+    const updated = { ...state.avatars[index], ...data, id: state.avatars[index].id };
+    state.avatars[index] = updated;
+    return updated;
   }
 }
 

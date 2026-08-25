@@ -118,8 +118,13 @@ model AvatarProfile {
   ownerId          String
   storeId          String
   provider         String
+  name             String       @default("")
   providerAvatarId String?
   providerVoiceId  String?
+  providerGroupId  String?
+  consentStatus    String       @default("approved")
+  trainingVideoAssetId String?
+  statusReason     String?
   consentAcceptedAt DateTime
   trainingStatus   String
   fallbackMode     String

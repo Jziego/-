@@ -36,6 +36,7 @@ export interface AvatarRepository {
   listByOwner(ownerId: string): Promise<AvatarProfile[]>;
   create(avatar: AvatarProfile): Promise<AvatarProfile>;
   findById(id: string): Promise<AvatarProfile | null>;
+  update(id: string, data: Partial<AvatarProfile>): Promise<AvatarProfile>;
 }
 
 export interface ScriptRepository {
