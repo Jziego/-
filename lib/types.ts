@@ -162,6 +162,8 @@ export interface ScriptDraft {
   highlights?: string[];
   /** 口播按句分段（服务端从 voiceover 派生/重切）。 */
   segments?: ScriptSegment[];
+  /** speakerIndex → AvatarProfile.id 的对齐表（生成时刻的 personas 顺序）；渲染端按此解析说话人。 */
+  speakerAvatarIds?: string[];
   createdAt: string;
 }
 

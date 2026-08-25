@@ -152,6 +152,7 @@ model ScriptDraft {
   targetDurationSec  Int?
   highlights         String[]  @default([])
   segments           Json      @default("[]")
+  speakerAvatarIds   String[]  @default([])
   createdAt          DateTime        @default(now())
   owner              User            @relation(fields: [ownerId], references: [id])
   store              StoreProfile    @relation(fields: [storeId], references: [id])

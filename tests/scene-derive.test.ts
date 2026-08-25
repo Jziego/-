@@ -49,6 +49,35 @@ describe("deriveSegmentsFromVoiceover", () => {
   });
 });
 
+describe("deriveSegmentsFromVoiceover — speakerIndex (Phase 3)", () => {
+  it("assigns speakerIndex from speakerByText verbatim matches", () => {
+    const voiceover = "大家好，我是店主。今天推荐招牌蛋糕。快来店里。";
+    const segments = deriveSegmentsFromVoiceover(voiceover, {
+      speakerByText: new Map([["今天推荐招牌蛋糕。", 1]]),
+    });
+    expect(segments.map((s) => s.speakerIndex)).toEqual([0, 1, 0]);
+  });
+
+  it("prev segments win over speakerByText (user edit keeps assignments)", () => {
+    const prev = [
+      { index: 0, text: "大家好。", speakerIndex: 2, onCamera: true },
+      { index: 1, text: "今天推荐招牌蛋糕。", speakerIndex: 1, onCamera: false },
+    ];
+    const segments = deriveSegmentsFromVoiceover("大家好。今天推荐招牌蛋糕。", {
+      speakerByText: new Map([["今天推荐招牌蛋糕。", 0]]),
+      prev,
+    });
+    expect(segments.map((s) => s.speakerIndex)).toEqual([2, 1]);
+  });
+
+  it("clamps negative/NaN speakerIndex to 0", () => {
+    const segments = deriveSegmentsFromVoiceover("你好。", {
+      speakerByText: new Map([["你好。", Number.NaN]]),
+    });
+    expect(segments[0]!.speakerIndex).toBe(0);
+  });
+});
+
 describe("filterActiveHighlights", () => {
   it("keeps only words present in the voiceover, trimmed and deduped", () => {
     expect(

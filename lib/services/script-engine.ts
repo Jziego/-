@@ -18,6 +18,8 @@ interface ScriptDraftInput {
   forcedRawCopy?: string;
   /** 目标时长（秒）：30 / 45 / 60，影响 AI 文案量。 */
   targetDurationSec?: number;
+  /** 可用形象人设（index 对齐 speakerAvatarIds）；≥2 时 AI 分配每句说话人。 */
+  avatarPersonas?: { index: number; id: string; name: string }[];
 }
 
 interface TemplateDraftInput {
@@ -26,6 +28,8 @@ interface TemplateDraftInput {
   reason: string;
   /** 目标时长（秒）：30 / 45 / 60，影响模板文案量。 */
   targetDurationSec?: number;
+  /** speakerIndex → AvatarProfile.id 对齐表（生成时刻 personas 顺序）。 */
+  speakerAvatarIds?: string[];
 }
 
 // ── AI response schema ─────────────────────────────────────────────────────
@@ -38,6 +42,8 @@ interface AIScriptResponse {
   highlights?: string[];
   /** 适合真人出镜的口播句原文（开场/CTA 优先）。 */
   onCameraSentences?: string[];
+  /** 多形象时每句的说话人分配；sentences 必须逐字摘自 voiceover。 */
+  speakerAssignments?: { speakerIndex: number; sentences: string[] }[];
   cta: string;
 }
 
@@ -81,6 +87,7 @@ const SYSTEM_PROMPT = `你是为本地实体店创作短视频口播稿的营销
 - 每句控制在8-15个字，方便朗读，句与句之间用中文句号分隔
 - highlights：从口播稿中挑出需要字幕标黄的关键词（产品名/价格/活动/CTA），必须逐字摘自你写好的口播稿
 - onCameraSentences：从口播稿中挑出适合真人出镜的句子（开场与结尾 CTA 优先），必须逐字摘自你写好的口播稿
+- speakerAssignments：仅在给了【出镜形象】名单时必填；每句逐字摘自口播稿，speakerIndex 不得超过形象数量-1
 
 你会收到门店信息、素材分析结果、营销目的和发布平台，请根据这些信息创作口播稿。`;
 
@@ -90,6 +97,7 @@ const SCHEMA_DESCRIPTION = `{
   "voiceover": "完整口播文案（按目标时长控制总字数）",
   "highlights": ["口播稿中需标黄的关键词原文"],
   "onCameraSentences": ["适合真人出镜的口播句原文"],
+  "speakerAssignments": [{"speakerIndex": 0, "sentences": ["逐字口播句"]}],
   "cta": "行动号召文案"
 }`;
 
@@ -124,12 +132,24 @@ function buildUserPrompt(input: ScriptDraftInput): string {
     `【发布平台】${platformNames[platform]}`,
   ].filter(Boolean);
 
+  if (input.avatarPersonas && input.avatarPersonas.length > 1) {
+    lines.push(
+      ``,
+      `【出镜形象】本片 ${input.avatarPersonas.length} 位形象轮播出镜：`,
+      ...input.avatarPersonas.map((p) => `${p.index + 1} 号：${sanitizePromptField(p.name, 20)}`),
+      `请在 speakerAssignments 中把口播稿的【每一句】分配给一位形象（speakerIndex 从 0 起：0=1 号、1=2 号……），句子必须逐字摘自口播稿、覆盖全部句子且不重复；开场句与结尾 CTA 固定分配给 1 号形象。`,
+    );
+  }
+
   return lines.join("\n");
 }
 
 // ── Main entry point ───────────────────────────────────────────────────────
 
 export async function createScriptDraft(input: ScriptDraftInput): Promise<ScriptDraft> {
+  // 三条产出路径共用同一张对齐表：speakerIndex 按下标解析到生成时刻的 personas。
+  const speakerAvatarIds = input.avatarPersonas?.map((p) => p.id);
+
   // 1. Forced raw copy bypasses AI
   if (input.forcedRawCopy) {
     const cleaned = sanitizeCopy(input.forcedRawCopy, input.store.forbiddenWords);
@@ -146,6 +166,7 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
       cta: purposeCta[input.purpose],
       warnings: cleaned.warnings,
       targetDurationSec: input.targetDurationSec,
+      speakerAvatarIds,
     });
   }
 
@@ -161,6 +182,7 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
         purpose: input.purpose,
         reason,
         targetDurationSec: input.targetDurationSec,
+        speakerAvatarIds,
       });
     }
   }
@@ -171,6 +193,7 @@ export async function createScriptDraft(input: ScriptDraftInput): Promise<Script
     purpose: input.purpose,
     reason: "AI not configured (missing OPENAI_API_KEY)",
     targetDurationSec: input.targetDurationSec,
+    speakerAvatarIds,
   });
 }
 
@@ -222,10 +245,28 @@ export async function createScriptDraftWithAI(
     ),
     voiceover.copy,
   ).slice(0, 10);
+  // 多形象（spec §6.4）：AI 的 speakerAssignments 逐句命中 voiceover 原文 → speakerByText。
+  // 越界/非法 speakerIndex 丢弃并 warn（该组句子回落 0 号形象），绝不让脏下标进 segments。
+  const personaCount = input.avatarPersonas?.length ?? 0;
+  const speakerByText = new Map<string, number>();
+  if (personaCount > 1 && Array.isArray(aiResponse.speakerAssignments)) {
+    for (const assignment of aiResponse.speakerAssignments) {
+      const idx = Number(assignment?.speakerIndex);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= personaCount) {
+        console.warn(`[script-engine] speakerAssignments index ${String(assignment?.speakerIndex)} out of range (0..${personaCount - 1}); sentences fall back to speaker 0`);
+        continue;
+      }
+      for (const sentence of Array.isArray(assignment.sentences) ? assignment.sentences : []) {
+        const key = String(sentence).trim();
+        if (key) speakerByText.set(key, idx);
+      }
+    }
+  }
   const segments = deriveSegmentsFromVoiceover(voiceover.copy, {
     onCameraTexts: Array.isArray(aiResponse.onCameraSentences)
       ? aiResponse.onCameraSentences.map(String)
       : [],
+    speakerByText,
   });
 
   return buildDraft({
@@ -241,6 +282,7 @@ export async function createScriptDraftWithAI(
     cta: String(aiResponse.cta || purposeCta[input.purpose]),
     warnings: voiceover.warnings,
     targetDurationSec: input.targetDurationSec,
+    speakerAvatarIds: input.avatarPersonas?.map((p) => p.id),
   });
 }
 
@@ -265,6 +307,7 @@ export function createTemplateScriptDraft(input: TemplateDraftInput): ScriptDraf
     cta: purposeCta[input.purpose],
     warnings: [...warnings, ...cleaned.warnings],
     targetDurationSec: input.targetDurationSec,
+    speakerAvatarIds: input.speakerAvatarIds,
   });
 }
 
@@ -307,6 +350,7 @@ function buildDraft(input: {
   cta: string;
   warnings: string[];
   targetDurationSec?: number;
+  speakerAvatarIds?: string[];
 }): ScriptDraft {
   return {
     id: createId("script"),
@@ -320,6 +364,7 @@ function buildDraft(input: {
     voiceover: input.voiceover,
     highlights: input.highlights,
     segments: input.segments,
+    speakerAvatarIds: input.speakerAvatarIds ?? [],
     captions: [input.voiceover],
     cta: input.cta,
     generationMode: input.generationMode,

@@ -204,6 +204,7 @@ export function toScriptDraft(row: PrismaScriptDraft): ScriptDraft {
     targetDurationSec: row.targetDurationSec ?? undefined,
     highlights: row.highlights ?? [],
     segments: (row.segments as unknown as ScriptSegment[] | null) ?? [],
+    speakerAvatarIds: row.speakerAvatarIds ?? [],
     createdAt: row.createdAt.toISOString()
   };
 }
@@ -226,6 +227,7 @@ export function toScriptDraftInput(script: ScriptDraft) {
     targetDurationSec: script.targetDurationSec ?? null,
     highlights: script.highlights ?? [],
     segments: (script.segments ?? []) as object,
+    speakerAvatarIds: script.speakerAvatarIds ?? [],
     createdAt: new Date(script.createdAt)
   };
 }

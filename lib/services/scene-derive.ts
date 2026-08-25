@@ -11,18 +11,24 @@ export function estimateSegmentSeconds(text: string): number {
 }
 
 /**
- * 从 voiceover 确定性重切 segments（spec §5.2）：
- * - speakerIndex 本期恒 0（Phase 3 多形象预留）；
+ * 从 voiceover 确定性重切 segments（spec §5.2/§6.4）：
+ * - speakerIndex：prev 同文句继承 > speakerByText（AI speakerAssignments 逐字命中）> 0；
  * - onCamera 优先级：prev 同文句继承 > AI 出镜句选择 > 首/末句默认；
  * - AI 出镜句非空但零命中（措辞漂移）时整体回落首/末默认并打 warn，
- *   避免持久化全 false 的脏数据被 Phase 3 分段生成消费。
+ *   避免持久化全 false 的脏数据被 Phase 3 分段生成消费；
+ * - 越界/非法 speakerIndex 一律收敛 0（渲染端按数组下标对齐，越界即脏数据）。
  */
 export function deriveSegmentsFromVoiceover(
   voiceover: string,
-  opts: { onCameraTexts?: string[]; prev?: ScriptSegment[] } = {},
+  opts: {
+    onCameraTexts?: string[];
+    speakerByText?: Map<string, number>;
+    prev?: ScriptSegment[];
+  } = {},
 ): ScriptSegment[] {
   const sentences = splitVoiceoverSentences(voiceover);
   const onCameraSet = new Set((opts.onCameraTexts ?? []).map((s) => s.trim()).filter(Boolean));
+  const speakerByText = opts.speakerByText ?? new Map<string, number>();
   const prevByText = new Map((opts.prev ?? []).map((s) => [s.text, s]));
   const last = sentences.length - 1;
   const setHasAnyHit = onCameraSet.size > 0 && sentences.some((text) => onCameraSet.has(text));
@@ -32,12 +38,16 @@ export function deriveSegmentsFromVoiceover(
 
   return sentences.map((text, index) => {
     const prev = prevByText.get(text);
+    const assigned = speakerByText.get(text);
+    const speakerIndex =
+      prev?.speakerIndex ??
+      (typeof assigned === "number" && Number.isInteger(assigned) && assigned >= 0 ? assigned : 0);
     const onCamera = prev
       ? prev.onCamera
       : setHasAnyHit
         ? onCameraSet.has(text)
         : index === 0 || index === last;
-    return { index, text, speakerIndex: 0, onCamera };
+    return { index, text, speakerIndex, onCamera };
   });
 }
 

@@ -137,6 +137,7 @@ export const scriptDraftSchema = z.object({
   targetDurationSec: z.number().int().positive().optional(),
   highlights: z.array(z.string()).optional(),
   segments: z.array(scriptSegmentSchema).optional(),
+  speakerAvatarIds: z.array(z.string()).optional(),
   createdAt: isoDateString
 });
 

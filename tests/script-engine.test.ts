@@ -257,3 +257,81 @@ describe("script engine (voiceover-centric)", () => {
     expect(draft.highlights).toEqual(expect.arrayContaining(["现熬牛骨汤", "午市出餐快"]));
   });
 });
+
+describe("script engine — multi-persona speakerIndex (Phase 3)", () => {
+  it("multi-persona: prompt lists avatar names and speakerAssignments map to speakerIndex", async () => {
+    const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      title: "t", hook: "h", cta: "c",
+      voiceover: "开场白。 product介绍。 行动号召。",
+      onCameraSentences: ["开场白。"],
+      speakerAssignments: [
+        { speakerIndex: 1, sentences: ["product介绍。"] },
+        { speakerIndex: 0, sentences: ["开场白。", "行动号召。"] },
+      ],
+    });
+    try {
+      const draft = await createScriptDraft({
+        store, assetAnalyses: [], purpose: "store_traffic", targetDurationSec: 30,
+        avatarPersonas: [
+          { index: 0, id: "avatar_0", name: "店主" },
+          { index: 1, id: "avatar_1", name: "店长小姐姐" },
+        ],
+      });
+      // prompt 含人设名单
+      const userPrompt = aiSpy.mock.calls[0]?.[1] as string;
+      expect(userPrompt).toContain("店主");
+      expect(userPrompt).toContain("店长小姐姐");
+      expect(userPrompt).toContain("speakerAssignments");
+      // segments 按逐字匹配分配
+      expect(draft.segments?.find((s) => s.text === "product介绍。")?.speakerIndex).toBe(1);
+      expect(draft.segments?.find((s) => s.text === "开场白。")?.speakerIndex).toBe(0);
+      // 生成时刻 personas 顺序持久化为 speakerAvatarIds 对齐表
+      expect(draft.speakerAvatarIds).toEqual(["avatar_0", "avatar_1"]);
+    } finally {
+      hasAISpy.mockRestore();
+      aiSpy.mockRestore();
+    }
+  });
+
+  it("out-of-range speakerIndex falls back to 0 with a warn", async () => {
+    const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      title: "t", hook: "h", cta: "c", voiceover: "你好。再见。",
+      speakerAssignments: [{ speakerIndex: 7, sentences: ["再见。"] }],
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const draft = await createScriptDraft({
+        store, assetAnalyses: [], purpose: "store_traffic",
+        avatarPersonas: [
+          { index: 0, id: "avatar_0", name: "店主" },
+          { index: 1, id: "avatar_1", name: "店长小姐姐" },
+        ],
+      });
+      expect(draft.segments?.every((s) => s.speakerIndex === 0)).toBe(true);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("out of range"));
+    } finally {
+      hasAISpy.mockRestore();
+      aiSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("single persona: no speakerAssignments required, all speakerIndex 0", async () => {
+    const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      title: "t", hook: "h", cta: "c", voiceover: "你好。再见。",
+    });
+    try {
+      const draft = await createScriptDraft({
+        store, assetAnalyses: [], purpose: "store_traffic",
+        avatarPersonas: [{ index: 0, id: "avatar_0", name: "店主" }],
+      });
+      expect(draft.segments?.every((s) => s.speakerIndex === 0)).toBe(true);
+    } finally {
+      hasAISpy.mockRestore();
+      aiSpy.mockRestore();
+    }
+  });
+});
