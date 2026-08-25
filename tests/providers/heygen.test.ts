@@ -228,7 +228,12 @@ describe("heygen provider", () => {
     const createCall = mockFetch.mock.calls[0];
     expect(createCall[0]).toBe("https://api.heygen.com/v3/avatars");
     const body = JSON.parse(createCall[1].body as string);
-    expect(body).toMatchObject({ type: "digital_twin", name: "店主", video_url: "https://cdn.example.com/f.mp4" });
+    // Task 0 实测契约：footage 走嵌套 file 对象（平铺 video_url / multipart 均被拒）
+    expect(body).toMatchObject({
+      type: "digital_twin",
+      name: "店主",
+      file: { type: "url", url: "https://cdn.example.com/f.mp4" },
+    });
     expect(mockFetch.mock.calls[1][0]).toBe("https://api.heygen.com/v3/avatars/grp_1/consent");
   });
 
@@ -245,7 +250,8 @@ describe("heygen provider", () => {
     );
     const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
     const status = await createHeyGenProvider().getDigitalTwinStatus({ groupId: "grp_1" });
-    expect(mockFetch.mock.calls[0][0]).toBe("https://api.heygen.com/v3/avatar_groups/grp_1");
+    // Task 0 实测：状态轮询走 /v3/avatars/{group_id}（/v3/avatar_groups 路由不存在）
+    expect(mockFetch.mock.calls[0][0]).toBe("https://api.heygen.com/v3/avatars/grp_1");
     expect(status).toMatchObject({
       consentStatus: "approved",
       trainingStatus: "ready",
@@ -291,9 +297,82 @@ describe("heygen provider", () => {
     expect(call[0]).toBe("https://api.heygen.com/v3/voices/speech");
     expect(JSON.parse(call[1].body as string)).toMatchObject({ voice_id: "voice_1", text: "你好欢迎" });
     expect(putObjectFromBufferMock).toHaveBeenCalledTimes(1);
+    // Task 0 实测：TTS 音频是 .wav
+    expect(putObjectFromBufferMock.mock.calls[0][2]).toBe("audio/wav");
     expect(speech.audioStorageKey).toMatch(/^voices\//);
+    expect(speech.audioStorageKey).toMatch(/\.wav$/);
     expect(speech.durationSeconds).toBe(1.5);
-    // ms → s 归一化（Task 0 Step 4 若确认是秒，则改为原样透传并同步改此断言）
+    // 防御性 ms → s 归一化（真 API 已确认为秒；此用例覆盖异常 ms 形状）
     expect(speech.words[1]).toEqual({ word: "欢迎", startSec: 0.5, endSec: 1.5 });
+  });
+
+  it("getDigitalTwinStatus throws on envelope-level error (no silent awaiting_user)", async () => {
+    // 200 + {error:{...}} 时 res.data 为 undefined——必须抛错而非吞成永久 pending
+    mockFetch.mockResolvedValueOnce(jsonResponse({ data: null, error: { message: "forbidden" } }));
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    await expect(
+      createHeyGenProvider().getDigitalTwinStatus({ groupId: "g" }),
+    ).rejects.toThrow("forbidden");
+  });
+
+  it("getDigitalTwinStatus never reports ready without approved consent", async () => {
+    // consent 未知 + status=completed：ready 是终态（停止轮询），无 approved consent
+    // 时上报 ready 会让 profile 永久卡死在无 providerAvatarId 的状态
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: { status: "completed", looks: [{ id: "look_1" }] } }),
+    );
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    const status = await createHeyGenProvider().getDigitalTwinStatus({ groupId: "g" });
+    expect(status.consentStatus).toBe("awaiting_user");
+    expect(status.trainingStatus).toBe("pending");
+  });
+
+  it("synthesizeSpeech passes second-unit timestamps through when duration is missing", async () => {
+    // duration 缺失 → durationSec=0 → 阈值为 1，秒级数据会被误判 ms 并 /1000
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            audio_url: "https://cdn.heygen.com/a.wav",
+            word_timestamps: [
+              { word: "你", start: 0, end: 0.75 },
+              { word: "好", start: 0.75, end: 1.5 },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200 }));
+
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    const speech = await createHeyGenProvider().synthesizeSpeech({ providerVoiceId: "v", text: "你好" });
+    expect(speech.durationSeconds).toBe(0);
+    expect(speech.words[1]).toEqual({ word: "好", startSec: 0.75, endSec: 1.5 });
+  });
+
+  it("synthesizeSpeech strips <start>/<end> sentinel words from the timeline", async () => {
+    // Task 0 实测：中文按字粒度、秒单位，首尾各有一个零时长哨兵词
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            audio_url: "https://cdn.heygen.com/a.wav",
+            duration: 1,
+            word_timestamps: [
+              { word: "<start>", start: 0, end: 0 },
+              { word: "你", start: 0, end: 0.5 },
+              { word: "好", start: 0.5, end: 1 },
+              { word: "<end>", start: 1, end: 1 },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200 }));
+
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    const speech = await createHeyGenProvider().synthesizeSpeech({ providerVoiceId: "v", text: "你好" });
+    expect(speech.words).toEqual([
+      { word: "你", startSec: 0, endSec: 0.5 },
+      { word: "好", startSec: 0.5, endSec: 1 },
+    ]);
   });
 });

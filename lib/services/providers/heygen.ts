@@ -239,10 +239,11 @@ export function createHeyGenProvider(): AvatarProvider {
     },
 
     async createDigitalTwin(input) {
+      // Task 0 实测契约：footage 走嵌套 file 对象（平铺 video_url / multipart 均被拒）
       const createRes = await heyGenRequest<HeyGenEnvelope<{ group_id?: string; avatar_group_id?: string; id?: string }>>(
         "/v3/avatars",
         "POST",
-        { type: "digital_twin", name: input.name, video_url: input.footageUrl },
+        { type: "digital_twin", name: input.name, file: { type: "url", url: input.footageUrl } },
       );
       const groupId = createRes.data?.group_id ?? createRes.data?.avatar_group_id ?? createRes.data?.id;
       if (!groupId) throw new Error("HeyGen digital_twin create returned no group id");
@@ -255,10 +256,15 @@ export function createHeyGenProvider(): AvatarProvider {
     },
 
     async getDigitalTwinStatus(input) {
+      // Task 0 实测：状态轮询走 /v3/avatars/{group_id}（/v3/avatar_groups 路由不存在）
       const res = await heyGenRequest<HeyGenEnvelope<HeyGenAvatarGroup>>(
-        `/v3/avatar_groups/${input.groupId}`,
+        `/v3/avatars/${input.groupId}`,
         "GET",
       );
+      // 200 + envelope 级 error 必须抛错——否则 res.data=undefined 会被吞成永久 pending
+      if (res.error) {
+        throw new Error(`HeyGen avatar status check failed: ${res.error.message}`);
+      }
       return normalizeGroupStatus(res.data ?? {});
     },
 
@@ -271,8 +277,9 @@ export function createHeyGenProvider(): AvatarProvider {
       const data = res.data;
       if (!data?.audio_url) throw new Error("HeyGen TTS returned no audio_url");
       const bytes = await downloadVideoBytes(data.audio_url); // 同一下载器（带超时）
-      const storageKey = `voices/${createId("tts")}.mp3`;
-      await putObjectFromBuffer(storageKey, bytes, "audio/mpeg");
+      // Task 0 实测：TTS 音频是 .wav
+      const storageKey = `voices/${createId("tts")}.wav`;
+      await putObjectFromBuffer(storageKey, bytes, "audio/wav");
       return {
         audioStorageKey: storageKey,
         durationSeconds: data.duration ?? 0,
@@ -383,10 +390,12 @@ function normalizeGroupStatus(data: HeyGenAvatarGroup): DigitalTwinStatus {
   const statusRaw = (data.status ?? "").toLowerCase();
   const failed = statusRaw === "failed" || statusRaw === "error";
   const ready = statusRaw === "completed" || statusRaw === "ready" || statusRaw === "success";
+  // ready 是终态（路由停止轮询）：consent 未 approved 时绝不上报 ready，
+  // 否则 profile 会卡死在无 providerAvatarId 的"完成"态。
   const trainingStatus =
     consentStatus === "rejected" || consentStatus === "expired" || failed
       ? "failed"
-      : ready
+      : ready && consentStatus === "approved"
         ? "ready"
         : consentStatus === "approved"
           ? "processing"
@@ -403,8 +412,9 @@ function normalizeGroupStatus(data: HeyGenAvatarGroup): DigitalTwinStatus {
 }
 
 /**
- * word_timestamps 归一化为秒。Task 0 Step 4 确认单位：若 HeyGen 返回毫秒
- * （end 远超 duration），按 /1000 处理；中文粒度按字/按词均可——消费端按句对齐。
+ * word_timestamps 归一化为秒。Task 0 实测：中文按字粒度、秒单位，首尾各有
+ * 一个零时长 <start>/<end> 哨兵词（过滤之，消费端按句对齐）。ms 分支仅作
+ * 防御；duration 缺失（durationSec=0）时禁用启发式，避免秒级数据被误 /1000。
  */
 function normalizeWordTimestamps(
   raw: { word?: string; start?: number; end?: number }[],
@@ -412,9 +422,13 @@ function normalizeWordTimestamps(
 ): WordTimestamp[] {
   const parsed = raw
     .filter((w): w is { word: string; start: number; end: number } =>
-      Boolean(w.word) && typeof w.start === "number" && typeof w.end === "number")
+      Boolean(w.word) &&
+      w.word !== "<start>" &&
+      w.word !== "<end>" &&
+      typeof w.start === "number" &&
+      typeof w.end === "number")
     .map((w) => ({ word: w.word, start: w.start, end: w.end }));
-  const looksLikeMs = parsed.some((w) => w.end > durationSec * 10 + 1);
+  const looksLikeMs = durationSec > 0 && parsed.some((w) => w.end > durationSec * 10 + 1);
   const scale = looksLikeMs ? 0.001 : 1;
   return parsed.map((w) => ({ word: w.word, startSec: w.start * scale, endSec: w.end * scale }));
 }
