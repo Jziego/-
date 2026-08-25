@@ -212,4 +212,88 @@ describe("heygen provider", () => {
     }
     expect(onProgress.mock.calls[0][0]).toBeGreaterThanOrEqual(1);
   });
+
+  it("createDigitalTwin posts v3/avatars then fetches the consent url", async () => {
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ data: { group_id: "grp_1" } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { url: "https://consent.heygen.com/abc" } }));
+
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    const result = await createHeyGenProvider().createDigitalTwin({
+      name: "店主",
+      footageUrl: "https://cdn.example.com/f.mp4",
+    });
+
+    expect(result).toEqual({ groupId: "grp_1", consentUrl: "https://consent.heygen.com/abc" });
+    const createCall = mockFetch.mock.calls[0];
+    expect(createCall[0]).toBe("https://api.heygen.com/v3/avatars");
+    const body = JSON.parse(createCall[1].body as string);
+    expect(body).toMatchObject({ type: "digital_twin", name: "店主", video_url: "https://cdn.example.com/f.mp4" });
+    expect(mockFetch.mock.calls[1][0]).toBe("https://api.heygen.com/v3/avatars/grp_1/consent");
+  });
+
+  it("getDigitalTwinStatus maps group fields to the normalized state machine", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          consent_status: "approved",
+          status: "completed",
+          looks: [{ id: "look_1" }],
+          voice_id: "voice_1",
+        },
+      }),
+    );
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    const status = await createHeyGenProvider().getDigitalTwinStatus({ groupId: "grp_1" });
+    expect(mockFetch.mock.calls[0][0]).toBe("https://api.heygen.com/v3/avatar_groups/grp_1");
+    expect(status).toMatchObject({
+      consentStatus: "approved",
+      trainingStatus: "ready",
+      providerAvatarId: "look_1",
+      providerVoiceId: "voice_1",
+    });
+  });
+
+  it("getDigitalTwinStatus maps rejected consent to failed with a reason", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: { consent_status: "rejected", status: "failed", reject_reason: "face mismatch" } }),
+    );
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    const status = await createHeyGenProvider().getDigitalTwinStatus({ groupId: "g" });
+    expect(status.consentStatus).toBe("rejected");
+    expect(status.trainingStatus).toBe("failed");
+    expect(status.reason).toContain("face mismatch");
+  });
+
+  it("synthesizeSpeech posts to voices/speech, downloads audio to R2, normalizes ms timestamps", async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            audio_url: "https://cdn.heygen.com/a.mp3",
+            duration: 1.5,
+            word_timestamps: [
+              { word: "你好", start: 0, end: 500 },
+              { word: "欢迎", start: 500, end: 1500 },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
+
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    const speech = await createHeyGenProvider().synthesizeSpeech({
+      providerVoiceId: "voice_1",
+      text: "你好欢迎",
+    });
+
+    const call = mockFetch.mock.calls[0];
+    expect(call[0]).toBe("https://api.heygen.com/v3/voices/speech");
+    expect(JSON.parse(call[1].body as string)).toMatchObject({ voice_id: "voice_1", text: "你好欢迎" });
+    expect(putObjectFromBufferMock).toHaveBeenCalledTimes(1);
+    expect(speech.audioStorageKey).toMatch(/^voices\//);
+    expect(speech.durationSeconds).toBe(1.5);
+    // ms → s 归一化（Task 0 Step 4 若确认是秒，则改为原样透传并同步改此断言）
+    expect(speech.words[1]).toEqual({ word: "欢迎", startSec: 0.5, endSec: 1.5 });
+  });
 });

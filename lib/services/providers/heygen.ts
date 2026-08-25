@@ -5,8 +5,13 @@ import {
   getHeygenPollIntervalMs,
   getHeygenPollMaxAttempts,
 } from "@/lib/env";
+import { createId } from "@/lib/ids";
 import { putObjectFromBuffer } from "@/lib/storage";
-import type { AvatarProvider } from "@/lib/services/avatar-provider";
+import type {
+  AvatarProvider,
+  DigitalTwinStatus,
+  WordTimestamp,
+} from "@/lib/services/avatar-provider";
 
 const HEYGEN_BASE_URL = "https://api.heygen.com";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -232,6 +237,48 @@ export function createHeyGenProvider(): AvatarProvider {
         durationSeconds: status.duration ?? 15,
       };
     },
+
+    async createDigitalTwin(input) {
+      const createRes = await heyGenRequest<HeyGenEnvelope<{ group_id?: string; avatar_group_id?: string; id?: string }>>(
+        "/v3/avatars",
+        "POST",
+        { type: "digital_twin", name: input.name, video_url: input.footageUrl },
+      );
+      const groupId = createRes.data?.group_id ?? createRes.data?.avatar_group_id ?? createRes.data?.id;
+      if (!groupId) throw new Error("HeyGen digital_twin create returned no group id");
+      const { consentUrl } = await requestConsentUrl(groupId);
+      return { groupId, consentUrl };
+    },
+
+    async refreshConsent(input) {
+      return requestConsentUrl(input.groupId);
+    },
+
+    async getDigitalTwinStatus(input) {
+      const res = await heyGenRequest<HeyGenEnvelope<HeyGenAvatarGroup>>(
+        `/v3/avatar_groups/${input.groupId}`,
+        "GET",
+      );
+      return normalizeGroupStatus(res.data ?? {});
+    },
+
+    async synthesizeSpeech(input) {
+      const res = await heyGenRequest<HeyGenEnvelope<HeyGenSpeechData>>(
+        "/v3/voices/speech",
+        "POST",
+        { voice_id: input.providerVoiceId, text: input.text },
+      );
+      const data = res.data;
+      if (!data?.audio_url) throw new Error("HeyGen TTS returned no audio_url");
+      const bytes = await downloadVideoBytes(data.audio_url); // 同一下载器（带超时）
+      const storageKey = `voices/${createId("tts")}.mp3`;
+      await putObjectFromBuffer(storageKey, bytes, "audio/mpeg");
+      return {
+        audioStorageKey: storageKey,
+        durationSeconds: data.duration ?? 0,
+        words: normalizeWordTimestamps(data.word_timestamps ?? [], data.duration ?? 0),
+      };
+    },
   };
 }
 
@@ -288,4 +335,86 @@ async function resolveDefaultVoice(): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+// ── Digital twin (Phase 3) ──────────────────────────────────────────────────
+
+interface HeyGenAvatarGroup {
+  consent_status?: string;
+  status?: string;
+  reject_reason?: string;
+  error?: string;
+  looks?: { id?: string }[];
+  look_id?: string;
+  voice_id?: string;
+  consent_url?: string;
+  url?: string;
+}
+
+interface HeyGenSpeechData {
+  audio_url?: string;
+  duration?: number;
+  word_timestamps?: { word?: string; start?: number; end?: number }[];
+}
+
+async function requestConsentUrl(groupId: string): Promise<{ consentUrl: string }> {
+  const res = await heyGenRequest<HeyGenEnvelope<{ url?: string; consent_url?: string }>>(
+    `/v3/avatars/${groupId}/consent`,
+    "POST",
+    {},
+  );
+  const url = res.data?.url ?? res.data?.consent_url;
+  if (!url) throw new Error("HeyGen consent endpoint returned no url");
+  return { consentUrl: url };
+}
+
+/** HeyGen group 原始字段 → 归一化状态机。未知/进行中的状态保守映射为 pending/processing。 */
+function normalizeGroupStatus(data: HeyGenAvatarGroup): DigitalTwinStatus {
+  const consentRaw = (data.consent_status ?? "").toLowerCase();
+  const consentStatus =
+    consentRaw === "approved" || consentRaw === "completed" || consentRaw === "success"
+      ? "approved"
+      : consentRaw === "rejected" || consentRaw === "denied" || consentRaw === "failed"
+        ? "rejected"
+        : consentRaw === "expired"
+          ? "expired"
+          : "awaiting_user";
+
+  const statusRaw = (data.status ?? "").toLowerCase();
+  const failed = statusRaw === "failed" || statusRaw === "error";
+  const ready = statusRaw === "completed" || statusRaw === "ready" || statusRaw === "success";
+  const trainingStatus =
+    consentStatus === "rejected" || consentStatus === "expired" || failed
+      ? "failed"
+      : ready
+        ? "ready"
+        : consentStatus === "approved"
+          ? "processing"
+          : "pending";
+
+  return {
+    consentStatus,
+    trainingStatus,
+    providerAvatarId: data.looks?.find((l) => l.id)?.id ?? data.look_id,
+    providerVoiceId: data.voice_id,
+    reason: data.reject_reason ?? data.error,
+    consentUrl: data.consent_url ?? data.url,
+  };
+}
+
+/**
+ * word_timestamps 归一化为秒。Task 0 Step 4 确认单位：若 HeyGen 返回毫秒
+ * （end 远超 duration），按 /1000 处理；中文粒度按字/按词均可——消费端按句对齐。
+ */
+function normalizeWordTimestamps(
+  raw: { word?: string; start?: number; end?: number }[],
+  durationSec: number,
+): WordTimestamp[] {
+  const parsed = raw
+    .filter((w): w is { word: string; start: number; end: number } =>
+      Boolean(w.word) && typeof w.start === "number" && typeof w.end === "number")
+    .map((w) => ({ word: w.word, start: w.start, end: w.end }));
+  const looksLikeMs = parsed.some((w) => w.end > durationSec * 10 + 1);
+  const scale = looksLikeMs ? 0.001 : 1;
+  return parsed.map((w) => ({ word: w.word, startSec: w.start * scale, endSec: w.end * scale }));
 }

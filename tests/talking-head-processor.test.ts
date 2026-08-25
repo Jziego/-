@@ -8,6 +8,7 @@ import {
 import { resetRuntimeStateForTests } from "@/lib/runtime-store";
 import { nowIso } from "@/lib/ids";
 import type { AvatarProvider } from "@/lib/services/avatar-provider";
+import { createMockProvider } from "@/lib/services/providers/mock";
 import type { AvatarProfile, ScriptDraft } from "@/lib/types";
 import type { Job as BullJob } from "bullmq";
 
@@ -70,10 +71,7 @@ describe("talking_head processor", () => {
   /** A provider whose generateTalkingHead drives onProgress and returns a known key. */
   function fakeProvider(): AvatarProvider {
     return {
-      name: "mock-avatar",
-      async createAvatar() {
-        return { providerAvatarId: "x" };
-      },
+      ...createMockProvider(),
       async generateTalkingHead(
         _input: { providerAvatarId: string; providerVoiceId?: string; scriptText: string },
         onProgress?: (attempt: number, maxAttempts: number) => void,
