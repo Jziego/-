@@ -36,6 +36,8 @@ export async function POST(request: Request) {
   if (limited) return limited;
 
   // IDOR: avatar 必须属于本人且 ready；平台公共形象为约定 id，不查库。
+  // 放行是无条件的（by design）：platform 是公共模板、无跨租户数据，用户花自己配额
+  // 即可随时强用——与 GET 列表「无 ready 才注入」的条件兜底语义不同，属有意设计。
   const avatar = isPlatformAvatarId(body.avatarProfileId)
     ? buildPlatformAvatar(ownerId)
     : await getAvatarRepository().findById(body.avatarProfileId);

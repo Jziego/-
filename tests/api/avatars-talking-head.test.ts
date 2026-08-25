@@ -130,4 +130,44 @@ describe("POST /api/avatars/talking-head", () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
+
+  it("accepts the platform avatar id without a persisted profile (202, job carries avatar_platform)", async () => {
+    const store = seedStore();
+    await getStoreRepository().upsert(store);
+    // 不 seed 任何 avatar——平台公共形象是约定 id，不查库（无 ready 检查）。
+    const draft = seedScript("demo_user", store.id);
+    await getScriptRepository().create(draft);
+
+    const req = new Request("http://localhost/api/avatars/talking-head", {
+      method: "POST",
+      body: JSON.stringify({ avatarProfileId: "avatar_platform", scriptDraftId: draft.id })
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(202);
+
+    const jobs = await getJobRepository().listByOwner("demo_user");
+    const thJob = jobs.find((j) => j.type === "talking_head");
+    expect(thJob?.payload).toMatchObject({
+      avatarProfileId: "avatar_platform",
+      scriptDraftId: draft.id
+    });
+  });
+
+  it("rejects near-miss platform ids that do not match exactly (404)", async () => {
+    // 放行分支只对精确约定 id 生效；近似 id 必须回落到 repo 查询并 404，
+    // 不得借大小写/前后缀绕过属主与 ready 校验。
+    const store = seedStore();
+    await getStoreRepository().upsert(store);
+    const draft = seedScript("demo_user", store.id);
+    await getScriptRepository().create(draft);
+
+    for (const nearMiss of ["avatar_platform2", "Avatar_platform"]) {
+      const req = new Request("http://localhost/api/avatars/talking-head", {
+        method: "POST",
+        body: JSON.stringify({ avatarProfileId: nearMiss, scriptDraftId: draft.id })
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(404);
+    }
+  });
 });
