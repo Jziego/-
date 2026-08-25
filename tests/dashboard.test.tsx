@@ -512,6 +512,64 @@ describe("AI video assistant dashboard", () => {
     expect(screen.getByRole("checkbox", { name: /我是视频中的本人/ })).toBeChecked();
   });
 
+  it("does not auto-check the consent box when only the platform fallback avatar is ready", async () => {
+    const savedStore = {
+      id: "store_plat",
+      ownerId: "demo_user",
+      name: "平台形象店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    // 服务端对无 ready 形象的用户注入平台兜底形象（ready/approved，跨店 storeId=""）。
+    const platformAvatar = {
+      id: "avatar_platform",
+      ownerId: "demo_user",
+      storeId: "",
+      name: "平台公共形象",
+      provider: "heygen",
+      consentStatus: "approved",
+      consentAcceptedAt: "2026-01-01T00:00:00.000Z",
+      trainingStatus: "ready",
+      fallbackMode: "template_avatar",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: [] };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [platformAvatar] };
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      }))
+    );
+
+    renderDashboard();
+
+    // 等分身数据加载并 flush effect（步骤条随 ready 形象变「已完成」）后再断言：
+    // 平台兜底形象就绪 ≠ 用户已授权本人肖像，授权框必须保持未勾选。
+    const stepper = await screen.findByRole("navigation", { name: "全局步骤导航" });
+    await waitFor(() => {
+      expect(within(stepper).getByRole("link", { name: /AI 分身/ })).toHaveTextContent("已完成");
+    });
+    expect(screen.getByRole("checkbox", { name: /我是视频中的本人/ })).not.toBeChecked();
+  });
+
   it("keeps avatar footage out of the material library and lists it in the footage pool", async () => {
     const savedStore = {
       id: "store_cat",

@@ -511,7 +511,8 @@ export function Dashboard() {
   }, [currentDraft, draftReady, storeHydrationResolved]);
 
   useEffect(() => {
-    if (avatar) {
+    // 平台兜底形象也是 ready，但它不代表用户授权过本人肖像——只对用户自创形象镜像勾选。
+    if (avatar && !isPlatformAvatarId(avatar.id)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- mirror server avatar consent on refresh
       setAvatarConsent(true);
     }
