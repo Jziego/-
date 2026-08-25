@@ -7,7 +7,6 @@ import {
   createProviderFromEnv,
   type DigitalTwinStatus,
 } from "@/lib/services/avatar-provider";
-import { nowIso } from "@/lib/ids";
 
 /**
  * GET /api/avatars/[id]/status — 轮询分身授权+训练状态（spec §6.2.4）。
@@ -44,6 +43,6 @@ export async function GET(
     return jsonError("Failed to poll avatar status", 502);
   }
 
-  const updated = await repo.update(id, { ...applyDigitalTwinStatus(status), updatedAt: nowIso() });
+  const updated = await repo.update(id, applyDigitalTwinStatus(status));
   return jsonOk({ avatar: updated, consentUrl: status.consentUrl });
 }

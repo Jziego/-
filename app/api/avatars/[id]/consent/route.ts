@@ -7,7 +7,9 @@ import { nowIso } from "@/lib/ids";
 
 /**
  * POST /api/avatars/[id]/consent — 授权链接 24h 过期/被拒后重发（spec §6.5）。
- * 仅 failed（consent 类失败）或仍 awaiting_user 的形象可重发；ready 返回 409。
+ * 仅授权前（awaiting_user）或授权失败（rejected/expired）的形象可重发；
+ * approved（含训练在途 processing 与终态 ready）返回 409——否则重发会把
+ * 本地状态机错误重置回 awaiting_user/pending。
  */
 export async function POST(
   request: Request,
@@ -26,8 +28,12 @@ export async function POST(
   if (!avatar.providerGroupId) {
     return jsonError("Avatar has no provider group", 400);
   }
-  if (avatar.trainingStatus === "ready") {
-    return jsonError("Avatar is already ready", 409);
+  if (
+    avatar.consentStatus !== "awaiting_user" &&
+    avatar.consentStatus !== "rejected" &&
+    avatar.consentStatus !== "expired"
+  ) {
+    return jsonError("Avatar consent is already approved", 409);
   }
 
   try {

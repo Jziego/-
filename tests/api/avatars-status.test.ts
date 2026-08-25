@@ -166,6 +166,17 @@ describe("POST /api/avatars/[id]/consent", () => {
     expect(res.status).toBe(409);
   });
 
+  it("409s while training is in flight (approved + processing) — re-issue must not reset the state machine", async () => {
+    await getAvatarRepository().create(seedAvatar({
+      consentStatus: "approved", trainingStatus: "processing",
+    }));
+    const res = await postConsent("avatar_1");
+    expect(res.status).toBe(409);
+    // 本地状态不被重发副作用改写
+    const persisted = await getAvatarRepository().findById("avatar_1");
+    expect(persisted).toMatchObject({ consentStatus: "approved", trainingStatus: "processing" });
+  });
+
   it("404s for an avatar owned by someone else", async () => {
     await getAvatarRepository().create(seedAvatar({ ownerId: "other" }));
     const res = await postConsent("avatar_1");
