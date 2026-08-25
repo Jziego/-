@@ -5,6 +5,7 @@ import { consumeQuota, QuotaExhaustedError } from "@/lib/quota";
 import { createBullQueue, toQueuePayload } from "@/lib/queue";
 import { getAvatarRepository, getJobRepository, getScriptRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
+import { buildPlatformAvatar, isPlatformAvatarId } from "@/lib/services/platform-avatar";
 import { createId, nowIso } from "@/lib/ids";
 import type { Job } from "@/lib/types";
 
@@ -34,12 +35,14 @@ export async function POST(request: Request) {
   const limited = await applyRateLimit(request, ownerId);
   if (limited) return limited;
 
-  // IDOR: avatar must belong to the authenticated user and be ready.
-  const avatar = await getAvatarRepository().findById(body.avatarProfileId);
+  // IDOR: avatar 必须属于本人且 ready；平台公共形象为约定 id，不查库。
+  const avatar = isPlatformAvatarId(body.avatarProfileId)
+    ? buildPlatformAvatar(ownerId)
+    : await getAvatarRepository().findById(body.avatarProfileId);
   if (!avatar || avatar.ownerId !== ownerId) {
     return jsonError("Avatar profile not found", 404);
   }
-  if (!avatar.providerAvatarId) {
+  if (!isPlatformAvatarId(avatar.id) && !avatar.providerAvatarId) {
     return jsonError("Avatar profile not ready", 404);
   }
 

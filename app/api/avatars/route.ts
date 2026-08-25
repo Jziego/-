@@ -3,6 +3,7 @@ import { applyRateLimit } from "@/lib/rate-limit";
 import { getAssetRepository, getAvatarRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
 import { createDigitalTwinProfile, createProviderFromEnv } from "@/lib/services/avatar-provider";
+import { buildPlatformAvatar } from "@/lib/services/platform-avatar";
 import { createPresignedGetUrl } from "@/lib/storage";
 
 export async function GET(request: Request) {
@@ -10,6 +11,10 @@ export async function GET(request: Request) {
   const limited = await applyRateLimit(request, ownerId);
   if (limited) return limited;
   const avatars = await getAvatarRepository().listByOwner(ownerId);
+  // 平台公共形象兜底：用户没有任何可用形象时提供开箱即用的数字人（demo/新用户）。
+  if (!avatars.some((a) => a.trainingStatus === "ready")) {
+    avatars.push(buildPlatformAvatar(ownerId));
+  }
   return jsonOk({ avatars });
 }
 

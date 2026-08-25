@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { resetRuntimeStateForTests } from "@/lib/runtime-store";
-import { getAssetRepository, getStoreRepository } from "@/lib/repositories";
+import { getAssetRepository, getAvatarRepository, getStoreRepository } from "@/lib/repositories";
 import { createMockProvider } from "@/lib/services/providers/mock";
 import { nowIso } from "@/lib/ids";
 import type { Asset, StoreProfile } from "@/lib/types";
@@ -15,7 +15,7 @@ vi.mock("@/lib/storage", async (importOriginal) => {
   return { ...original, createPresignedGetUrl: vi.fn(async () => "https://cdn.example.com/presigned.mp4") };
 });
 
-import { POST } from "@/app/api/avatars/route";
+import { GET, POST } from "@/app/api/avatars/route";
 
 const savedDbUrl = process.env.DATABASE_URL;
 
@@ -85,5 +85,32 @@ describe("POST /api/avatars (digital twin)", () => {
   it("400s on missing fields and overlong names", async () => {
     expect((await post({ storeId: "store_1", name: "x", consentAccepted: true })).status).toBe(400);
     expect((await post({ storeId: "store_1", footageAssetId: "asset_footage_1", name: "很".repeat(21), consentAccepted: true })).status).toBe(400);
+  });
+});
+
+describe("GET /api/avatars (platform fallback)", () => {
+  beforeEach(() => {
+    delete process.env.DATABASE_URL;
+    resetRuntimeStateForTests();
+  });
+  afterEach(() => { if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl; });
+
+  it("GET appends the platform avatar only when the owner has no ready avatar", async () => {
+    // 无形象 → 列表含平台兜底
+    let res = await GET(new Request("http://localhost/api/avatars"));
+    let json = await res.json();
+    expect(json.avatars.some((a: { id: string }) => a.id === "avatar_platform")).toBe(true);
+
+    // 创建一个 ready 形象后 → 平台兜底消失
+    const now = new Date().toISOString();
+    await getAvatarRepository().create({
+      id: "avatar_ready", ownerId: "demo_user", storeId: "store_1", name: "店主",
+      provider: "mock-avatar", providerAvatarId: "look_1", providerVoiceId: "voice_1",
+      consentStatus: "approved", consentAcceptedAt: now, trainingStatus: "ready",
+      fallbackMode: "tts_voiceover", createdAt: now, updatedAt: now,
+    });
+    res = await GET(new Request("http://localhost/api/avatars"));
+    json = await res.json();
+    expect(json.avatars.some((a: { id: string }) => a.id === "avatar_platform")).toBe(false);
   });
 });

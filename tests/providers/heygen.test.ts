@@ -111,15 +111,14 @@ describe("heygen provider", () => {
     expect(result.durationSeconds).toBe(12);
   });
 
-  it("generateTalkingHead prefers HEYGEN_AVATAR_TEMPLATE_ID/VOICE_ID over stale input profile ids", async () => {
-    // Reproduces the prod 404: a mock-created avatar profile carries a fake
-    // providerAvatarId ("provider_avatar_*"). When a workspace template is
-    // configured, it MUST win so the stale mock id never reaches HeyGen.
+  it("generateTalkingHead sends the profile's own ids (no env template override)", async () => {
+    // Phase 3：providerAvatarId 为权威（spec §6.3）。即使 env 配了模板也不得覆盖——
+    // 模板只通过「平台公共形象」profile 进入合成。
     vi.stubEnv("HEYGEN_AVATAR_TEMPLATE_ID", "tpl_REAL");
     vi.stubEnv("HEYGEN_VOICE_ID", "v_REAL");
 
     mockFetch
-      .mockResolvedValueOnce(jsonResponse({ data: { video_id: "vid_override" } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { video_id: "vid_own" } }))
       .mockResolvedValueOnce(
         jsonResponse({ data: { status: "completed", video_url: "https://cdn/o.mp4", duration: 8 } }),
       )
@@ -127,14 +126,14 @@ describe("heygen provider", () => {
 
     const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
     await createHeyGenProvider().generateTalkingHead({
-      providerAvatarId: "provider_avatar_STALE",
-      providerVoiceId: "provider_voice_STALE",
+      providerAvatarId: "look_user_1",
+      providerVoiceId: "voice_user_1",
       scriptText: "x",
     });
 
     const createBody = JSON.parse(mockFetch.mock.calls[0][1].body as string);
-    expect(createBody.avatar_id).toBe("tpl_REAL");
-    expect(createBody.voice_id).toBe("v_REAL");
+    expect(createBody.avatar_id).toBe("look_user_1");
+    expect(createBody.voice_id).toBe("voice_user_1");
   });
 
   it("throws when HeyGen reports status failed (no upload)", async () => {
