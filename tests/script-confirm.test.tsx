@@ -18,19 +18,20 @@ const draft: ScriptDraft = {
   createdAt: "2026-08-19T00:00:00.000Z",
 };
 
+const makeAvatar = (
+  id: string,
+  name: string,
+  trainingStatus: AvatarProfile["trainingStatus"] = "ready",
+): AvatarProfile => ({
+  id, ownerId: "u", storeId: "s", name, provider: "heygen",
+  providerAvatarId: "x", consentStatus: "approved", consentAcceptedAt: "2026-08-01T00:00:00.000Z",
+  trainingStatus, fallbackMode: "tts_voiceover",
+  createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z",
+});
+
 const avatars: AvatarProfile[] = [
-  {
-    id: "avatar_ready", ownerId: "u", storeId: "s", name: "", provider: "heygen",
-    providerAvatarId: "x", consentStatus: "approved", consentAcceptedAt: "2026-08-01T00:00:00.000Z",
-    trainingStatus: "ready", fallbackMode: "tts_voiceover",
-    createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z",
-  },
-  {
-    id: "avatar_training", ownerId: "u", storeId: "s", name: "", provider: "heygen",
-    consentStatus: "approved", consentAcceptedAt: "2026-08-01T00:00:00.000Z",
-    trainingStatus: "processing", fallbackMode: "tts_voiceover",
-    createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z",
-  },
+  makeAvatar("avatar_ready", "店长形象"),
+  makeAvatar("avatar_training", "新形象", "processing"),
 ];
 
 const bgmTracks = [{ id: "bgm_upbeat_01", name: "欢快01", category: "general" }];
@@ -60,32 +61,71 @@ describe("ScriptConfirm", () => {
     expect(screen.getByLabelText("口播稿编辑")).toHaveValue(draft.voiceover);
   });
 
-  it("defaults to the first ready avatar and confirms with the full library selection", async () => {
+  it("defaults to the first ready avatar checked; confirms with it", async () => {
     const user = userEvent.setup();
-    const { onConfirm } = renderConfirm();
+    const twoReady = [makeAvatar("avatar_a", "形象甲"), makeAvatar("avatar_b", "形象乙")];
+    const { onConfirm } = renderConfirm({ avatars: twoReady });
+    expect(screen.getByLabelText(/形象甲/)).toBeChecked();
+    expect(screen.getByLabelText(/形象乙/)).not.toBeChecked();
     await user.click(screen.getByRole("button", { name: /确认生成/ }));
     await waitFor(() => {
       expect(onConfirm).toHaveBeenCalledWith({
         voiceover: draft.voiceover,
         selectedAssetIds: ["asset_a", "asset_b"],
-        avatarProfileIds: ["avatar_ready"],
+        avatarProfileIds: ["avatar_a"],
         subtitleStyle: "bold_bottom",
         bgmTrackId: "bgm_upbeat_01",
       });
     });
   });
 
-  it("non-ready avatars are disabled; 不用数字人 confirms with empty avatarProfileIds", async () => {
+  it("multiple avatars can be checked up to 3; the 4th checkbox stays disabled", async () => {
+    const user = userEvent.setup();
+    const four = [
+      makeAvatar("avatar_1", "形象一"),
+      makeAvatar("avatar_2", "形象二"),
+      makeAvatar("avatar_3", "形象三"),
+      makeAvatar("avatar_4", "形象四"),
+    ];
+    renderConfirm({ avatars: four });
+    // 默认已勾选第一个 ready 形象
+    expect(screen.getByLabelText(/形象一/)).toBeChecked();
+    await user.click(screen.getByLabelText(/形象二/));
+    await user.click(screen.getByLabelText(/形象三/));
+    expect(screen.getByLabelText(/形象一/)).toBeChecked();
+    expect(screen.getByLabelText(/形象二/)).toBeChecked();
+    expect(screen.getByLabelText(/形象三/)).toBeChecked();
+    // 已达上限 3 → 第 4 个不可再勾
+    expect(screen.getByLabelText(/形象四/)).toBeDisabled();
+  });
+
+  it("unchecking all avatars confirms with empty avatarProfileIds (asset_only)", async () => {
     const user = userEvent.setup();
     const { onConfirm } = renderConfirm();
-    expect(screen.getByLabelText(/AI 形象 2/)).toBeDisabled();
-    await user.click(screen.getByLabelText(/不用数字人/));
+    await user.click(screen.getByLabelText(/店长形象/));
+    expect(screen.getByLabelText(/店长形象/)).not.toBeChecked();
     await user.click(screen.getByRole("button", { name: /确认生成/ }));
     await waitFor(() => {
       expect(onConfirm).toHaveBeenCalledWith(
         expect.objectContaining({ avatarProfileIds: [] }),
       );
     });
+  });
+
+  it("shows the estimated cost line when at least one avatar is checked", async () => {
+    const user = userEvent.setup();
+    renderConfirm();
+    expect(screen.getByText(/预计数字人成本/)).toBeInTheDocument();
+    // 取消全部勾选 → 纯素材成片，无数字人成本，成本行消失
+    await user.click(screen.getByLabelText(/店长形象/));
+    expect(screen.queryByText(/预计数字人成本/)).not.toBeInTheDocument();
+  });
+
+  it("non-ready avatars are disabled and labeled 不可用", () => {
+    renderConfirm();
+    const checkbox = screen.getByLabelText(/新形象/);
+    expect(checkbox).toBeDisabled();
+    expect(checkbox.closest("label")).toHaveTextContent("不可用");
   });
 
   it("editing the voiceover drops stale highlight marks and confirms the edited text", async () => {

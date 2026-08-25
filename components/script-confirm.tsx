@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { estimateRenderCost } from "@/lib/cost-estimate";
 import { findHighlightRanges } from "@/lib/highlight-ranges";
+import { isPlatformAvatarId } from "@/lib/services/platform-avatar";
 import { SPEECH_CHARS_PER_SECOND } from "@/lib/speech-rate";
 import type { AvatarProfile, ScriptDraft } from "@/lib/types";
 
@@ -49,13 +51,18 @@ function highlightParts(text: string, words: string[]): Array<{ text: string; hi
 }
 
 /**
- * 口播确认卡片（Phase 2 去分镜）：标黄高亮预览 + 整稿编辑 + 形象单选 +
+ * 口播确认卡片（Phase 2 去分镜）：标黄高亮预览 + 整稿编辑 + 形象多选（≤3，Phase 3）+
  * 字幕样式 + BGM（自旧分镜确认卡片挪入）→ 确认生成。
  */
 export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetIds, onConfirm, pending }: Props) {
   const [voiceover, setVoiceover] = useState(draft.voiceover);
-  const [avatarId, setAvatarId] = useState(
-    () => avatars.find((a) => a.trainingStatus === "ready")?.id ?? "",
+  // 形象多选（Phase 3，spec §6.4）：≤3，默认勾选第一个 ready 形象；全不勾 = 纯素材成片。
+  const MAX_RENDER_AVATARS = 3;
+  const [avatarIds, setAvatarIds] = useState<string[]>(
+    () => {
+      const first = avatars.find((a) => a.trainingStatus === "ready");
+      return first ? [first.id] : [];
+    },
   );
   const [subtitleStyle, setSubtitleStyle] = useState("bold_bottom");
   const [bgmTrackId, setBgmTrackId] = useState(bgmTracks[0]?.id ?? "");
@@ -68,13 +75,18 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
   const charCount = Array.from(voiceover).length;
   // 预估时长：语速取全局唯一来源 lib/speech-rate.ts
   const estimatedSec = Math.round(charCount / SPEECH_CHARS_PER_SECOND);
+  // 数字人成本预估（spec §6.4）：按段字数折算秒数，出镜段/画外音段分两档计价
+  const costEstimate = useMemo(
+    () => estimateRenderCost(draft.segments, avatarIds.length),
+    [draft.segments, avatarIds.length],
+  );
   const canConfirm = voiceover.trim().length > 0 && !pending;
 
   async function handleConfirm() {
     await onConfirm({
       voiceover: voiceover.trim(),
       selectedAssetIds: librarySelectedAssetIds,
-      avatarProfileIds: avatarId ? [avatarId] : [],
+      avatarProfileIds: avatarIds,
       subtitleStyle,
       bgmTrackId,
     });
@@ -103,30 +115,39 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
       />
 
       <fieldset className="avatarPicker">
-        <legend>出镜形象</legend>
-        <label>
-          <input
-            type="radio"
-            name="avatar"
-            checked={avatarId === ""}
-            onChange={() => setAvatarId("")}
-          />
-          不用数字人（纯素材成片）
-        </label>
-        {avatars.map((a, i) => (
-          <label key={a.id}>
-            <input
-              type="radio"
-              name="avatar"
-              checked={avatarId === a.id}
-              disabled={a.trainingStatus !== "ready"}
-              onChange={() => setAvatarId(a.id)}
-            />
-            AI 形象 {i + 1}
-            {a.trainingStatus === "ready" ? "" : "（训练中）"}
-          </label>
-        ))}
+        <legend>出镜形象（可多选，轮播出镜，最多 {MAX_RENDER_AVATARS} 个；全不勾 = 纯素材成片）</legend>
+        {avatars.map((a) => {
+          const checked = avatarIds.includes(a.id);
+          const ready = a.trainingStatus === "ready";
+          const disabled = !ready || (!checked && avatarIds.length >= MAX_RENDER_AVATARS);
+          return (
+            <label key={a.id}>
+              <input
+                type="checkbox"
+                name="avatar"
+                checked={checked}
+                disabled={disabled}
+                onChange={() =>
+                  setAvatarIds((prev) =>
+                    checked ? prev.filter((id) => id !== a.id) : [...prev, a.id]
+                  )
+                }
+              />
+              {a.name || "未命名形象"}
+              {isPlatformAvatarId(a.id) ? "（平台公共形象）" : ""}
+              {ready ? "" : "（不可用）"}
+            </label>
+          );
+        })}
+        {avatars.length === 0 ? <span>暂无可用形象，将生成纯素材成片。</span> : null}
       </fieldset>
+
+      {avatarIds.length > 0 ? (
+        <p className="costHint" aria-label="成本预估">
+          预计数字人成本约 ${costEstimate.totalUsd.toFixed(2)}（出镜 {costEstimate.onCameraSec}s +
+          画外音 {costEstimate.voiceoverSec}s · 消耗 1 次生成配额）
+        </p>
+      ) : null}
 
       <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <label>
