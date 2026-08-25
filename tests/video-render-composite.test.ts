@@ -28,7 +28,8 @@ const NOW = "2026-08-16T00:00:00.000Z";
 const videoAsset: Asset = {
   id: "asset_1", ownerId: "u", storeId: "s", type: "video",
   originalFilename: "a.mp4", storageKey: "uploads/a.mp4", mimeType: "video/mp4",
-  sizeBytes: 1000, tags: [], businessTags: [], status: "ready", createdAt: NOW
+  sizeBytes: 1000, tags: [], businessTags: [], status: "ready",
+  category: "material", createdAt: NOW
 };
 
 const talkingHead: VideoOutput = {

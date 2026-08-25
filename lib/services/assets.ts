@@ -15,6 +15,8 @@ interface UploadIntentInput {
   filename: string;
   contentType: string;
   sizeBytes: number;
+  /** material（默认）| avatar_footage。人像视频走同一存储链路与 MIME 校验。 */
+  category?: "material" | "avatar_footage";
 }
 
 export interface UploadIntent {
@@ -24,6 +26,7 @@ export interface UploadIntent {
   headers: Record<string, string>;
   maxSizeBytes: number;
   expiresInSeconds: number;
+  category: "material" | "avatar_footage";
 }
 
 interface ClassifyAssetInput {
@@ -145,7 +148,8 @@ export async function createUploadIntent(input: UploadIntentInput): Promise<Uplo
       "Content-Type": input.contentType
     },
     maxSizeBytes: MAX_UPLOAD_BYTES,
-    expiresInSeconds: PRESIGN_EXPIRES_SECONDS
+    expiresInSeconds: PRESIGN_EXPIRES_SECONDS,
+    category: input.category ?? "material"
   };
 }
 

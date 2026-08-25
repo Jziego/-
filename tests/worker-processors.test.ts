@@ -82,12 +82,14 @@ describe("video render processor", () => {
     await getAssetRepository().create({
       id: "asset_v1", ownerId: "demo_user", storeId: "store_1", type: "video",
       originalFilename: "v1.mp4", storageKey: "uploads/v1.mp4", mimeType: "video/mp4",
-      sizeBytes: 1000, tags: [], businessTags: [], status: "ready", createdAt: now
+      sizeBytes: 1000, tags: [], businessTags: [], status: "ready",
+      category: "material", createdAt: now
     });
     await getAssetRepository().create({
       id: "asset_v2", ownerId: "demo_user", storeId: "store_1", type: "image",
       originalFilename: "v2.png", storageKey: "uploads/v2.png", mimeType: "image/png",
-      sizeBytes: 500, tags: [], businessTags: [], status: "ready", createdAt: now
+      sizeBytes: 500, tags: [], businessTags: [], status: "ready",
+      category: "material", createdAt: now
     });
     const project: RenderProject = {
       id: "proj_vr",
@@ -337,6 +339,7 @@ describe("asset analysis processor", () => {
       tags: ["food", "person"],
       businessTags: [],
       status: "uploaded",
+      category: "material",
       createdAt: nowIso()
     });
 

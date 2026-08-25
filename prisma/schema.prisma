@@ -92,6 +92,7 @@ model Asset {
   tags                String[]
   businessTags        String[]
   status              String
+  category            String          @default("material")
   createdAt           DateTime        @default(now())
   owner               User            @relation(fields: [ownerId], references: [id])
   store               StoreProfile    @relation(fields: [storeId], references: [id])

@@ -69,6 +69,25 @@ describe("core SaaS schemas", () => {
     expect(asset.status).toBe("ready");
   });
 
+  it("assetSchema defaults category to material and accepts avatar_footage", () => {
+    const minimal = {
+      id: "asset_1",
+      ownerId: "o",
+      storeId: "s",
+      type: "video",
+      originalFilename: "a.mp4",
+      storageKey: "k",
+      mimeType: "video/mp4",
+      sizeBytes: 10,
+      status: "uploaded",
+      createdAt: new Date().toISOString()
+    };
+
+    expect(assetSchema.parse(minimal).category).toBe("material");
+    expect(assetSchema.parse({ ...minimal, category: "avatar_footage" }).category).toBe("avatar_footage");
+    expect(assetSchema.safeParse({ ...minimal, category: "nope" }).success).toBe(false);
+  });
+
   it("tracks avatar provider state separately from render projects", () => {
     const avatar = avatarProfileSchema.parse({
       id: "avatar_1",

@@ -84,6 +84,7 @@ export async function POST(request: Request) {
     tags: [],
     businessTags: [],
     status: "uploaded",
+    category: input.category,
     createdAt: nowIso()
   });
 

@@ -19,6 +19,7 @@ function sampleAsset(overrides: Partial<Asset> = {}): Asset {
     tags: [],
     businessTags: [],
     status: "uploaded",
+    category: "material",
     createdAt: new Date().toISOString(),
     ...overrides
   };

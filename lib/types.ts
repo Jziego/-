@@ -2,6 +2,8 @@ export type AssetType = "video" | "image" | "audio";
 
 export type AssetStatus = "uploading" | "uploaded" | "processing" | "ready" | "failed";
 
+export type AssetCategory = "material" | "avatar_footage";
+
 export type AvatarProviderName = "heygen" | "d-id" | "tavus" | "synthesia" | "mock-avatar";
 
 export type AvatarTrainingStatus = "pending" | "processing" | "ready" | "failed";
@@ -69,6 +71,8 @@ export interface Asset {
   tags: string[];
   businessTags: string[];
   status: AssetStatus;
+  /** material=素材库 b-roll；avatar_footage=数字分身训练人像视频（永不进渲染时间线）。 */
+  category: AssetCategory;
   createdAt: string;
 }
 

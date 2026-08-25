@@ -36,6 +36,7 @@ const asset: Asset = {
   tags: [],
   businessTags: [],
   status: "uploaded",
+  category: "material",
   createdAt: "2026-06-03T10:00:00.000Z"
 };
 

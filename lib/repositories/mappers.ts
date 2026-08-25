@@ -86,6 +86,7 @@ export function toAsset(row: PrismaAsset): Asset {
     tags: row.tags,
     businessTags: row.businessTags,
     status: row.status as Asset["status"],
+    category: (row.category as Asset["category"]) ?? "material",
     createdAt: row.createdAt.toISOString()
   };
 }
@@ -108,6 +109,7 @@ export function toAssetInput(asset: Asset) {
     tags: asset.tags,
     businessTags: asset.businessTags,
     status: asset.status,
+    category: asset.category,
     createdAt: new Date(asset.createdAt)
   };
 }

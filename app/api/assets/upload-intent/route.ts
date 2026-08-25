@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     return jsonError("Object storage is not configured", 503);
   }
 
-  let body: { storeId?: unknown; filename?: unknown; contentType?: unknown; sizeBytes?: unknown };
+  let body: { storeId?: unknown; filename?: unknown; contentType?: unknown; sizeBytes?: unknown; category?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -18,6 +18,12 @@ export async function POST(request: Request) {
 
   if (!body.storeId || !body.filename || !body.contentType || !body.sizeBytes) {
     return jsonError("Missing upload intent fields");
+  }
+
+  // category 校验后透传：前端 confirm 时回传同一值落库（见 assets/confirm）。
+  const category = body.category === undefined ? "material" : body.category;
+  if (category !== "material" && category !== "avatar_footage") {
+    return jsonError("category must be material or avatar_footage", 400);
   }
 
   try {
@@ -30,6 +36,7 @@ export async function POST(request: Request) {
       filename: String(body.filename),
       contentType: String(body.contentType),
       sizeBytes: Number(body.sizeBytes),
+      category,
     });
     return jsonOk({ intent }, 201);
   } catch (error) {

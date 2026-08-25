@@ -37,7 +37,8 @@ describe("POST /api/assets/upload-intent", () => {
       uploadUrl: "https://signed.example/upload",
       headers: { "Content-Type": "video/mp4" },
       maxSizeBytes: 200 * 1024 * 1024,
-      expiresInSeconds: 900
+      expiresInSeconds: 900,
+      category: "material"
     });
 
     const response = await POST(
@@ -57,5 +58,59 @@ describe("POST /api/assets/upload-intent", () => {
     const body = await response.json();
     expect(body.intent.uploadUrl).toBe("https://signed.example/upload");
     expect(body.intent.headers["Content-Type"]).toBe("video/mp4");
+  });
+
+  it("passes category=avatar_footage through to the service and echoes it in the intent", async () => {
+    vi.spyOn(env, "hasObjectStorage").mockReturnValue(true);
+    const spy = vi.spyOn(assetsService, "createUploadIntent").mockResolvedValue({
+      assetId: "asset_1",
+      storageKey: "stores/store_1/assets/asset_1-demo.mp4",
+      uploadUrl: "https://signed.example/upload",
+      headers: { "Content-Type": "video/mp4" },
+      maxSizeBytes: 200 * 1024 * 1024,
+      expiresInSeconds: 900,
+      category: "avatar_footage"
+    });
+
+    const response = await POST(
+      new Request("http://localhost/api/assets/upload-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId: "store_1",
+          filename: "demo.mp4",
+          contentType: "video/mp4",
+          sizeBytes: 1000,
+          category: "avatar_footage"
+        })
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ category: "avatar_footage" }));
+    const body = await response.json();
+    expect(body.intent.category).toBe("avatar_footage");
+  });
+
+  it("rejects an invalid category with 400", async () => {
+    vi.spyOn(env, "hasObjectStorage").mockReturnValue(true);
+    const spy = vi.spyOn(assetsService, "createUploadIntent");
+
+    const response = await POST(
+      new Request("http://localhost/api/assets/upload-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId: "store_1",
+          filename: "demo.mp4",
+          contentType: "video/mp4",
+          sizeBytes: 1000,
+          category: "nope"
+        })
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(spy).not.toHaveBeenCalled();
   });
 });

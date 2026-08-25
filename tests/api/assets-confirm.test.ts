@@ -85,6 +85,73 @@ describe("POST /api/assets/confirm", () => {
     expect(body.asset.sizeBytes).toBe(5000);
   });
 
+  it("persists category=avatar_footage from the confirm payload", async () => {
+    await seedStore();
+    vi.spyOn(storage, "headObject").mockResolvedValue({
+      exists: true,
+      contentLength: 5000,
+      contentType: "video/mp4"
+    });
+    const mp4Magic = new Uint8Array(8);
+    mp4Magic.set([0x66, 0x74, 0x79, 0x70], 4);
+    vi.spyOn(storage, "getFirstBytes").mockResolvedValue(mp4Magic);
+
+    const response = await POST(
+      new Request("http://localhost/api/assets/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetId: "asset_av1",
+          storeId: "store_1",
+          storageKey: "stores/store_1/assets/asset_av1-demo.mp4",
+          originalFilename: "demo.mp4",
+          mimeType: "video/mp4",
+          type: "video",
+          sizeBytes: 5000,
+          category: "avatar_footage"
+        })
+      })
+    );
+
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.asset.category).toBe("avatar_footage");
+    const repo = new MemoryAssetRepository();
+    expect((await repo.findById("asset_av1"))?.category).toBe("avatar_footage");
+  });
+
+  it("defaults category to material when the confirm payload omits it", async () => {
+    await seedStore();
+    vi.spyOn(storage, "headObject").mockResolvedValue({
+      exists: true,
+      contentLength: 5000,
+      contentType: "video/mp4"
+    });
+    const mp4Magic = new Uint8Array(8);
+    mp4Magic.set([0x66, 0x74, 0x79, 0x70], 4);
+    vi.spyOn(storage, "getFirstBytes").mockResolvedValue(mp4Magic);
+
+    const response = await POST(
+      new Request("http://localhost/api/assets/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetId: "asset_mat1",
+          storeId: "store_1",
+          storageKey: "stores/store_1/assets/asset_mat1-demo.mp4",
+          originalFilename: "demo.mp4",
+          mimeType: "video/mp4",
+          type: "video",
+          sizeBytes: 5000
+        })
+      })
+    );
+
+    expect(response.status).toBe(201);
+    const repo = new MemoryAssetRepository();
+    expect((await repo.findById("asset_mat1"))?.category).toBe("material");
+  });
+
   it("returns 404 when the uploaded object is missing", async () => {
     await seedStore();
     vi.spyOn(storage, "headObject").mockResolvedValue({ exists: false });

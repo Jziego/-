@@ -48,8 +48,10 @@ export class MemoryAssetRepository implements AssetRepository {
   }
 
   async create(asset: Asset): Promise<Asset> {
-    getRuntimeState().assets.push(asset);
-    return asset;
+    // Mirror Prisma's `@default("material")` so both repos share category semantics.
+    const stored = { ...asset, category: asset.category ?? "material" };
+    getRuntimeState().assets.push(stored);
+    return stored;
   }
 
   async findById(id: string): Promise<Asset | null> {

@@ -21,6 +21,7 @@ function createTestAsset(ownerId: string, overrides: Partial<Asset> = {}): Asset
     tags: [],
     businessTags: [],
     status: "uploaded",
+    category: "material",
     createdAt: nowIso(),
     ...overrides
   };

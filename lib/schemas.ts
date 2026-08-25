@@ -49,7 +49,8 @@ export const confirmAssetUploadSchema = z.object({
   originalFilename: z.string().min(1),
   mimeType: z.string().min(1),
   type: z.enum(["video", "image", "audio"]),
-  sizeBytes: z.number().positive().optional()
+  sizeBytes: z.number().positive().optional(),
+  category: z.enum(["material", "avatar_footage"]).default("material")
 });
 
 export const assetSchema = z.object({
@@ -69,6 +70,7 @@ export const assetSchema = z.object({
   tags: z.array(z.string()).default([]),
   businessTags: z.array(z.string()).default([]),
   status: z.enum(["uploading", "uploaded", "processing", "ready", "failed"]),
+  category: z.enum(["material", "avatar_footage"]).default("material"),
   createdAt: isoDateString
 });
 

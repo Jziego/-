@@ -43,6 +43,7 @@ const asset: Asset = {
   id: "a1", ownerId: "u", storeId: "s", type: "video",
   originalFilename: "f.mp4", storageKey: "k", mimeType: "video/mp4",
   sizeBytes: 1, tags: [], businessTags: [], status: "ready",
+  category: "material",
   createdAt: "2026-08-16T00:00:00.000Z",
 };
 
@@ -117,5 +118,26 @@ describe("video_render processor: target duration + voiceover captions", () => {
     expect(ass).toContain("{\\c&H00FFFF&}冰美式{\\c&H00FFFFFF&}");
     // 不出现在口播稿中的词不会被包裹（也不会凭空出现）
     expect(ass).not.toContain("稿外词");
+  });
+
+  it("never lets avatar_footage assets into the b-roll timeline", async () => {
+    const captured: { input?: RenderCompositeInput } = {};
+    const avatarAsset: Asset = { ...asset, id: "a_av", category: "avatar_footage" };
+    const avatarProject: RenderProject = { ...project, selectedAssetIds: ["a1", "a_av"] };
+    const deps = makeDeps(captured);
+    deps.renderRepository = {
+      findProjectById: async () => avatarProject,
+      findTalkingHeadOutputByProject: async () => talkingHead,
+      createOutput: async (o: VideoOutput) => o,
+    } as unknown as VideoRenderDeps["renderRepository"];
+    deps.assetRepository = {
+      findById: async (id: string) => (id === "a1" ? asset : id === "a_av" ? avatarAsset : null),
+    } as unknown as VideoRenderDeps["assetRepository"];
+
+    await processVideoRender(fakeJob, deps);
+
+    const ids = (captured.input?.assets ?? []).map((a) => a.id);
+    expect(ids).toContain("a1");
+    expect(ids).not.toContain("a_av");
   });
 });

@@ -120,11 +120,14 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
   const talkingHead = await deps.renderRepository.findTalkingHeadOutputByProject(projectId);
   const mode = resolveCompositionMode(talkingHead);
 
-  // Resolve selected assets (filter to existing ones).
+  // Resolve selected assets (filter to existing ones). avatar_footage 是数字分身
+  // 训练素材，即使用户端把它塞进 selectedAssetIds 也绝不进 b-roll 时间线。
   const assetResults = await Promise.all(
     project.selectedAssetIds.map((id) => deps.assetRepository.findById(id))
   );
-  const assets = assetResults.filter((a): a is Asset => a !== null);
+  const assets = assetResults.filter(
+    (a): a is Asset => a !== null && (a.category ?? "material") === "material"
+  );
 
   // Probe real durations for video assets (Bug B: align timeline to actual media).
   const probeEntries = await Promise.all(

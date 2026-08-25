@@ -16,6 +16,7 @@ function sampleAsset(id: string, ownerId = "demo_user"): Asset {
     tags: [],
     businessTags: [],
     status: "uploaded",
+    category: "material",
     createdAt: new Date().toISOString()
   };
 }
@@ -34,6 +35,21 @@ function sampleAnalysis(assetId: string, overrides: Partial<AssetAnalysis> = {})
     ...overrides
   };
 }
+
+describe("MemoryAssetRepository category", () => {
+  beforeEach(() => {
+    resetRuntimeStateForTests();
+  });
+
+  it("persists category and defaults to material (memory repo)", async () => {
+    const repo = new MemoryAssetRepository();
+    await repo.create(sampleAsset("asset_mat"));
+    expect((await repo.findById("asset_mat"))?.category).toBe("material");
+
+    await repo.create({ ...sampleAsset("asset_av"), category: "avatar_footage" });
+    expect((await repo.findById("asset_av"))?.category).toBe("avatar_footage");
+  });
+});
 
 describe("MemoryAssetRepository.deleteById", () => {
   beforeEach(() => {
