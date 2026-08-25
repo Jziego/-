@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { estimateRenderCost } from "@/lib/cost-estimate";
 import { findHighlightRanges } from "@/lib/highlight-ranges";
-import { isPlatformAvatarId } from "@/lib/services/platform-avatar";
+import { deriveSegmentsFromVoiceover } from "@/lib/services/scene-derive";
 import { SPEECH_CHARS_PER_SECOND } from "@/lib/speech-rate";
 import type { AvatarProfile, ScriptDraft } from "@/lib/types";
 
@@ -16,6 +16,9 @@ const SUBTITLE_OPTIONS = [
 // 镜像服务端上限（app/api/script-drafts/[id]/route.ts 的 MAX_VOICEOVER_CHARS），
 // 编辑器本地截断，避免 PATCH 被 400 拒绝。
 const MAX_VOICEOVER_CHARS = 2000;
+
+// 形象多选上限（Phase 3，spec §6.4）；服务端 render-projects 路由有同名上限校验。
+const MAX_RENDER_AVATARS = 3;
 
 export interface ScriptConfirmSelection {
   voiceover: string;
@@ -57,7 +60,6 @@ function highlightParts(text: string, words: string[]): Array<{ text: string; hi
 export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetIds, onConfirm, pending }: Props) {
   const [voiceover, setVoiceover] = useState(draft.voiceover);
   // 形象多选（Phase 3，spec §6.4）：≤3，默认勾选第一个 ready 形象；全不勾 = 纯素材成片。
-  const MAX_RENDER_AVATARS = 3;
   const [avatarIds, setAvatarIds] = useState<string[]>(
     () => {
       const first = avatars.find((a) => a.trainingStatus === "ready");
@@ -75,10 +77,11 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
   const charCount = Array.from(voiceover).length;
   // 预估时长：语速取全局唯一来源 lib/speech-rate.ts
   const estimatedSec = Math.round(charCount / SPEECH_CHARS_PER_SECOND);
-  // 数字人成本预估（spec §6.4）：按段字数折算秒数，出镜段/画外音段分两档计价
+  // 数字人成本预估（spec §6.4）：跟随编辑中的口播稿实时重切 segments
+  // （prev 命中保留出镜标记，与服务端 PATCH 重切同源），出镜段/画外音段分两档计价。
   const costEstimate = useMemo(
-    () => estimateRenderCost(draft.segments, avatarIds.length),
-    [draft.segments, avatarIds.length],
+    () => estimateRenderCost(deriveSegmentsFromVoiceover(voiceover, { prev: draft.segments }), avatarIds.length),
+    [voiceover, draft.segments, avatarIds.length],
   );
   const canConfirm = voiceover.trim().length > 0 && !pending;
 
@@ -134,7 +137,6 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
                 }
               />
               {a.name || "未命名形象"}
-              {isPlatformAvatarId(a.id) ? "（平台公共形象）" : ""}
               {ready ? "" : "（不可用）"}
             </label>
           );

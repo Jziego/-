@@ -518,6 +518,12 @@ strong {
   width: auto;
 }
 
+.costHint {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+
 .formFields {
   display: grid;
   gap: 16px;

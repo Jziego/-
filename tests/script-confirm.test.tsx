@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ScriptConfirm } from "@/components/script-confirm";
@@ -115,10 +115,31 @@ describe("ScriptConfirm", () => {
   it("shows the estimated cost line when at least one avatar is checked", async () => {
     const user = userEvent.setup();
     renderConfirm();
-    expect(screen.getByText(/预计数字人成本/)).toBeInTheDocument();
+    // 草稿两段出镜：19 字 → 4s、14 字 → 3s（4.5 字/s，下限 3s），共 7s × $0.0667 ≈ $0.47
+    const costLine = screen.getByLabelText("成本预估");
+    expect(costLine).toHaveTextContent(/预计数字人成本约 \$0\.47（出镜 7s \+ 画外音 0s/);
     // 取消全部勾选 → 纯素材成片，无数字人成本，成本行消失
     await user.click(screen.getByLabelText(/店长形象/));
     expect(screen.queryByText(/预计数字人成本/)).not.toBeInTheDocument();
+  });
+
+  it("re-estimates the cost from the live edited voiceover, not the stale draft segments", async () => {
+    const user = userEvent.setup();
+    renderConfirm();
+    expect(screen.getByLabelText("成本预估")).toHaveTextContent(/\$0\.47/);
+    const editor = screen.getByLabelText("口播稿编辑");
+    await user.clear(editor);
+    // 45 字单句（无 AI 出镜选择时首/末句默认出镜）→ 10s × $0.0667 ≈ $0.67
+    fireEvent.change(editor, { target: { value: "一".repeat(45) } });
+    const costLine = screen.getByLabelText("成本预估");
+    expect(costLine).toHaveTextContent(/\$0\.67/);
+    expect(costLine).toHaveTextContent(/出镜 10s/);
+  });
+
+  it("platform avatar label renders its name once, without a duplicated suffix", () => {
+    renderConfirm({ avatars: [makeAvatar("avatar_platform", "平台公共形象")] });
+    const checkbox = screen.getByLabelText("平台公共形象");
+    expect(checkbox.closest("label")).toHaveTextContent(/^平台公共形象$/);
   });
 
   it("non-ready avatars are disabled and labeled 不可用", () => {
