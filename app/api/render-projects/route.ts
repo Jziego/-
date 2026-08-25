@@ -11,8 +11,9 @@ import {
 } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
 import { createRenderProject, planRenderJobs } from "@/lib/services/render-pipeline";
+import { buildPlatformAvatar, isPlatformAvatarId } from "@/lib/services/platform-avatar";
 import { nowIso } from "@/lib/ids";
-import type { AspectRatio, RenderProject } from "@/lib/types";
+import type { AspectRatio, AvatarProfile, RenderProject } from "@/lib/types";
 
 export async function GET(request: Request) {
   const renderRepo = getRenderRepository();
@@ -55,20 +56,35 @@ export async function POST(request: Request) {
     return jsonError("Script draft not found", 404);
   }
 
-  // Phase 2：avatarProfileIds[]（本期单选，长度 ≤1）；legacy avatarProfileId 兼容。
+  // Phase 3：avatarProfileIds 多选（≤3），逐形像校验属主 + ready；平台公共形象免查库。
+  const MAX_RENDER_AVATARS = 3;
   const avatarIds = Array.isArray(body.avatarProfileIds)
     ? (body.avatarProfileIds as unknown[]).filter((x): x is string => typeof x === "string")
     : undefined;
-  if (avatarIds && avatarIds.length > 1) {
-    return jsonError("avatarProfileIds supports a single avatar in this phase", 400);
+  if (avatarIds && avatarIds.length > MAX_RENDER_AVATARS) {
+    return jsonError(`avatarProfileIds supports at most ${MAX_RENDER_AVATARS} avatars`, 400);
   }
-  const avatarProfileId = avatarIds?.[0] ?? (body.avatarProfileId as string | undefined);
-  const avatarProfile = avatarProfileId
-    ? ((await getAvatarRepository().findById(avatarProfileId)) ?? undefined)
-    : undefined;
-  // IDOR guard：foreign/不存在一律 404，不泄漏存在性（调整前为静默降级 asset_only）。
-  if (avatarProfileId && (!avatarProfile || avatarProfile.ownerId !== ownerId)) {
-    return jsonError("Avatar profile not found", 404);
+  if (avatarIds && new Set(avatarIds).size !== avatarIds.length) {
+    return jsonError("avatarProfileIds must not contain duplicates", 400);
+  }
+  const legacyId = body.avatarProfileId as string | undefined;
+  const requestedIds = avatarIds ?? (legacyId ? [legacyId] : []);
+
+  const avatarProfiles: AvatarProfile[] = [];
+  for (const id of requestedIds) {
+    if (isPlatformAvatarId(id)) {
+      avatarProfiles.push(buildPlatformAvatar(ownerId));
+      continue;
+    }
+    const profile = (await getAvatarRepository().findById(id)) ?? undefined;
+    // IDOR guard：foreign/不存在一律 404，不泄漏存在性（调整前为静默降级 asset_only）。
+    if (!profile || profile.ownerId !== ownerId) {
+      return jsonError("Avatar profile not found", 404);
+    }
+    if (profile.trainingStatus !== "ready" || !profile.providerAvatarId) {
+      return jsonError(`Avatar profile not ready: ${profile.name || id}`, 400);
+    }
+    avatarProfiles.push(profile);
   }
 
   // Quota consumption — throws QuotaExhaustedError if exhausted (402)
@@ -86,13 +102,13 @@ export async function POST(request: Request) {
     storeId: scriptDraft.storeId,
     scriptDraft,
     selectedAssetIds: (body.selectedAssetIds as string[]) ?? [],
-    avatarProfile,
+    avatarProfiles,
     aspectRatio: (body.aspectRatio as AspectRatio) ?? "9:16",
     subtitleStyle: ((body.subtitleStyle as RenderProject["subtitleStyle"]) ?? "bold_bottom"),
     bgmTrackId: body.bgmTrackId as string | undefined
   });
 
-  const plannedJobs = planRenderJobs({ project, includeAvatar: Boolean(avatarProfile) });
+  const plannedJobs = planRenderJobs({ project, includeAvatar: avatarProfiles.length > 0 });
   // Degradation is inline: video_render falls back to asset_only when no
   // talking-head product exists, so the old pre-enqueued slideshow fallback
   // job (b5) is removed.

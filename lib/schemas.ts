@@ -148,6 +148,7 @@ export const renderProjectSchema = z.object({
   scriptDraftId: z.string().min(1),
   selectedAssetIds: z.array(z.string().min(1)).min(1),
   avatarProfileId: z.string().optional(),
+  avatarProfileIds: z.array(z.string()).optional(),
   purpose: marketingPurposeSchema,
   aspectRatio: z.enum(["9:16", "1:1", "16:9"]),
   subtitleStyle: z.enum(["default", "bold_bottom", "minimal"]),

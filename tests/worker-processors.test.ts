@@ -299,6 +299,54 @@ describe("avatar generation processor", () => {
     expect(avatarResult.avatarProfileId).toBe("existing_avatar_1");
     expect(avatarResult.provider).toBe("mock-avatar");
   });
+
+  it("validates every avatarProfileId in the array (multi-avatar payload)", async () => {
+    const base = {
+      ownerId: "demo_user",
+      storeId: "store_1",
+      name: "",
+      provider: "mock-avatar" as const,
+      providerAvatarId: "ext",
+      providerVoiceId: "ext_voice",
+      consentStatus: "approved" as const,
+      consentAcceptedAt: nowIso(),
+      trainingStatus: "ready" as const,
+      fallbackMode: "tts_voiceover" as const,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    };
+    await getAvatarRepository().create({ ...base, id: "avatar_a" });
+    await getAvatarRepository().create({ ...base, id: "avatar_b" });
+
+    const okJob = {
+      data: {
+        jobId: "job_multi_ok",
+        projectId: "test-project",
+        ownerId: "demo_user",
+        payload: { avatarProfileIds: ["avatar_a", "avatar_b"], fallbackMode: "tts_voiceover" },
+        dependsOnJobIds: []
+      }
+    };
+    const result = await avatarGenerationProcessor(okJob as unknown as BullJob);
+    expect(result).toMatchObject({
+      avatarProfileIds: ["avatar_a", "avatar_b"],
+      trainingStatus: "ready",
+      validated: ["avatar_a", "avatar_b"]
+    });
+
+    const missingJob = {
+      data: {
+        jobId: "job_multi_missing",
+        projectId: "test-project",
+        ownerId: "demo_user",
+        payload: { avatarProfileIds: ["avatar_a", "avatar_missing"], fallbackMode: "tts_voiceover" },
+        dependsOnJobIds: []
+      }
+    };
+    await expect(
+      avatarGenerationProcessor(missingJob as unknown as BullJob)
+    ).rejects.toThrow(/avatar_missing/);
+  });
 });
 
 describe("asset analysis processor", () => {

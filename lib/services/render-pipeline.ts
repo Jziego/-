@@ -6,7 +6,8 @@ interface CreateRenderProjectInput {
   storeId: string;
   scriptDraft: ScriptDraft;
   selectedAssetIds: string[];
-  avatarProfile?: AvatarProfile;
+  /** Phase 3：有序形象列表（多形象轮播）。空 = 纯素材成片。 */
+  avatarProfiles?: AvatarProfile[];
   aspectRatio: AspectRatio;
   subtitleStyle: RenderProject["subtitleStyle"];
   bgmTrackId?: string;
@@ -14,6 +15,7 @@ interface CreateRenderProjectInput {
 
 export function createRenderProject(input: CreateRenderProjectInput): RenderProject {
   const now = nowIso();
+  const avatarProfileIds = (input.avatarProfiles ?? []).map((a) => a.id);
 
   return {
     id: createId("render"),
@@ -21,7 +23,8 @@ export function createRenderProject(input: CreateRenderProjectInput): RenderProj
     storeId: input.storeId,
     scriptDraftId: input.scriptDraft.id,
     selectedAssetIds: input.selectedAssetIds,
-    avatarProfileId: input.avatarProfile?.id,
+    avatarProfileId: avatarProfileIds[0],
+    avatarProfileIds,
     purpose: input.scriptDraft.purpose,
     aspectRatio: input.aspectRatio,
     subtitleStyle: input.subtitleStyle,
@@ -36,8 +39,9 @@ export function createRenderProject(input: CreateRenderProjectInput): RenderProj
 export function planRenderJobs(input: { project: RenderProject; includeAvatar: boolean }): Job[] {
   const now = nowIso();
   const jobs: Job[] = [];
+  const avatarProfileIds = input.project.avatarProfileIds ?? [];
 
-  if (input.includeAvatar && input.project.avatarProfileId) {
+  if (input.includeAvatar && avatarProfileIds.length > 0) {
     const avatarJobId = createId("job");
     jobs.push({
       id: avatarJobId,
@@ -47,7 +51,9 @@ export function planRenderJobs(input: { project: RenderProject; includeAvatar: b
       status: "queued",
       progress: 0,
       payload: {
-        avatarProfileId: input.project.avatarProfileId,
+        // legacy 单 id 字段保留（= 首位），Task 10 前旧处理器仍读它。
+        avatarProfileId: avatarProfileIds[0],
+        avatarProfileIds,
         fallbackMode: "tts_voiceover"
       },
       dependsOnJobIds: [],
@@ -58,6 +64,7 @@ export function planRenderJobs(input: { project: RenderProject; includeAvatar: b
     // talking_head synthesizes the digital-human voiceover clip from the avatar
     // profile + script voiceover. Depends on avatar_generation (profile provisioning).
     // The processor resolves AvatarProfile + ScriptDraft at processing time.
+    // Phase 3：payload 带全部形象（分段合成由 Task 10 实现，按 draft.speakerAvatarIds 对齐说话人）。
     jobs.push({
       id: createId("job"),
       ownerId: input.project.ownerId,
@@ -66,7 +73,8 @@ export function planRenderJobs(input: { project: RenderProject; includeAvatar: b
       status: "queued",
       progress: 0,
       payload: {
-        avatarProfileId: input.project.avatarProfileId,
+        avatarProfileId: avatarProfileIds[0],
+        avatarProfileIds,
         scriptDraftId: input.project.scriptDraftId
       },
       dependsOnJobIds: [avatarJobId],

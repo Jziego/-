@@ -166,6 +166,7 @@ model RenderProject {
   scriptDraftId    String
   selectedAssetIds String[]
   avatarProfileId  String?
+  avatarProfileIds String[]        @default([])
   purpose          String
   aspectRatio      String
   subtitleStyle    String

@@ -1,4 +1,5 @@
 import { createProviderFromEnv, createAvatarProfile } from "@/lib/services/avatar-provider";
+import { isPlatformAvatarId } from "@/lib/services/platform-avatar";
 import { getAvatarRepository, getAssetRepository, getStoreRepository } from "@/lib/repositories";
 import { nowIso } from "@/lib/ids";
 import type { ProcessorFn } from "./index";
@@ -7,15 +8,34 @@ import type { ProcessorFn } from "./index";
  * avatar_generation processor — creates an avatar profile using the configured provider.
  * Falls back to mock provider when no real provider is configured.
  *
- * Expected job payload: { avatarProfileId?: string, fallbackMode: string }
+ * Expected job payload: { avatarProfileId?: string, avatarProfileIds?: string[], fallbackMode: string }
  */
 export const avatarGenerationProcessor: ProcessorFn = async (job) => {
   const payload = job.data.payload as {
     avatarProfileId?: string;
+    avatarProfileIds?: string[];
     fallbackMode?: string;
     trainingVideoAssetId?: string;
   };
   const ownerId = (job.data.ownerId as string) ?? "demo_user";
+
+  // Phase 3：多形象批量校验（planRenderJobs 新契约）。平台公共形象不查库。
+  if (Array.isArray(payload.avatarProfileIds)) {
+    const ready: string[] = [];
+    for (const id of payload.avatarProfileIds) {
+      if (isPlatformAvatarId(id)) continue;
+      const avatar = await getAvatarRepository().findById(id);
+      if (!avatar) {
+        throw new Error(`Avatar profile not found: ${id}`);
+      }
+      ready.push(id);
+    }
+    return {
+      avatarProfileIds: payload.avatarProfileIds,
+      trainingStatus: "ready" as const,
+      validated: ready
+    };
+  }
 
   // If an existing avatar profile ID was provided, look it up and confirm readiness.
   if (payload.avatarProfileId) {

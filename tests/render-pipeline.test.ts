@@ -57,7 +57,7 @@ describe("render pipeline", () => {
       storeId: "store_1",
       scriptDraft: script,
       selectedAssetIds: ["asset_1", "asset_2"],
-      avatarProfile: avatar,
+      avatarProfiles: [avatar],
       aspectRatio: "9:16",
       subtitleStyle: "bold_bottom",
       bgmTrackId: "bgm_warm"
@@ -74,7 +74,7 @@ describe("render pipeline", () => {
       storeId: "store_1",
       scriptDraft: script,
       selectedAssetIds: ["asset_1"],
-      avatarProfile: avatar,
+      avatarProfiles: [avatar],
       aspectRatio: "9:16",
       subtitleStyle: "bold_bottom",
       bgmTrackId: "bgm_warm"
@@ -119,6 +119,32 @@ describe("render pipeline", () => {
 
     expect(jobs.map((job) => job.type)).toEqual(["video_render"]);
     expect(jobs[0]?.dependsOnJobIds).toEqual([]);
+  });
+
+  it("plans avatar_generation + talking_head with avatarProfileIds payload, video_render depends on both", () => {
+    const avatarA: AvatarProfile = { ...avatar, id: "avatar_a" };
+    const avatarB: AvatarProfile = { ...avatar, id: "avatar_b" };
+    const project = createRenderProject({
+      ownerId: "user_1",
+      storeId: "store_1",
+      scriptDraft: script,
+      selectedAssetIds: ["asset_1"],
+      avatarProfiles: [avatarA, avatarB],
+      aspectRatio: "9:16",
+      subtitleStyle: "bold_bottom"
+    });
+    expect(project.avatarProfileId).toBe("avatar_a");
+    expect(project.avatarProfileIds).toEqual(["avatar_a", "avatar_b"]);
+
+    const jobs = planRenderJobs({ project, includeAvatar: true });
+    const [avatarJob, thJob, renderJob] = jobs;
+    expect(avatarJob!.payload.avatarProfileIds).toEqual(["avatar_a", "avatar_b"]);
+    expect(thJob!.payload).toMatchObject({
+      avatarProfileIds: ["avatar_a", "avatar_b"],
+      scriptDraftId: script.id
+    });
+    expect(thJob!.dependsOnJobIds).toEqual([avatarJob!.id]);
+    expect(renderJob!.dependsOnJobIds).toEqual([avatarJob!.id, thJob!.id]);
   });
 
   it("createRenderProject inherits targetDurationSec from the script draft", () => {

@@ -174,6 +174,8 @@ export interface RenderProject {
   scriptDraftId: string;
   selectedAssetIds: string[];
   avatarProfileId?: string;
+  /** 多形象轮播（Phase 3）：有序 AvatarProfile.id 列表；空 = 纯素材成片。avatarProfileId 恒等于首元素（legacy 兼容）。 */
+  avatarProfileIds?: string[];
   purpose: MarketingPurpose;
   aspectRatio: AspectRatio;
   subtitleStyle: "default" | "bold_bottom" | "minimal";

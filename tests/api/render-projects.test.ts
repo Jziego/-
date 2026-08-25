@@ -51,6 +51,29 @@ function createTestScript(storeId: string): ScriptDraft {
   };
 }
 
+function createTestAvatar(
+  id: string,
+  storeId: string,
+  overrides: Partial<AvatarProfile> = {}
+): AvatarProfile {
+  return {
+    id,
+    ownerId: "demo_user",
+    storeId,
+    name: "",
+    provider: "heygen",
+    providerAvatarId: `ext_${id}`,
+    providerVoiceId: `voice_${id}`,
+    consentStatus: "approved",
+    consentAcceptedAt: nowIso(),
+    trainingStatus: "ready",
+    fallbackMode: "tts_voiceover",
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    ...overrides
+  };
+}
+
 describe("POST /api/render-projects", () => {
   beforeEach(() => {
     delete process.env.DATABASE_URL;
@@ -239,11 +262,37 @@ describe("POST /api/render-projects", () => {
     expect(jobTypes).toContain("video_render");
   });
 
-  it("returns 400 when avatarProfileIds has more than one entry (single-avatar phase)", async () => {
+  it("accepts up to 3 ready avatars; rejects the 4th", async () => {
     const store = createTestStore();
     await getStoreRepository().upsert(store);
     const script = createTestScript(store.id);
     await getScriptRepository().create(script);
+    for (const id of ["avatar_a", "avatar_b", "avatar_c", "avatar_d"]) {
+      await getAvatarRepository().create(createTestAvatar(id, store.id));
+    }
+
+    const req = new Request("http://localhost/api/render-projects", {
+      method: "POST",
+      body: JSON.stringify({
+        scriptDraftId: script.id,
+        selectedAssetIds: [],
+        avatarProfileIds: ["avatar_a", "avatar_b", "avatar_c", "avatar_d"]
+      })
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/at most 3/i);
+  });
+
+  it("accepts 2 ready avatars and persists avatarProfileIds on the project", async () => {
+    const store = createTestStore();
+    await getStoreRepository().upsert(store);
+    const script = createTestScript(store.id);
+    await getScriptRepository().create(script);
+    await getAvatarRepository().create(createTestAvatar("avatar_a", store.id));
+    await getAvatarRepository().create(createTestAvatar("avatar_b", store.id));
 
     const req = new Request("http://localhost/api/render-projects", {
       method: "POST",
@@ -255,7 +304,76 @@ describe("POST /api/render-projects", () => {
     });
 
     const res = await POST(req);
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.project.avatarProfileIds).toEqual(["avatar_a", "avatar_b"]);
+    expect(body.project.avatarProfileId).toBe("avatar_a"); // legacy 字段 = 首位
+    // 任务图：talking_head payload 带全部形象
+    const th = body.jobs.find((j: { type: string }) => j.type === "talking_head");
+    expect(th.payload.avatarProfileIds).toEqual(["avatar_a", "avatar_b"]);
+  });
+
+  it("rejects duplicate avatar ids with 400", async () => {
+    const store = createTestStore();
+    await getStoreRepository().upsert(store);
+    const script = createTestScript(store.id);
+    await getScriptRepository().create(script);
+    await getAvatarRepository().create(createTestAvatar("avatar_a", store.id));
+
+    const req = new Request("http://localhost/api/render-projects", {
+      method: "POST",
+      body: JSON.stringify({
+        scriptDraftId: script.id,
+        selectedAssetIds: [],
+        avatarProfileIds: ["avatar_a", "avatar_a"]
+      })
+    });
+
+    const res = await POST(req);
     expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/duplicates/i);
+  });
+
+  it("rejects a non-ready avatar with 400", async () => {
+    const store = createTestStore();
+    await getStoreRepository().upsert(store);
+    const script = createTestScript(store.id);
+    await getScriptRepository().create(script);
+    await getAvatarRepository().create(
+      createTestAvatar("avatar_pending", store.id, { trainingStatus: "processing" })
+    );
+
+    const req = new Request("http://localhost/api/render-projects", {
+      method: "POST",
+      body: JSON.stringify({
+        scriptDraftId: script.id,
+        selectedAssetIds: [],
+        avatarProfileIds: ["avatar_pending"]
+      })
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/not ready/i);
+  });
+
+  it("accepts the platform avatar id without a repo row", async () => {
+    const store = createTestStore();
+    await getStoreRepository().upsert(store);
+    const script = createTestScript(store.id);
+    await getScriptRepository().create(script);
+
+    const req = new Request("http://localhost/api/render-projects", {
+      method: "POST",
+      body: JSON.stringify({
+        scriptDraftId: script.id,
+        selectedAssetIds: [],
+        avatarProfileIds: ["avatar_platform"]
+      })
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(202);
   });
 
   it("returns 404 when the avatar belongs to another owner (IDOR guard)", async () => {
