@@ -3,6 +3,10 @@ import { createId, nowIso } from "@/lib/ids";
 import type { AvatarProvider } from "@/lib/services/avatar-provider";
 import { createProviderFromEnv, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
 import {
+  isPlatformAvatarId,
+  resolvePlatformProviderIds
+} from "@/lib/services/platform-avatar";
+import {
   getAvatarRepository,
   getRenderRepository,
   getScriptRepository
@@ -47,11 +51,29 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
   const projectId = (job.data.projectId as string | undefined) ?? null;
   const ownerId = (job.data.ownerId as string) ?? "demo_user";
 
-  const avatar = await deps.avatarRepository.findById(payload.avatarProfileId);
-  if (!avatar?.providerAvatarId) {
-    throw new Error(
-      `Avatar profile ${payload.avatarProfileId} not ready (missing providerAvatarId)`,
-    );
+  // 平台公共形象（约定 id）：不查库。provider id 取 env 模板；未配置时回退 provider
+  // 公共 stock 形象——否则 render 项目的 talking_head 永远抛错，卡死父级 video_render。
+  let providerAvatarId: string | undefined;
+  let providerVoiceId: string | undefined;
+  if (isPlatformAvatarId(payload.avatarProfileId)) {
+    const envIds = resolvePlatformProviderIds();
+    if (envIds) {
+      providerAvatarId = envIds.providerAvatarId;
+      providerVoiceId = envIds.providerVoiceId;
+    } else {
+      const stock = await deps.provider.createAvatar({ trainingVideoAssetId: "", ownerId });
+      providerAvatarId = stock.providerAvatarId;
+      providerVoiceId = stock.providerVoiceId;
+    }
+  } else {
+    const avatar = await deps.avatarRepository.findById(payload.avatarProfileId);
+    if (!avatar?.providerAvatarId) {
+      throw new Error(
+        `Avatar profile ${payload.avatarProfileId} not ready (missing providerAvatarId)`,
+      );
+    }
+    providerAvatarId = avatar.providerAvatarId;
+    providerVoiceId = avatar.providerVoiceId;
   }
   const draft = await deps.scriptRepository.findById(payload.scriptDraftId);
   if (!draft) {
@@ -60,9 +82,9 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
 
   const result = await requestAvatarTalkingHead({
     provider: deps.provider,
-    avatarProfileId: avatar.id,
-    providerAvatarId: avatar.providerAvatarId,
-    providerVoiceId: avatar.providerVoiceId,
+    avatarProfileId: payload.avatarProfileId,
+    providerAvatarId,
+    providerVoiceId,
     scriptText: draft.voiceover,
     onProgress: (attempt, maxAttempts) => {
       // Reserve 5..85 for polling; 90/100 reserved for store/finalize below.
