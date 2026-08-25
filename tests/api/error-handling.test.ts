@@ -88,6 +88,6 @@ describe("API error handling", () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body.error).toBe("Invalid JSON body");
+    expect(body.error).toBe("Request body must be valid JSON");
   });
 });

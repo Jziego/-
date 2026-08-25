@@ -194,6 +194,12 @@ export function applyDigitalTwinStatus(
     patch.statusReason = undefined;
     return patch;
   }
+  // 授权未完成前训练不会开始（HeyGen 此时回报 pending）——保持 pending，
+  // 否则形象会在「等用户点授权链接」阶段误显示为训练中。
+  if (status.consentStatus === "awaiting_user") {
+    patch.trainingStatus = "pending";
+    return patch;
+  }
   // approved + 训练途中
   patch.trainingStatus = status.trainingStatus === "ready" ? "ready" : "processing";
   return patch;

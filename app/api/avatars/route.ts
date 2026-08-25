@@ -1,8 +1,9 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
-import { getAvatarRepository } from "@/lib/repositories";
+import { getAssetRepository, getAvatarRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
-import { createAvatarProfile, createMockAvatarProvider } from "@/lib/services/avatar-provider";
+import { createDigitalTwinProfile, createProviderFromEnv } from "@/lib/services/avatar-provider";
+import { createPresignedGetUrl } from "@/lib/storage";
 
 export async function GET(request: Request) {
   const ownerId = await getOwnerId();
@@ -14,32 +15,64 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   let body: {
-    ownerId?: string;
-    storeId?: string;
-    trainingVideoAssetId?: string;
-    consentAccepted?: boolean;
+    storeId?: unknown;
+    footageAssetId?: unknown;
+    name?: unknown;
+    consentAccepted?: unknown;
   };
   try {
     body = await request.json();
   } catch {
-    return jsonError("Invalid JSON body");
+    return jsonError("Request body must be valid JSON", 400);
+  }
+
+  if (!body.storeId || !body.footageAssetId || !body.name) {
+    return jsonError("storeId, footageAssetId and name are required", 400);
+  }
+  const name = String(body.name).trim();
+  if (name.length === 0 || Array.from(name).length > 20) {
+    return jsonError("name must be 1-20 characters", 400);
+  }
+  if (body.consentAccepted !== true) {
+    return jsonError("创建数字人前必须确认肖像和声音授权", 400);
+  }
+
+  const ownerId = await getOwnerId();
+  const limited = await applyRateLimit(request, ownerId);
+  if (limited) return limited;
+
+  // IDOR：人像素材必须属于本人、且确为 avatar_footage 视频（防拿 b-roll 素材建分身）。
+  const footage = await getAssetRepository().findById(String(body.footageAssetId));
+  if (
+    !footage ||
+    footage.ownerId !== ownerId ||
+    footage.category !== "avatar_footage" ||
+    footage.type !== "video"
+  ) {
+    return jsonError("Footage asset not found", 404);
+  }
+  const store = await getStoreRepository().findById(String(body.storeId));
+  if (!store || store.ownerId !== ownerId) {
+    return jsonError("Store not found", 404);
   }
 
   try {
-    const ownerId = await getOwnerId();
-    const limited = await applyRateLimit(request, ownerId);
-    if (limited) return limited;
-    const avatar = await createAvatarProfile({
+    // presigned GET 供 HeyGen 拉取训练视频（900s 默认过期，HeyGen 创建时立即拉取）。
+    const footageUrl = await createPresignedGetUrl(footage.storageKey);
+    const { profile, consentUrl } = await createDigitalTwinProfile({
       ownerId,
-      storeId: body.storeId ?? "",
-      trainingVideoAssetId: body.trainingVideoAssetId ?? "",
-      consentAccepted: Boolean(body.consentAccepted),
-      provider: createMockAvatarProvider()
+      storeId: store.id,
+      name,
+      footageAssetId: footage.id,
+      footageUrl,
+      consentAccepted: true,
+      provider: createProviderFromEnv(),
     });
-
-    const saved = await getAvatarRepository().create(avatar);
-    return jsonOk({ avatar: saved }, 201);
+    const saved = await getAvatarRepository().create(profile);
+    return jsonOk({ avatar: saved, consentUrl }, 201);
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Avatar creation failed");
+    // provider/presign 错误可能含内部细节——日志留全文，客户端只收通用文案（§8）。
+    console.error("[avatars] digital twin creation failed:", error);
+    return jsonError("Avatar creation failed", 502);
   }
 }

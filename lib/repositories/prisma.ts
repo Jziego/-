@@ -168,15 +168,18 @@ export class PrismaAvatarRepository implements AvatarRepository {
   }
 
   async update(id: string, data: Partial<AvatarProfile>): Promise<AvatarProfile> {
+    // `"field" in data` 守卫（而非 `!== undefined`）：调用方显式传 undefined
+    // 表示「清空该字段」（如 consent 重发清 statusReason、ready 时清失败原因），
+    // nullable 列据此置 null——Prisma 对 undefined 值是跳过而非清空。
     const prismaData: Record<string, unknown> = {};
-    if (data.name !== undefined) prismaData.name = data.name;
-    if (data.providerAvatarId !== undefined) prismaData.providerAvatarId = data.providerAvatarId ?? null;
-    if (data.providerVoiceId !== undefined) prismaData.providerVoiceId = data.providerVoiceId ?? null;
-    if (data.providerGroupId !== undefined) prismaData.providerGroupId = data.providerGroupId ?? null;
-    if (data.consentStatus !== undefined) prismaData.consentStatus = data.consentStatus;
-    if (data.trainingStatus !== undefined) prismaData.trainingStatus = data.trainingStatus;
-    if (data.statusReason !== undefined) prismaData.statusReason = data.statusReason ?? null;
-    if (data.updatedAt !== undefined) prismaData.updatedAt = new Date(data.updatedAt);
+    if ("name" in data) prismaData.name = data.name;
+    if ("providerAvatarId" in data) prismaData.providerAvatarId = data.providerAvatarId ?? null;
+    if ("providerVoiceId" in data) prismaData.providerVoiceId = data.providerVoiceId ?? null;
+    if ("providerGroupId" in data) prismaData.providerGroupId = data.providerGroupId ?? null;
+    if ("consentStatus" in data) prismaData.consentStatus = data.consentStatus;
+    if ("trainingStatus" in data) prismaData.trainingStatus = data.trainingStatus;
+    if ("statusReason" in data) prismaData.statusReason = data.statusReason ?? null;
+    if ("updatedAt" in data && data.updatedAt) prismaData.updatedAt = new Date(data.updatedAt);
     const row = await this.prisma.avatarProfile.update({ where: { id }, data: prismaData });
     return toAvatarProfile(row);
   }
