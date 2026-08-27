@@ -52,6 +52,7 @@ export interface RenderRepository {
   findProjectById(id: string): Promise<RenderProject | null>;
   createOutput(output: VideoOutput): Promise<VideoOutput>;
   findOutputById(id: string): Promise<VideoOutput | null>;
+  /** segmented_voice 是 Phase 3 分段口播产物，同为 video_render 的配音源。 */
   findTalkingHeadOutputByProject(projectId: string): Promise<VideoOutput | null>;
   listOutputsByOwner(ownerId: string, limit?: number): Promise<VideoOutput[]>;
   updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject>;

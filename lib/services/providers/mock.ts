@@ -8,12 +8,15 @@ interface MockProviderOptions {
   failTalkingHead?: boolean;
   failDigitalTwin?: boolean;
   failTts?: boolean;
+  /** 仅第一次 synthesizeSpeech 抛错（TTS 重试路径测试用）。 */
+  failTtsOnce?: boolean;
   /** 每次 getDigitalTwinStatus 调用弹出序列头；耗尽后保持最后一个。 */
   twinStatusSequence?: DigitalTwinStatus[];
 }
 
 export function createMockProvider(options: MockProviderOptions = {}): AvatarProvider {
   const statusQueue = [...(options.twinStatusSequence ?? [])];
+  let ttsAttempts = 0;
   return {
     name: "mock-avatar",
     async createAvatar() {
@@ -52,7 +55,8 @@ export function createMockProvider(options: MockProviderOptions = {}): AvatarPro
       };
     },
     async synthesizeSpeech(input) {
-      if (options.failTts) {
+      ttsAttempts += 1;
+      if (options.failTts || (options.failTtsOnce && ttsAttempts === 1)) {
         throw new Error("Mock provider TTS failed");
       }
       const chars = Array.from(input.text);

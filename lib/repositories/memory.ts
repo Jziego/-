@@ -180,8 +180,11 @@ export class MemoryRenderRepository implements RenderRepository {
   }
 
   async findTalkingHeadOutputByProject(projectId: string): Promise<VideoOutput | null> {
+    // segmented_voice 是 Phase 3 分段口播产物，同为 video_render 的配音源。
     const matches = getRuntimeState()
-      .outputs.filter((o) => o.renderProjectId === projectId && o.kind === "talking_head")
+      .outputs.filter(
+        (o) => o.renderProjectId === projectId && ["talking_head", "segmented_voice"].includes(o.kind)
+      )
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     return matches[0] ?? null;
   }

@@ -201,7 +201,7 @@ export interface Job {
   updatedAt: string;
 }
 
-export type VideoOutputKind = "talking_head" | "final_composite" | "slideshow";
+export type VideoOutputKind = "talking_head" | "segmented_voice" | "final_composite" | "slideshow";
 
 export interface VideoOutput {
   id: string;

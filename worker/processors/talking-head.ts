@@ -4,8 +4,16 @@ import type { AvatarProvider } from "@/lib/services/avatar-provider";
 import { createProviderFromEnv, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
 import {
   isPlatformAvatarId,
-  resolvePlatformProviderIds
+  resolvePlatformProviderIds,
 } from "@/lib/services/platform-avatar";
+import {
+  planSegmentSynthesis,
+  voiceTrackManifestKey,
+  type ResolvedSpeaker,
+  type VoiceTrackManifest,
+  type VoiceTrackSegment,
+} from "@/lib/services/voice-track";
+import { putObjectFromBuffer } from "@/lib/storage";
 import {
   getAvatarRepository,
   getRenderRepository,
@@ -16,7 +24,7 @@ import type {
   RenderRepository,
   ScriptRepository
 } from "@/lib/repositories/types";
-import type { VideoOutput } from "@/lib/types";
+import type { AvatarProfile, VideoOutput } from "@/lib/types";
 import type { ProcessorFn } from "./index";
 
 export interface TalkingHeadDeps {
@@ -24,92 +32,227 @@ export interface TalkingHeadDeps {
   scriptRepository: ScriptRepository;
   renderRepository: RenderRepository;
   provider: AvatarProvider;
+  /** manifest JSON 上传（默认 R2）；测试注入捕获。 */
+  uploadManifest: (key: string, manifest: VoiceTrackManifest) => Promise<void>;
 }
 
+const defaultUploadManifest = async (key: string, manifest: VoiceTrackManifest): Promise<void> => {
+  await putObjectFromBuffer(key, new TextEncoder().encode(JSON.stringify(manifest)), "application/json");
+};
+
 /**
- * talking_head processor: resolves the avatar profile + script voiceover from
- * the job payload, asks the avatar provider to synthesize the talking-head
- * video, and persists the product as a VideoOutput(kind="talking_head") so the
- * downstream video_render job can fetch it. Reports real progress via
- * job.updateProgress during the (1-5min) provider poll.
+ * talking_head processor（Phase 3 分段版）：draft.segments 非空时按段合成——
+ * 出镜段生成该形象的数字人视频（音视频一体），画外音段用该形象克隆声音 TTS
+ * （拿词级时间轴），产物清单持久化为 R2 上的 voice-track manifest，并以
+ * VideoOutput(kind="segmented_voice", storageKey=manifest key) 供 video_render
+ * 消费；TTS 重试 1 次仍失败的段降级为数字人视频（fellBackToVideo）。
+ * draft.segments 为空（老数据）时保持 legacy 整段单视频路径。
  *
- * Expected job payload: { avatarProfileId, scriptDraftId }
+ * Expected job payload: { avatarProfileIds: string[], scriptDraftId }
+ * （legacy 单形象 payload: { avatarProfileId, scriptDraftId }）
  */
 export const talkingHeadProcessor: ProcessorFn = (job) =>
   processTalkingHead(job, {
     avatarRepository: getAvatarRepository(),
     scriptRepository: getScriptRepository(),
     renderRepository: getRenderRepository(),
-    provider: createProviderFromEnv()
+    provider: createProviderFromEnv(),
+    uploadManifest: defaultUploadManifest
   });
+
+/** payload → 有序 speaker 解析（含平台公共形象；缺失/未就绪直接抛错走 job 重试）。 */
+async function resolveSpeakers(
+  ids: string[],
+  deps: Pick<TalkingHeadDeps, "avatarRepository" | "provider">,
+  ownerId: string,
+): Promise<ResolvedSpeaker[]> {
+  const speakers: ResolvedSpeaker[] = [];
+  for (const id of ids) {
+    if (isPlatformAvatarId(id)) {
+      const envIds = resolvePlatformProviderIds();
+      if (envIds) {
+        speakers.push({ profileId: id, ...envIds });
+        continue;
+      }
+      // env 未配模板 → provider 公共形象解析（heygen 公共 stock / mock 随机 id），
+      // 否则 render 项目的 talking_head 永远抛错，卡死父级 video_render。
+      const created = await deps.provider.createAvatar({ trainingVideoAssetId: "", ownerId });
+      speakers.push({
+        profileId: id,
+        providerAvatarId: created.providerAvatarId,
+        providerVoiceId: created.providerVoiceId,
+      });
+      continue;
+    }
+    const avatar: AvatarProfile | null = await deps.avatarRepository.findById(id);
+    if (!avatar?.providerAvatarId) {
+      throw new Error(`Avatar profile ${id} not ready (missing providerAvatarId)`);
+    }
+    speakers.push({
+      profileId: id,
+      providerAvatarId: avatar.providerAvatarId,
+      providerVoiceId: avatar.providerVoiceId,
+    });
+  }
+  return speakers;
+}
 
 export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promise<VideoOutput> {
   const payload = job.data.payload as {
-    avatarProfileId: string;
+    avatarProfileId?: string;
+    avatarProfileIds?: string[];
     scriptDraftId: string;
   };
   const projectId = (job.data.projectId as string | undefined) ?? null;
   const ownerId = (job.data.ownerId as string) ?? "demo_user";
 
-  // 平台公共形象（约定 id）：不查库。provider id 取 env 模板；未配置时回退 provider
-  // 公共 stock 形象——否则 render 项目的 talking_head 永远抛错，卡死父级 video_render。
-  let providerAvatarId: string | undefined;
-  let providerVoiceId: string | undefined;
-  if (isPlatformAvatarId(payload.avatarProfileId)) {
-    const envIds = resolvePlatformProviderIds();
-    if (envIds) {
-      providerAvatarId = envIds.providerAvatarId;
-      providerVoiceId = envIds.providerVoiceId;
-    } else {
-      const stock = await deps.provider.createAvatar({ trainingVideoAssetId: "", ownerId });
-      providerAvatarId = stock.providerAvatarId;
-      providerVoiceId = stock.providerVoiceId;
-    }
-  } else {
-    const avatar = await deps.avatarRepository.findById(payload.avatarProfileId);
-    if (!avatar?.providerAvatarId) {
-      throw new Error(
-        `Avatar profile ${payload.avatarProfileId} not ready (missing providerAvatarId)`,
-      );
-    }
-    providerAvatarId = avatar.providerAvatarId;
-    providerVoiceId = avatar.providerVoiceId;
-  }
   const draft = await deps.scriptRepository.findById(payload.scriptDraftId);
   if (!draft) {
     throw new Error(`Script draft ${payload.scriptDraftId} not found`);
   }
 
-  const result = await requestAvatarTalkingHead({
-    provider: deps.provider,
-    avatarProfileId: payload.avatarProfileId,
-    providerAvatarId,
-    providerVoiceId,
-    scriptText: draft.voiceover,
-    onProgress: (attempt, maxAttempts) => {
-      // Reserve 5..85 for polling; 90/100 reserved for store/finalize below.
-      const pct = 5 + Math.round((attempt / maxAttempts) * 80);
-      void job.updateProgress(pct);
-    }
-  });
-  await job.updateProgress(90);
+  const avatarIds = payload.avatarProfileIds ?? (payload.avatarProfileId ? [payload.avatarProfileId] : []);
+  if (avatarIds.length === 0) {
+    throw new Error("talking_head requires at least one avatarProfileId");
+  }
+  const speakers = await resolveSpeakers(avatarIds, deps, ownerId);
 
-  const output: VideoOutput = {
+  const segments = draft.segments ?? [];
+
+  // ── Legacy 路径：无 segments 的老 draft → 整段单视频（Phase 2 行为） ──
+  if (segments.length === 0) {
+    const speaker = speakers[0] as ResolvedSpeaker;
+    const result = await requestAvatarTalkingHead({
+      provider: deps.provider,
+      avatarProfileId: speaker.profileId,
+      providerAvatarId: speaker.providerAvatarId,
+      providerVoiceId: speaker.providerVoiceId,
+      scriptText: draft.voiceover,
+      onProgress: (attempt, maxAttempts) => {
+        // Reserve 5..85 for polling; 90/100 reserved for store/finalize below.
+        const pct = 5 + Math.round((attempt / maxAttempts) * 80);
+        void job.updateProgress(pct);
+      }
+    });
+    await job.updateProgress(90);
+    const output = buildOutput(projectId, ownerId, result.videoAssetId, result.durationSeconds, "talking_head");
+    await persistOutput(deps, output);
+    await job.updateProgress(100);
+    return output;
+  }
+
+  // ── Phase 3 分段路径 ──
+  const plan = planSegmentSynthesis(segments, speakers, draft.speakerAvatarIds);
+  const trackSegments: VoiceTrackSegment[] = [];
+
+  for (let i = 0; i < plan.length; i++) {
+    const { segment, speaker } = plan[i]!;
+    if (segment.onCamera) {
+      // 出镜段：数字人视频（音视频一体）
+      const result = await deps.provider.generateTalkingHead({
+        providerAvatarId: speaker.providerAvatarId,
+        providerVoiceId: speaker.providerVoiceId,
+        scriptText: segment.text,
+      });
+      trackSegments.push({
+        index: segment.index,
+        speakerIndex: segment.speakerIndex,
+        onCamera: true,
+        text: segment.text,
+        videoStorageKey: result.videoAssetId,
+        durationSec: result.durationSeconds,
+      });
+    } else {
+      // 画外音段：克隆声音 TTS（含词级时间轴）；失败重试 1 次 → 降级数字人视频（spec §6.5）
+      trackSegments.push(await synthesizeOffCameraSegment(segment, speaker, deps.provider));
+    }
+    void job.updateProgress(5 + Math.round(((i + 1) / plan.length) * 80));
+  }
+
+  const manifest: VoiceTrackManifest = {
+    version: 1,
+    segments: trackSegments,
+    totalDurationSec: trackSegments.reduce((acc, s) => acc + s.durationSec, 0),
+  };
+  const manifestKey = voiceTrackManifestKey(projectId ?? job.id ?? createId("job"));
+  await job.updateProgress(90);
+  await deps.uploadManifest(manifestKey, manifest);
+
+  const output = buildOutput(projectId, ownerId, manifestKey, manifest.totalDurationSec, "segmented_voice");
+  await persistOutput(deps, output);
+  await job.updateProgress(100);
+  return output;
+}
+
+async function synthesizeOffCameraSegment(
+  segment: { index: number; speakerIndex: number; text: string },
+  speaker: ResolvedSpeaker,
+  provider: AvatarProvider,
+): Promise<VoiceTrackSegment> {
+  const base = {
+    index: segment.index,
+    speakerIndex: segment.speakerIndex,
+    onCamera: false as const,
+    text: segment.text,
+  };
+  if (!speaker.providerVoiceId) {
+    // 无克隆声音（理论上 ready 形象都有）→ 直接降级数字人视频
+    const result = await provider.generateTalkingHead({
+      providerAvatarId: speaker.providerAvatarId,
+      scriptText: segment.text,
+    });
+    return { ...base, videoStorageKey: result.videoAssetId, durationSec: result.durationSeconds, fellBackToVideo: true };
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const speech = await provider.synthesizeSpeech({
+        providerVoiceId: speaker.providerVoiceId,
+        text: segment.text,
+      });
+      return {
+        ...base,
+        audioStorageKey: speech.audioStorageKey,
+        durationSec: speech.durationSeconds,
+        words: speech.words,
+      };
+    } catch (error) {
+      console.warn(
+        `[talking_head] TTS attempt ${attempt + 1} failed for segment ${segment.index}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  const result = await provider.generateTalkingHead({
+    providerAvatarId: speaker.providerAvatarId,
+    providerVoiceId: speaker.providerVoiceId,
+    scriptText: segment.text,
+  });
+  return { ...base, videoStorageKey: result.videoAssetId, durationSec: result.durationSeconds, fellBackToVideo: true };
+}
+
+function buildOutput(
+  projectId: string | null,
+  ownerId: string,
+  storageKey: string,
+  durationSeconds: number,
+  kind: VideoOutput["kind"],
+): VideoOutput {
+  return {
     id: createId("output"),
     ownerId,
     renderProjectId: projectId,
-    storageKey: result.videoAssetId,
+    storageKey,
     coverStorageKey: undefined,
     aspectRatio: "9:16",
-    durationSeconds: result.durationSeconds,
-    kind: "talking_head",
+    durationSeconds,
+    kind,
     status: "ready",
     createdAt: nowIso()
   };
+}
 
-  // Persist VideoOutput (talking-head product) so video_render can fetch it
-  // via findTalkingHeadOutputByProject. RenderProject status is NOT set here —
-  // finalizeProjectStatus() handles that centrally to avoid concurrent races.
+async function persistOutput(deps: TalkingHeadDeps, output: VideoOutput): Promise<void> {
+  // Persist 供 video_render 经 findTalkingHeadOutputByProject 获取；RenderProject
+  // 状态由 finalizeProjectStatus() 统一收敛，避免并发竞争。
   try {
     await deps.renderRepository.createOutput(output);
   } catch (err) {
@@ -118,7 +261,4 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
     );
     // Still return the output — the DB may not be available in dev
   }
-
-  await job.updateProgress(100);
-  return output;
 }

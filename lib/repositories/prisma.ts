@@ -244,8 +244,9 @@ export class PrismaRenderRepository implements RenderRepository {
   }
 
   async findTalkingHeadOutputByProject(projectId: string): Promise<VideoOutput | null> {
+    // segmented_voice 是 Phase 3 分段口播产物，同为 video_render 的配音源。
     const row = await this.prisma.videoOutput.findFirst({
-      where: { renderProjectId: projectId, kind: "talking_head" },
+      where: { renderProjectId: projectId, kind: { in: ["talking_head", "segmented_voice"] } },
       orderBy: { createdAt: "desc" }
     });
     return row ? toVideoOutput(row) : null;
