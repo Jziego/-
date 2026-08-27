@@ -4,8 +4,7 @@ import {
   buildSegmentedFilterGraph,
   buildSegmentedTimeline,
 } from "@/lib/services/segmented-compose";
-import { parseVoiceTrackManifest } from "@/worker/processors/video-render";
-import type { VoiceTrackManifest } from "@/lib/services/voice-track";
+import { parseVoiceTrackManifest, type VoiceTrackManifest } from "@/lib/services/voice-track";
 import type { Asset } from "@/lib/types";
 
 const videoAsset = (id: string, dur = 6): Asset => ({
@@ -154,5 +153,34 @@ describe("parseVoiceTrackManifest", () => {
     expect(() =>
       parseVoiceTrackManifest({ version: 1, segments: [{ index: 0, onCamera: true, durationSec: "4" }] }),
     ).toThrow(/durationSec/);
+  });
+
+  it("rejects an empty segments array (concat=n=0 would fail far from the root cause)", () => {
+    expect(() => parseVoiceTrackManifest({ version: 1, totalDurationSec: 0, segments: [] })).toThrow(
+      /segments/,
+    );
+  });
+
+  it("rejects segments with no media key (silent audio misalignment guard)", () => {
+    // 既无 videoStorageKey 又无 audioStorageKey 的段会被下载循环与音频 concat 双双跳过，
+    // apad 只在结尾补静音 → 整条音轨静默前移，必须在读端拒绝。
+    expect(() =>
+      parseVoiceTrackManifest({
+        version: 1,
+        totalDurationSec: 4,
+        segments: [{ index: 0, speakerIndex: 0, onCamera: true, text: "x", durationSec: 4 }],
+      }),
+    ).toThrow(/segment 0/);
+    // fellBackToVideo 却缺 videoStorageKey 同样拒绝，错误带段下标
+    expect(() =>
+      parseVoiceTrackManifest({
+        version: 1,
+        totalDurationSec: 9,
+        segments: [
+          { index: 0, speakerIndex: 0, onCamera: true, text: "x", videoStorageKey: "avatars/s0.mp4", durationSec: 4 },
+          { index: 1, speakerIndex: 0, onCamera: false, text: "y", durationSec: 5, fellBackToVideo: true },
+        ],
+      }),
+    ).toThrow(/segment 1/);
   });
 });

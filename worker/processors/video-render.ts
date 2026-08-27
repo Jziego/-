@@ -29,7 +29,7 @@ import {
   buildSegmentedTimeline,
   type SegmentedTimelineSegment
 } from "@/lib/services/segmented-compose";
-import type { VoiceTrackManifest } from "@/lib/services/voice-track";
+import { parseVoiceTrackManifest, type VoiceTrackManifest } from "@/lib/services/voice-track";
 import { probeFileDuration, runFfmpeg, type FfmpegInput } from "@/lib/services/ffmpeg-runner";
 import { mkdtempSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -77,37 +77,6 @@ export interface VideoRenderDeps {
   renderComposite: RenderCompositeFn;
   /** 加载 voice-track manifest（kind="segmented_voice" 时）；测试注入。 */
   loadVoiceTrack: (storageKey: string) => Promise<VoiceTrackManifest>;
-}
-
-/**
- * manifest 是 R2 上的跨 job 持久化契约，读端做最小防御性校验：
- * version===1、segments 为数组、每段 onCamera 为布尔且 durationSec 为正数。
- * 不满足则抛描述性错误（不含密钥/内部路径）。
- */
-export function parseVoiceTrackManifest(raw: unknown): VoiceTrackManifest {
-  if (raw === null || typeof raw !== "object") {
-    throw new Error("voice-track manifest is not an object");
-  }
-  const m = raw as Record<string, unknown>;
-  if (m.version !== 1) {
-    throw new Error(`unsupported voice-track manifest version: ${String(m.version)}`);
-  }
-  if (!Array.isArray(m.segments)) {
-    throw new Error("voice-track manifest segments must be an array");
-  }
-  for (const [i, seg] of (m.segments as unknown[]).entries()) {
-    if (seg === null || typeof seg !== "object") {
-      throw new Error(`voice-track manifest segment ${i} is not an object`);
-    }
-    const s = seg as Record<string, unknown>;
-    if (typeof s.onCamera !== "boolean") {
-      throw new Error(`voice-track manifest segment ${i}: onCamera must be a boolean`);
-    }
-    if (typeof s.durationSec !== "number" || !Number.isFinite(s.durationSec) || s.durationSec <= 0) {
-      throw new Error(`voice-track manifest segment ${i}: durationSec must be a positive number`);
-    }
-  }
-  return raw as VoiceTrackManifest;
 }
 
 const defaultLoadVoiceTrack = async (storageKey: string): Promise<VoiceTrackManifest> => {
