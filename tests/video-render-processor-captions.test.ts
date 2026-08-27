@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { processVideoRender, type VideoRenderDeps, type RenderCompositeInput } from "@/worker/processors/video-render";
 import type { Asset, RenderProject, ScriptDraft, VideoOutput } from "@/lib/types";
+import type { VoiceTrackManifest } from "@/lib/services/voice-track";
 
 const draft: ScriptDraft = {
   id: "script_1",
@@ -70,6 +71,9 @@ function makeDeps(captured: { input?: RenderCompositeInput }, th: VideoOutput | 
       findById: async () => null,
     } as unknown as VideoRenderDeps["bgmTrackRepository"],
     probeAssetDuration: async () => 5, // 素材只有 5s
+    loadVoiceTrack: async () => {
+      throw new Error("loadVoiceTrack not stubbed");
+    },
     renderComposite: async (input: RenderCompositeInput) => {
       captured.input = input;
       return { storageKey: "renders/render_1/output.mp4", durationSeconds: input.totalDurationSec };
@@ -139,5 +143,59 @@ describe("video_render processor: target duration + voiceover captions", () => {
     const ids = (captured.input?.assets ?? []).map((a) => a.id);
     expect(ids).toContain("a1");
     expect(ids).not.toContain("a_av");
+  });
+
+  it("segmented_voice output drives the manifest path (caption per segment, mixed timeline)", async () => {
+    const segmentedVoice: VideoOutput = {
+      ...talkingHead,
+      kind: "segmented_voice",
+      storageKey: "voice-tracks/render_1/manifest.json",
+    };
+    // 两段 manifest：1 出镜(4s) + 1 画外音 TTS(10s)
+    const segManifest: VoiceTrackManifest = {
+      version: 1,
+      totalDurationSec: 14,
+      segments: [
+        { index: 0, speakerIndex: 0, onCamera: true, text: "开场白。", videoStorageKey: "avatars/s0.mp4", durationSec: 4 },
+        { index: 1, speakerIndex: 0, onCamera: false, text: "介绍产品。", audioStorageKey: "voices/s1.mp3", durationSec: 10 },
+      ],
+    };
+
+    const captured: { input?: RenderCompositeInput } = {};
+    const loadedKeys: string[] = [];
+    const segProject: RenderProject = { ...project, targetDurationSec: undefined };
+    const deps = makeDeps(captured, segmentedVoice);
+    deps.renderRepository = {
+      findProjectById: async () => segProject,
+      findTalkingHeadOutputByProject: async () => segmentedVoice,
+      createOutput: async (o: VideoOutput) => o,
+    } as unknown as VideoRenderDeps["renderRepository"];
+    deps.loadVoiceTrack = async (key: string) => {
+      loadedKeys.push(key);
+      return segManifest;
+    };
+
+    await processVideoRender(fakeJob, deps);
+
+    // manifest 按分段产物的 storageKey 加载，并透传给 renderComposite
+    expect(loadedKeys).toEqual(["voice-tracks/render_1/manifest.json"]);
+    expect(captured.input?.voiceTrack).toBe(segManifest);
+
+    // 字幕：每段一条 Dialogue，边界 = 段真实时长累计
+    const ass = captured.input?.assContent ?? "";
+    const dialogues = ass.split("\n").filter((l) => l.startsWith("Dialogue:"));
+    expect(dialogues).toHaveLength(2);
+    expect(dialogues[0]).toContain("0:00:00.00,0:00:04.00");
+    expect(dialogues[0]).toContain("开场白。");
+    expect(dialogues[1]).toContain("0:00:04.00,0:00:14.00");
+    expect(dialogues[1]).toContain("介绍产品。");
+
+    // 时间线混排：presenter 段精确 4s + broll 铺满 10s 窗口，总时长 = voice 14s
+    const segs = captured.input?.segments ?? [];
+    expect(segs[0]).toMatchObject({ role: "presenter", durationSec: 4 });
+    const broll = segs.filter((s) => s.role === "broll");
+    expect(broll.length).toBeGreaterThan(0);
+    expect(broll.reduce((acc, s) => acc + s.durationSec, 0)).toBeCloseTo(10, 5);
+    expect(captured.input?.totalDurationSec).toBeCloseTo(14, 5);
   });
 });

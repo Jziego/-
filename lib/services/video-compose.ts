@@ -233,7 +233,7 @@ function assTimestamp(sec: number): string {
  * special, so Windows paths like C:\...\subs.ass must be escaped. Backslashes
  * are converted to forward slashes first. A no-op for Unix paths.
  */
-function escapeFilterPath(p: string): string {
+export function escapeFilterPath(p: string): string {
   return p
     .replace(/\\/g, "/")
     .replace(/:/g, "\\:")

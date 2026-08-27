@@ -23,6 +23,13 @@ import {
   type CompositionMode,
   type TimelineSegment
 } from "@/lib/services/video-compose";
+import {
+  buildSegmentedCaptionCues,
+  buildSegmentedFilterGraph,
+  buildSegmentedTimeline,
+  type SegmentedTimelineSegment
+} from "@/lib/services/segmented-compose";
+import type { VoiceTrackManifest } from "@/lib/services/voice-track";
 import { probeFileDuration, runFfmpeg, type FfmpegInput } from "@/lib/services/ffmpeg-runner";
 import { mkdtempSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -49,6 +56,8 @@ export interface RenderCompositeInput {
   assContent: string;
   subtitleStyle: string;
   talkingHead: VideoOutput | null;
+  /** Phase 3 分段口播 manifest（talkingHead.kind="segmented_voice" 时加载）；驱动混排时间线与分段 filter graph。 */
+  voiceTrack?: VoiceTrackManifest | null;
   assets: Asset[];
   bgmTrack: BgmTrack | null;
   aspectRatio: string;
@@ -66,7 +75,45 @@ export interface VideoRenderDeps {
   /** Returns real duration (seconds) for a video asset; undefined for images / on failure. */
   probeAssetDuration: (asset: Asset) => Promise<number | undefined>;
   renderComposite: RenderCompositeFn;
+  /** 加载 voice-track manifest（kind="segmented_voice" 时）；测试注入。 */
+  loadVoiceTrack: (storageKey: string) => Promise<VoiceTrackManifest>;
 }
+
+/**
+ * manifest 是 R2 上的跨 job 持久化契约，读端做最小防御性校验：
+ * version===1、segments 为数组、每段 onCamera 为布尔且 durationSec 为正数。
+ * 不满足则抛描述性错误（不含密钥/内部路径）。
+ */
+export function parseVoiceTrackManifest(raw: unknown): VoiceTrackManifest {
+  if (raw === null || typeof raw !== "object") {
+    throw new Error("voice-track manifest is not an object");
+  }
+  const m = raw as Record<string, unknown>;
+  if (m.version !== 1) {
+    throw new Error(`unsupported voice-track manifest version: ${String(m.version)}`);
+  }
+  if (!Array.isArray(m.segments)) {
+    throw new Error("voice-track manifest segments must be an array");
+  }
+  for (const [i, seg] of (m.segments as unknown[]).entries()) {
+    if (seg === null || typeof seg !== "object") {
+      throw new Error(`voice-track manifest segment ${i} is not an object`);
+    }
+    const s = seg as Record<string, unknown>;
+    if (typeof s.onCamera !== "boolean") {
+      throw new Error(`voice-track manifest segment ${i}: onCamera must be a boolean`);
+    }
+    if (typeof s.durationSec !== "number" || !Number.isFinite(s.durationSec) || s.durationSec <= 0) {
+      throw new Error(`voice-track manifest segment ${i}: durationSec must be a positive number`);
+    }
+  }
+  return raw as VoiceTrackManifest;
+}
+
+const defaultLoadVoiceTrack = async (storageKey: string): Promise<VoiceTrackManifest> => {
+  const bytes = await getObjectToBuffer(storageKey);
+  return parseVoiceTrackManifest(JSON.parse(new TextDecoder().decode(bytes)));
+};
 
 /**
  * video_render processor — real ffmpeg composite (Mode C: digital-human
@@ -84,7 +131,8 @@ export const videoRenderProcessor: ProcessorFn = (job) =>
     assetRepository: getAssetRepository(),
     bgmTrackRepository: getBgmTrackRepository(),
     probeAssetDuration: defaultProbeAssetDuration,
-    renderComposite: defaultRenderComposite
+    renderComposite: defaultRenderComposite,
+    loadVoiceTrack: defaultLoadVoiceTrack
   });
 
 /**
@@ -120,6 +168,12 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
   const talkingHead = await deps.renderRepository.findTalkingHeadOutputByProject(projectId);
   const mode = resolveCompositionMode(talkingHead);
 
+  // Phase 3：segmented_voice 产物 → 加载 manifest 走混排时间线；否则保持 Phase 1/2 行为。
+  const voiceTrack =
+    talkingHead?.kind === "segmented_voice"
+      ? await deps.loadVoiceTrack(talkingHead.storageKey)
+      : null;
+
   // Resolve selected assets (filter to existing ones). avatar_footage 是数字分身
   // 训练素材，即使用户端把它塞进 selectedAssetIds 也绝不进 b-roll 时间线。
   const assetResults = await Promise.all(
@@ -140,14 +194,30 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
     if (entry && typeof entry[1] === "number") assetDurations[entry[0]] = entry[1];
   }
 
-  const { segments, totalDurationSec } = buildTimeline({
-    scenes: draft.scenes,
-    assets,
-    selectedAssetIds: project.selectedAssetIds,
-    assetDurations,
-    talkingHeadDurationSec: talkingHead?.durationSeconds,
-    targetDurationSec: project.targetDurationSec
-  });
+  let segments: TimelineSegment[];
+  let totalDurationSec: number;
+  if (voiceTrack) {
+    const built = buildSegmentedTimeline({
+      manifest: voiceTrack,
+      assets,
+      selectedAssetIds: project.selectedAssetIds,
+      assetDurations,
+      targetDurationSec: project.targetDurationSec
+    });
+    segments = built.segments;
+    totalDurationSec = built.totalDurationSec;
+  } else {
+    const built = buildTimeline({
+      scenes: draft.scenes,
+      assets,
+      selectedAssetIds: project.selectedAssetIds,
+      assetDurations,
+      talkingHeadDurationSec: talkingHead?.durationSeconds,
+      targetDurationSec: project.targetDurationSec
+    });
+    segments = built.segments;
+    totalDurationSec = built.totalDurationSec;
+  }
 
   const bgmTrack = project.bgmTrackId
     ? await deps.bgmTrackRepository.findById(project.bgmTrackId)
@@ -155,8 +225,12 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
 
   // Subtitles follow the voiceover (Bug 3 fix): presenter mode burns the spoken
   // script; asset_only has no voice track, hence no subtitles at all.
-  const captionCues =
-    mode === "presenter_broll" ? buildCaptionCues(draft.voiceover, totalDurationSec) : [];
+  // 分段模式：每段一条 cue，边界 = 段真实时长（TTS 词级时间轴天然精准）。
+  const captionCues = voiceTrack
+    ? buildSegmentedCaptionCues(voiceTrack)
+    : mode === "presenter_broll"
+      ? buildCaptionCues(draft.voiceover, totalDurationSec)
+      : [];
 
   const { storageKey, durationSeconds } = await deps.renderComposite({
     projectId,
@@ -165,6 +239,7 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
     assContent: buildAss(captionCues, resolveSubtitlePreset(project.subtitleStyle), draft.highlights),
     subtitleStyle: project.subtitleStyle,
     talkingHead,
+    voiceTrack,
     assets,
     bgmTrack,
     aspectRatio: project.aspectRatio,
@@ -214,14 +289,33 @@ export const defaultRenderComposite: RenderCompositeFn = async (input) => {
     const inputs: FfmpegInput[] = [];
     const assetInputIndex: Record<string, number> = {};
     let talkingHeadInputIndex: number | undefined;
+    const segmentVideoInputIndex: Record<number, number> = {};
+    const segmentAudioInputIndex: Record<number, number> = {};
+    let nextIdx = 0;
 
-    if (input.mode === "presenter_broll" && input.talkingHead) {
+    if (input.voiceTrack) {
+      // 分段产物下载：onCamera/降级段是 mp4；画外音段是 TTS mp3。
+      for (let m = 0; m < input.voiceTrack.segments.length; m++) {
+        const seg = input.voiceTrack.segments[m]!;
+        if (seg.videoStorageKey) {
+          const p = join(dir, `seg-${m}.mp4`);
+          await downloadToFile(seg.videoStorageKey, p);
+          segmentVideoInputIndex[m] = nextIdx++;
+          inputs.push({ path: p, isImage: false });
+        } else if (seg.audioStorageKey) {
+          const p = join(dir, `seg-${m}.mp3`);
+          await downloadToFile(seg.audioStorageKey, p);
+          segmentAudioInputIndex[m] = nextIdx++;
+          inputs.push({ path: p, isImage: false });
+        }
+      }
+    } else if (input.mode === "presenter_broll" && input.talkingHead) {
       const thPath = join(dir, "th.mp4");
       await downloadToFile(input.talkingHead.storageKey, thPath);
       talkingHeadInputIndex = 0;
       inputs.push({ path: thPath, isImage: false });
+      nextIdx = 1;
     }
-    let nextIdx = talkingHeadInputIndex !== undefined ? talkingHeadInputIndex + 1 : 0;
 
     // Dedup assets across broll segments.
     const seen = new Set<string>();
@@ -260,17 +354,30 @@ export const defaultRenderComposite: RenderCompositeFn = async (input) => {
     const assPath = join(dir, "subs.ass");
     await writeFile(assPath, input.assContent, "utf8");
 
-    const filter = buildFilterGraph({
-      mode: input.mode,
-      segments: input.segments,
-      assetInputIndex,
-      talkingHeadInputIndex,
-      bgmInputIndex,
-      assPath,
-      width,
-      height,
-      totalDurationSec: input.totalDurationSec
-    });
+    const filter = input.voiceTrack
+      ? buildSegmentedFilterGraph({
+          segments: input.segments as SegmentedTimelineSegment[],
+          manifest: input.voiceTrack,
+          segmentVideoInputIndex,
+          segmentAudioInputIndex,
+          assetInputIndex,
+          bgmInputIndex,
+          assPath,
+          width,
+          height,
+          totalDurationSec: input.totalDurationSec
+        })
+      : buildFilterGraph({
+          mode: input.mode,
+          segments: input.segments,
+          assetInputIndex,
+          talkingHeadInputIndex,
+          bgmInputIndex,
+          assPath,
+          width,
+          height,
+          totalDurationSec: input.totalDurationSec
+        });
 
     const outPath = join(dir, "output.mp4");
     await runFfmpeg({
