@@ -41,8 +41,9 @@ export interface SegmentSynthesisPlan {
 }
 
 /**
- * 逐段 → 说话人解析。speakerIndex 经 draft.speakerAvatarIds 对齐到本次选中的
- * 形象列表；id 不在选中集（用户取消勾选）或下标越界 → 回退第一个选中形象。
+ * 逐段 → 说话人解析。speakerIndex 先经 draft.speakerAvatarIds 对齐到本次选中的
+ * 形象列表（byId）；id 不在选中集（用户取消勾选）→ 按 clamp 后的 speakerIndex
+ * 位置回退（byIndex，保持轮播节奏）；speakers[0] 仅作最终兜底。
  */
 export function planSegmentSynthesis(
   segments: ScriptSegment[],

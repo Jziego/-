@@ -434,5 +434,30 @@ describe("talking_head processor", () => {
       expect(output.storageKey).toMatch(/^avatar_video_/);
       expect(uploadManifest).not.toHaveBeenCalled();
     });
+
+    it("forceLegacy: preview jobs keep the single-video path even when the draft has segments", async () => {
+      await seedAvatarAndDraft("provider_av_1");
+      const draft = await seedSegmentedDraft({ voiceover: "开场白。画外音介绍产品细节。" });
+      const uploadManifest = manifestSpy();
+      const seenTexts: string[] = [];
+      const provider: AvatarProvider = {
+        ...createMockProvider(),
+        async generateTalkingHead(input) {
+          seenTexts.push(input.scriptText);
+          return { videoAssetId: "avatar_video_legacy.mp4", durationSeconds: 15 };
+        }
+      };
+
+      const output = await processTalkingHead(
+        makeSegmentJob({ avatarProfileId: "av_1", scriptDraftId: draft.id, forceLegacy: true }),
+        depsWith(provider, uploadManifest)
+      );
+
+      expect(output.kind).toBe("talking_head");
+      expect(output.storageKey).toBe("avatar_video_legacy.mp4");
+      expect(uploadManifest).not.toHaveBeenCalled();
+      // 整段口播文本（而非分段文本）走 requestAvatarTalkingHead 单视频路径
+      expect(seenTexts).toEqual(["开场白。画外音介绍产品细节。"]);
+    });
   });
 });

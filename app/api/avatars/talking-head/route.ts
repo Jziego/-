@@ -16,6 +16,9 @@ import type { Job } from "@/lib/types";
  * persists it as a VideoOutput(kind="talking_head"), and the client tracks
  * progress via /api/jobs/:id/progress (SSE).
  *
+ * 预览契约：恒定整段单视频（forceLegacy=true）——即使 Phase 3 的 draft 带
+ * segments，预览也不走分段 voice-track 路径（那产物是 manifest JSON，不可直接播放）。
+ *
  * Body: { avatarProfileId, scriptDraftId }
  */
 export async function POST(request: Request) {
@@ -74,7 +77,9 @@ export async function POST(request: Request) {
     progress: 0,
     payload: {
       avatarProfileId: avatar.id,
-      scriptDraftId: draft.id
+      scriptDraftId: draft.id,
+      // 预览契约：恒定整段单视频 kind="talking_head"（见上方 docstring）
+      forceLegacy: true
     },
     dependsOnJobIds: [],
     createdAt: now,

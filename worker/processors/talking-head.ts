@@ -46,10 +46,11 @@ const defaultUploadManifest = async (key: string, manifest: VoiceTrackManifest):
  * （拿词级时间轴），产物清单持久化为 R2 上的 voice-track manifest，并以
  * VideoOutput(kind="segmented_voice", storageKey=manifest key) 供 video_render
  * 消费；TTS 重试 1 次仍失败的段降级为数字人视频（fellBackToVideo）。
- * draft.segments 为空（老数据）时保持 legacy 整段单视频路径。
+ * draft.segments 为空（老数据）或 payload.forceLegacy=true（预览端点契约：
+ * 恒定整段单视频 kind="talking_head"）时保持 legacy 整段单视频路径。
  *
- * Expected job payload: { avatarProfileIds: string[], scriptDraftId }
- * （legacy 单形象 payload: { avatarProfileId, scriptDraftId }）
+ * Expected job payload: { avatarProfileIds: string[], scriptDraftId, forceLegacy? }
+ * （legacy 单形象 payload: { avatarProfileId, scriptDraftId, forceLegacy? }）
  */
 export const talkingHeadProcessor: ProcessorFn = (job) =>
   processTalkingHead(job, {
@@ -102,6 +103,8 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
     avatarProfileId?: string;
     avatarProfileIds?: string[];
     scriptDraftId: string;
+    /** 预览端点（/api/avatars/talking-head）契约：强制整段单视频，忽略 draft.segments。 */
+    forceLegacy?: boolean;
   };
   const projectId = (job.data.projectId as string | undefined) ?? null;
   const ownerId = (job.data.ownerId as string) ?? "demo_user";
@@ -119,8 +122,8 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
 
   const segments = draft.segments ?? [];
 
-  // ── Legacy 路径：无 segments 的老 draft → 整段单视频（Phase 2 行为） ──
-  if (segments.length === 0) {
+  // ── Legacy 路径：无 segments 的老 draft，或预览端点显式 forceLegacy → 整段单视频 ──
+  if (payload.forceLegacy || segments.length === 0) {
     const speaker = speakers[0] as ResolvedSpeaker;
     const result = await requestAvatarTalkingHead({
       provider: deps.provider,
