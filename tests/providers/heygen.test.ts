@@ -212,9 +212,15 @@ describe("heygen provider", () => {
     expect(onProgress.mock.calls[0][0]).toBeGreaterThanOrEqual(1);
   });
 
-  it("createDigitalTwin posts v3/avatars then fetches the consent url", async () => {
+  it("createDigitalTwin downloads footage, uploads as HeyGen asset, then creates with asset_id", async () => {
     mockFetch
+      // 1. 从 R2 预签名 URL 下载训练视频（非 HeyGen 域，无 X-Api-Key）
+      .mockResolvedValueOnce(new Response(new Uint8Array([9, 8, 7]), { status: 200 }))
+      // 2. 直传 POST /v3/assets → asset_id（绕开 URL 输入的大小上限——93.7MB 实测被拒）
+      .mockResolvedValueOnce(jsonResponse({ data: { asset_id: "ast_1" } }))
+      // 3. 用 asset_id 创建 digital_twin
       .mockResolvedValueOnce(jsonResponse({ data: { group_id: "grp_1" } }))
+      // 4. 取授权链接
       .mockResolvedValueOnce(jsonResponse({ data: { url: "https://consent.heygen.com/abc" } }));
 
     const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
@@ -224,16 +230,40 @@ describe("heygen provider", () => {
     });
 
     expect(result).toEqual({ groupId: "grp_1", consentUrl: "https://consent.heygen.com/abc" });
-    const createCall = mockFetch.mock.calls[0];
-    expect(createCall[0]).toBe("https://api.heygen.com/v3/avatars");
-    const body = JSON.parse(createCall[1].body as string);
-    // Task 0 实测契约：footage 走嵌套 file 对象（平铺 video_url / multipart 均被拒）
-    expect(body).toMatchObject({
+    const [downloadCall, uploadCall, createCall, consentCall] = mockFetch.mock.calls;
+    expect(downloadCall[0]).toBe("https://cdn.example.com/f.mp4");
+    expect(downloadCall[1]?.headers).toBeUndefined();
+    expect(uploadCall[0]).toBe("https://api.heygen.com/v3/assets");
+    expect(uploadCall[1].method).toBe("POST");
+    expect(uploadCall[1].headers).toMatchObject({ "X-Api-Key": "hk_test_key" });
+    // multipart：body 是 FormData，且不得手设 JSON Content-Type（fetch 自动带 boundary）
+    expect(uploadCall[1].body).toBeInstanceOf(FormData);
+    expect(uploadCall[1].headers["Content-Type"]).toBeUndefined();
+    const createBody = JSON.parse(createCall[1].body as string);
+    expect(createBody).toMatchObject({
       type: "digital_twin",
       name: "店主",
-      file: { type: "url", url: "https://cdn.example.com/f.mp4" },
+      file: { type: "asset_id", asset_id: "ast_1" },
     });
-    expect(mockFetch.mock.calls[1][0]).toBe("https://api.heygen.com/v3/avatars/grp_1/consent");
+    expect(consentCall[0]).toBe("https://api.heygen.com/v3/avatars/grp_1/consent");
+  });
+
+  it("createDigitalTwin throws when the footage download fails", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    await expect(
+      createHeyGenProvider().createDigitalTwin({ name: "x", footageUrl: "https://cdn.example.com/f.mp4" }),
+    ).rejects.toThrow(/download failed: 403/i);
+  });
+
+  it("createDigitalTwin throws when the asset upload returns no asset_id", async () => {
+    mockFetch
+      .mockResolvedValueOnce(new Response(new Uint8Array([9]), { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse({ data: {} }));
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    await expect(
+      createHeyGenProvider().createDigitalTwin({ name: "x", footageUrl: "https://cdn.example.com/f.mp4" }),
+    ).rejects.toThrow(/asset_id/i);
   });
 
   it("getDigitalTwinStatus maps group fields to the normalized state machine", async () => {

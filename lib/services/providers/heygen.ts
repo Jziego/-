@@ -15,6 +15,8 @@ import type {
 
 const HEYGEN_BASE_URL = "https://api.heygen.com";
 const REQUEST_TIMEOUT_MS = 30_000;
+/** 分身训练素材的下行/上行预算：文件常达几十上百 MB，30s 不够。 */
+const FOOTAGE_TRANSFER_TIMEOUT_MS = 120_000;
 
 // ── HTTP helpers ────────────────────────────────────────────────────────────
 
@@ -56,7 +58,8 @@ async function heyGenRequest<T>(
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`HeyGen API ${res.status}: ${text.slice(0, 200)}`);
+      // 500 字符：HeyGen 的 invalid_parameter 消息含具体上限值，200 会截断关键信息
+      throw new Error(`HeyGen API ${res.status}: ${text.slice(0, 500)}`);
     }
 
     return (await res.json()) as T;
@@ -70,9 +73,12 @@ async function heyGenRequest<T>(
 }
 
 /** Download the rendered video bytes from a (presigned) video_url. */
-async function downloadVideoBytes(url: string): Promise<Uint8Array> {
+async function downloadVideoBytes(
+  url: string,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<Uint8Array<ArrayBuffer>> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
@@ -83,7 +89,49 @@ async function downloadVideoBytes(url: string): Promise<Uint8Array> {
   } catch (error) {
     clearTimeout(timer);
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`HeyGen video download timeout after ${REQUEST_TIMEOUT_MS}ms`);
+      throw new Error(`HeyGen video download timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * 直传训练素材到 HeyGen：POST /v3/assets（multipart）→ asset_id。
+ * 官方建议 asset_id 优先于 URL——URL 输入有大小上限（实测 93.7MB 被拒）
+ * 且依赖 HeyGen 能直连我们的存储；直传两者都绕开。
+ * 注意：multipart 不能手设 Content-Type，fetch 会自动带 boundary。
+ */
+async function heyGenUploadAsset(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const apiKey = getAvatarProviderApiKey();
+  if (!apiKey) {
+    throw new Error("AVATAR_PROVIDER_API_KEY is not configured");
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FOOTAGE_TRANSFER_TIMEOUT_MS);
+  try {
+    const form = new FormData();
+    form.append("file", new Blob([bytes]), "footage"); // HeyGen 按字节嗅探 MIME
+    const res = await fetch(`${HEYGEN_BASE_URL}/v3/assets`, {
+      method: "POST",
+      headers: { "X-Api-Key": apiKey },
+      body: form,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HeyGen API ${res.status}: ${text.slice(0, 500)}`);
+    }
+    const json = (await res.json()) as HeyGenEnvelope<{ asset_id?: string }>;
+    const assetId = json.data?.asset_id;
+    if (!assetId) {
+      throw new Error("HeyGen asset upload returned no asset_id");
+    }
+    return assetId;
+  } catch (error) {
+    clearTimeout(timer);
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`HeyGen asset upload timeout after ${FOOTAGE_TRANSFER_TIMEOUT_MS}ms`);
     }
     throw error;
   }
@@ -231,11 +279,15 @@ export function createHeyGenProvider(): AvatarProvider {
     },
 
     async createDigitalTwin(input) {
-      // Task 0 实测契约：footage 走嵌套 file 对象（平铺 video_url / multipart 均被拒）
+      // 契约：POST /v3/avatars 的 file 支持 url / asset_id / base64 三种。
+      // 选 asset_id：URL 输入有大小上限（93.7MB 实测被 400 拒）且要求 HeyGen
+      // 能直连 URL；asset_id 由我们先下载再直传，无这两个约束。
+      const footage = await downloadVideoBytes(input.footageUrl, FOOTAGE_TRANSFER_TIMEOUT_MS);
+      const assetId = await heyGenUploadAsset(footage);
       const createRes = await heyGenRequest<HeyGenEnvelope<{ group_id?: string; avatar_group_id?: string; id?: string }>>(
         "/v3/avatars",
         "POST",
-        { type: "digital_twin", name: input.name, file: { type: "url", url: input.footageUrl } },
+        { type: "digital_twin", name: input.name, file: { type: "asset_id", asset_id: assetId } },
       );
       const groupId = createRes.data?.group_id ?? createRes.data?.avatar_group_id ?? createRes.data?.id;
       if (!groupId) throw new Error("HeyGen digital_twin create returned no group id");
