@@ -95,8 +95,8 @@ R2 bucket → Settings → CORS Policy，允许 web 域名直传 PUT、预检 OP
 |------|------|--------|------|
 | `OPENAI_API_KEY` | ✅ | OpenAI 兼容 key | 脚本生成 / 素材分析 |
 | `OPENAI_BASE_URL` | ✅ | `https://api.openai.com/v1` 等 | OpenAI 兼容端点 |
-| `AVATAR_PROVIDER` | ❌ | `heygen` | 留空或无 key → 走 mock 数字人 |
-| `AVATAR_PROVIDER_API_KEY` | ❌ | HeyGen key | 未配 → mock 降级 |
+| `AVATAR_PROVIDER` | ⚠️ | `heygen` | production 必填：**web 和 worker 都要配**；web 未配 → 创建分身接口 503（demo 才走 mock） |
+| `AVATAR_PROVIDER_API_KEY` | ⚠️ | HeyGen key | 同上；Phase 3 起 web 直接调 HeyGen 创建分身/轮询状态，不是只配 worker |
 
 ### 3.6 监控（Sentry，可选）
 | 变量 | 说明 |
@@ -184,7 +184,7 @@ Zeabur 新版 UI 无独立 Build Type / Dockerfile Path 字段，worker 用 Sett
 | 项 | 现状 | 后续 |
 |----|------|------|
 | **微信 OAuth** | 需企业 AppID；未配则隐藏按钮 | 取得 AppID 后配 `WECHAT_APP_ID/SECRET` |
-| **HeyGen 数字人** | 需付费 key；未配走 mock（占位 video） | 取得 key 后配 `AVATAR_PROVIDER_API_KEY` |
+| **HeyGen 数字人** | 需付费 key；production 未配则分身接口 503（不再静默 mock） | web + worker 均配 `AVATAR_PROVIDER=heygen` + `AVATAR_PROVIDER_API_KEY` |
 | **Resend 邮件** | 生产未配 `RESEND_API_KEY` 则 magic-link 无法发送 | 上线前必须配真实 key + 验证发件域名 |
 | **多实例** | 外层 IP 限流 + JWT 黑名单均走 Redis 后端，**多实例安全**；内层 userId 限流亦 Redis 共享 | 可水平扩展 web 实例 |
 | **middleware runtime** | 已锁定 `nodejs`（`middleware.ts`），ioredis 可用，黑名单不再 Edge fail-open | — |

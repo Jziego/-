@@ -12,6 +12,7 @@ import {
   createScriptDraftApi,
   createUploadIntentApi,
   deleteAsset,
+  deleteAvatarApi,
   fetchAssetAnalyses,
   fetchAssetPreviewUrl,
   fetchAssets,
@@ -956,6 +957,19 @@ export function Dashboard() {
     }
   }
 
+  async function handleDeleteAvatar(avatarId: string) {
+    // 只删本站记录；HeyGen 侧已训练的形象仍占订阅槽位，需到 HeyGen 控制台另行删除。
+    if (!window.confirm("确定删除这个分身吗？删除后不可恢复。")) return;
+    try {
+      await deleteAvatarApi(avatarId);
+      setLocalAvatar((prev) => (prev?.id === avatarId ? null : prev));
+      await queryClient.invalidateQueries({ queryKey: ["avatars"] });
+      setMessage("分身已删除。");
+    } catch {
+      setMessage("删除分身失败，请稍后重试。");
+    }
+  }
+
   async function generateScript() {
     if (pendingAction || generating) return;
     if (!store) {
@@ -1457,6 +1471,13 @@ export function Dashboard() {
                       重新发起授权
                     </button>
                   ) : null}
+                  <button
+                    className="secondaryButton"
+                    onClick={() => void handleDeleteAvatar(a.id)}
+                    type="button"
+                  >
+                    删除
+                  </button>
                 </li>
               ))}
             </ul>

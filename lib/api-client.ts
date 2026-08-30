@@ -226,6 +226,12 @@ export async function reissueAvatarConsentApi(
   );
 }
 
+export async function deleteAvatarApi(avatarId: string): Promise<{ deleted: boolean }> {
+  return api<{ deleted: boolean }>(`/api/avatars/${encodeURIComponent(avatarId)}`, {
+    method: "DELETE"
+  });
+}
+
 export async function requestTalkingHeadApi(input: {
   avatarProfileId: string;
   scriptDraftId: string;

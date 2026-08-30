@@ -27,6 +27,18 @@ describe("createProviderFromEnv factory", () => {
     expect(createProviderFromEnv().name).toBe("mock-avatar");
   });
 
+  it("AVATAR_PROVIDER=mock-avatar 显式配置 → mock（即使有 key）", () => {
+    vi.stubEnv("AVATAR_PROVIDER", "mock-avatar");
+    vi.stubEnv("AVATAR_PROVIDER_API_KEY", "key-123");
+    expect(createProviderFromEnv().name).toBe("mock-avatar");
+  });
+
+  it("配置齐全 → heygen（demo 与 production 一致）", () => {
+    vi.stubEnv("AVATAR_PROVIDER", "heygen");
+    vi.stubEnv("AVATAR_PROVIDER_API_KEY", "hk_12345");
+    expect(createProviderFromEnv().name).toBe("heygen");
+  });
+
   it("production 完全未配置 → 抛 AvatarProviderNotConfiguredError", () => {
     vi.stubEnv("APP_MODE", "production");
     expect(() => createProviderFromEnv()).toThrow(AvatarProviderNotConfiguredError);
@@ -38,10 +50,10 @@ describe("createProviderFromEnv factory", () => {
     expect(() => createProviderFromEnv()).toThrow(AvatarProviderNotConfiguredError);
   });
 
-  it("production 配置齐全 → heygen", () => {
+  it("production 显式 mock-avatar 也抛错（生产不许 mock）", () => {
     vi.stubEnv("APP_MODE", "production");
-    vi.stubEnv("AVATAR_PROVIDER", "heygen");
-    vi.stubEnv("AVATAR_PROVIDER_API_KEY", "hk_test");
-    expect(createProviderFromEnv().name).toBe("heygen");
+    vi.stubEnv("AVATAR_PROVIDER", "mock-avatar");
+    vi.stubEnv("AVATAR_PROVIDER_API_KEY", "key-123");
+    expect(() => createProviderFromEnv()).toThrow(AvatarProviderNotConfiguredError);
   });
 });
