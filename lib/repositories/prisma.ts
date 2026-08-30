@@ -183,6 +183,11 @@ export class PrismaAvatarRepository implements AvatarRepository {
     const row = await this.prisma.avatarProfile.update({ where: { id }, data: prismaData });
     return toAvatarProfile(row);
   }
+
+  async delete(id: string): Promise<void> {
+    // deleteMany 而非 delete：id 不存在时不抛错（路由已做属主校验，此处幂等即可）。
+    await this.prisma.avatarProfile.deleteMany({ where: { id } });
+  }
 }
 
 export class PrismaScriptRepository implements ScriptRepository {

@@ -37,6 +37,8 @@ export interface AvatarRepository {
   create(avatar: AvatarProfile): Promise<AvatarProfile>;
   findById(id: string): Promise<AvatarProfile | null>;
   update(id: string, data: Partial<AvatarProfile>): Promise<AvatarProfile>;
+  /** 删除本地分身档案（不触 provider 侧资源；不存在的 id 静默成功）。 */
+  delete(id: string): Promise<void>;
 }
 
 export interface ScriptRepository {

@@ -130,6 +130,11 @@ export class MemoryAvatarRepository implements AvatarRepository {
     state.avatars[index] = updated;
     return updated;
   }
+
+  async delete(id: string): Promise<void> {
+    const state = getRuntimeState();
+    state.avatars = state.avatars.filter((a) => a.id !== id);
+  }
 }
 
 export class MemoryScriptRepository implements ScriptRepository {
