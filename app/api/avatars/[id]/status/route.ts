@@ -5,6 +5,7 @@ import { getOwnerId } from "@/lib/auth-helpers";
 import {
   applyDigitalTwinStatus,
   createProviderFromEnv,
+  AvatarProviderNotConfiguredError,
   type DigitalTwinStatus,
 } from "@/lib/services/avatar-provider";
 
@@ -39,6 +40,9 @@ export async function GET(
   try {
     status = await createProviderFromEnv().getDigitalTwinStatus({ groupId: avatar.providerGroupId });
   } catch (error) {
+    if (error instanceof AvatarProviderNotConfiguredError) {
+      return jsonError("数字人服务未配置，请联系管理员", 503);
+    }
     console.error("[avatars] status poll failed:", error);
     return jsonError("Failed to poll avatar status", 502);
   }

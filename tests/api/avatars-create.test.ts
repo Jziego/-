@@ -5,10 +5,23 @@ import { createMockProvider } from "@/lib/services/providers/mock";
 import { nowIso } from "@/lib/ids";
 import type { Asset, StoreProfile } from "@/lib/types";
 
-// 用可控 mock provider 替换 env 工厂
-vi.mock("@/lib/services/providers", () => ({
-  createProviderFromEnv: () => createMockProvider(),
+// 用可控 mock provider 替换 env 工厂；必须 importOriginal 展开真实导出——
+// 路由里的 instanceof AvatarProviderNotConfiguredError 需要拿到真实错误类。
+const { factoryMode } = vi.hoisted(() => ({
+  factoryMode: { value: "mock" as "mock" | "unconfigured" },
 }));
+vi.mock("@/lib/services/providers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/services/providers")>();
+  return {
+    ...actual,
+    createProviderFromEnv: () => {
+      if (factoryMode.value === "unconfigured") {
+        throw new actual.AvatarProviderNotConfiguredError();
+      }
+      return createMockProvider();
+    },
+  };
+});
 // 不触真 S3：presign 直接返回假 URL
 vi.mock("@/lib/storage", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/storage")>();
@@ -45,11 +58,23 @@ describe("POST /api/avatars (digital twin)", () => {
   beforeEach(async () => {
     delete process.env.DATABASE_URL;
     resetRuntimeStateForTests();
+    factoryMode.value = "mock";
     const { store, footage } = seedStoreAndFootage("avatar_footage");
     await getStoreRepository().upsert(store);
     await getAssetRepository().create(footage);
   });
   afterEach(() => { if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl; });
+
+  it("returns 503 instead of a fake consent url when the provider is not configured", async () => {
+    factoryMode.value = "unconfigured";
+    const res = await post({ storeId: "store_1", footageAssetId: "asset_footage_1", name: "店主本人", consentAccepted: true });
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.error).toContain("数字人服务未配置");
+    // 不得落库假分身档案
+    const avatars = await getAvatarRepository().listByOwner("demo_user");
+    expect(avatars).toHaveLength(0);
+  });
 
   it("creates a pending avatar with consent url (201)", async () => {
     const res = await post({ storeId: "store_1", footageAssetId: "asset_footage_1", name: "店主本人", consentAccepted: true });

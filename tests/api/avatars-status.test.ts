@@ -9,12 +9,24 @@ import type { AvatarProfile } from "@/lib/types";
 // vi.hoisted 持有可变 provider 引用，每个 it 换 twinStatusSequence。
 // 注意：vi.hoisted 工厂在 import 求值前执行，不能在里面调 createMockProvider，
 // 统一在 beforeEach / it 内赋值。
-const { providerRef } = vi.hoisted(() => ({
+// 必须 importOriginal 展开真实导出——路由里的 instanceof AvatarProviderNotConfiguredError
+// 需要拿到真实的错误类；整体替换会让它变成 undefined。
+const { providerRef, factoryMode } = vi.hoisted(() => ({
   providerRef: { current: null as AvatarProvider | null },
+  factoryMode: { value: "ok" as "ok" | "unconfigured" },
 }));
-vi.mock("@/lib/services/providers", () => ({
-  createProviderFromEnv: () => providerRef.current,
-}));
+vi.mock("@/lib/services/providers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/services/providers")>();
+  return {
+    ...actual,
+    createProviderFromEnv: () => {
+      if (factoryMode.value === "unconfigured") {
+        throw new actual.AvatarProviderNotConfiguredError();
+      }
+      return providerRef.current;
+    },
+  };
+});
 
 import { GET } from "@/app/api/avatars/[id]/status/route";
 import { POST as CONSENT_POST } from "@/app/api/avatars/[id]/consent/route";
@@ -50,8 +62,22 @@ describe("GET /api/avatars/[id]/status", () => {
     delete process.env.DATABASE_URL;
     resetRuntimeStateForTests();
     providerRef.current = createMockProvider();
+    factoryMode.value = "ok";
   });
   afterEach(() => { if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl; });
+
+  it("returns 503 (not a fake status) when the provider is not configured", async () => {
+    factoryMode.value = "unconfigured";
+    await getAvatarRepository().create(seedAvatar());
+    const res = await getStatus("avatar_1");
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.error).toContain("数字人服务未配置");
+    // 不得把 mock 的假 ready/假 providerAvatarId 写进库
+    const persisted = await getAvatarRepository().findById("avatar_1");
+    expect(persisted?.trainingStatus).toBe("pending");
+    expect(persisted?.providerAvatarId).toBeUndefined();
+  });
 
   it("awaiting_user + pending stays pending and returns the consent url", async () => {
     providerRef.current = createMockProvider({
@@ -139,8 +165,21 @@ describe("POST /api/avatars/[id]/consent", () => {
     delete process.env.DATABASE_URL;
     resetRuntimeStateForTests();
     providerRef.current = createMockProvider();
+    factoryMode.value = "ok";
   });
   afterEach(() => { if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl; });
+
+  it("returns 503 when the provider is not configured", async () => {
+    factoryMode.value = "unconfigured";
+    await getAvatarRepository().create(seedAvatar({
+      consentStatus: "expired", trainingStatus: "failed",
+    }));
+    const res = await postConsent("avatar_1");
+    expect(res.status).toBe(503);
+    // 状态机不被副作用改写
+    const persisted = await getAvatarRepository().findById("avatar_1");
+    expect(persisted).toMatchObject({ consentStatus: "expired", trainingStatus: "failed" });
+  });
 
   it("re-issues consent for a failed (expired) avatar and resets the state machine", async () => {
     await getAvatarRepository().create(seedAvatar({

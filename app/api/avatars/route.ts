@@ -2,7 +2,7 @@ import { jsonError, jsonOk } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { getAssetRepository, getAvatarRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
-import { createDigitalTwinProfile, createProviderFromEnv } from "@/lib/services/avatar-provider";
+import { createDigitalTwinProfile, createProviderFromEnv, AvatarProviderNotConfiguredError } from "@/lib/services/avatar-provider";
 import { buildPlatformAvatar } from "@/lib/services/platform-avatar";
 import { createPresignedGetUrl } from "@/lib/storage";
 
@@ -76,6 +76,10 @@ export async function POST(request: Request) {
     const saved = await getAvatarRepository().create(profile);
     return jsonOk({ avatar: saved, consentUrl }, 201);
   } catch (error) {
+    // production 未配置数字人提供商：明确 503，绝不静默造假授权链接。
+    if (error instanceof AvatarProviderNotConfiguredError) {
+      return jsonError("数字人服务未配置，请联系管理员", 503);
+    }
     // provider/presign 错误可能含内部细节——日志留全文，客户端只收通用文案（§8）。
     console.error("[avatars] digital twin creation failed:", error);
     return jsonError("Avatar creation failed", 502);

@@ -1,42 +1,47 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import {
+  AvatarProviderNotConfiguredError,
+  createProviderFromEnv,
+} from "@/lib/services/providers";
 
-const mockEnv = { AVATAR_PROVIDER: "", AVATAR_PROVIDER_API_KEY: "" };
+// 生产环境缺失数字人配置时必须炸得响亮，拒绝静默降级 mock——
+// mock 会编造假授权链接（consent.example.com），用户点击创建分身后
+// 跳转到一个不存在的网站，故障极难定位（2026-08-30 生产事故）。
+describe("createProviderFromEnv factory", () => {
+  const savedName = process.env.AVATAR_PROVIDER;
+  const savedKey = process.env.AVATAR_PROVIDER_API_KEY;
 
-async function getFactory() {
-  vi.stubEnv("AVATAR_PROVIDER", mockEnv.AVATAR_PROVIDER);
-  vi.stubEnv("AVATAR_PROVIDER_API_KEY", mockEnv.AVATAR_PROVIDER_API_KEY);
-  const { createProviderFromEnv } = await import(
-    "@/lib/services/providers/index"
-  );
-  return createProviderFromEnv;
-}
-
-describe("avatar provider factory", () => {
   beforeEach(() => {
-    vi.resetModules();
+    delete process.env.AVATAR_PROVIDER;
+    delete process.env.AVATAR_PROVIDER_API_KEY;
   });
 
-  it("returns mock provider when no env vars are set", async () => {
-    mockEnv.AVATAR_PROVIDER = "";
-    mockEnv.AVATAR_PROVIDER_API_KEY = "";
-    const factory = await getFactory();
-    const provider = factory();
-    expect(provider.name).toBe("mock-avatar");
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    if (savedName) process.env.AVATAR_PROVIDER = savedName;
+    if (savedKey) process.env.AVATAR_PROVIDER_API_KEY = savedKey;
   });
 
-  it("returns mock provider when AVATAR_PROVIDER is mock-avatar", async () => {
-    mockEnv.AVATAR_PROVIDER = "mock-avatar";
-    mockEnv.AVATAR_PROVIDER_API_KEY = "key-123";
-    const factory = await getFactory();
-    const provider = factory();
-    expect(provider.name).toBe("mock-avatar");
+  it("demo 模式未配置 → mock 兜底（本地开发/预览不炸）", () => {
+    vi.stubEnv("APP_MODE", "demo");
+    expect(createProviderFromEnv().name).toBe("mock-avatar");
   });
 
-  it("returns heygen provider when AVATAR_PROVIDER=heygen and key is set", async () => {
-    mockEnv.AVATAR_PROVIDER = "heygen";
-    mockEnv.AVATAR_PROVIDER_API_KEY = "hk_12345";
-    const factory = await getFactory();
-    const provider = factory();
-    expect(provider.name).toBe("heygen");
+  it("production 完全未配置 → 抛 AvatarProviderNotConfiguredError", () => {
+    vi.stubEnv("APP_MODE", "production");
+    expect(() => createProviderFromEnv()).toThrow(AvatarProviderNotConfiguredError);
+  });
+
+  it("production 只配了 AVATAR_PROVIDER 没配 key → 同样抛错", () => {
+    vi.stubEnv("APP_MODE", "production");
+    vi.stubEnv("AVATAR_PROVIDER", "heygen");
+    expect(() => createProviderFromEnv()).toThrow(AvatarProviderNotConfiguredError);
+  });
+
+  it("production 配置齐全 → heygen", () => {
+    vi.stubEnv("APP_MODE", "production");
+    vi.stubEnv("AVATAR_PROVIDER", "heygen");
+    vi.stubEnv("AVATAR_PROVIDER_API_KEY", "hk_test");
+    expect(createProviderFromEnv().name).toBe("heygen");
   });
 });

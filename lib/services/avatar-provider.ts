@@ -205,4 +205,4 @@ export function applyDigitalTwinStatus(
   return patch;
 }
 
-export { createProviderFromEnv } from "./providers";
+export { createProviderFromEnv, AvatarProviderNotConfiguredError } from "./providers";

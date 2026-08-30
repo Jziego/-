@@ -2,7 +2,7 @@ import { jsonError, jsonOk } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { getAvatarRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
-import { createProviderFromEnv } from "@/lib/services/avatar-provider";
+import { createProviderFromEnv, AvatarProviderNotConfiguredError } from "@/lib/services/avatar-provider";
 import { nowIso } from "@/lib/ids";
 
 /**
@@ -46,6 +46,9 @@ export async function POST(
     });
     return jsonOk({ avatar: updated, consentUrl });
   } catch (error) {
+    if (error instanceof AvatarProviderNotConfiguredError) {
+      return jsonError("数字人服务未配置，请联系管理员", 503);
+    }
     console.error("[avatars] consent re-issue failed:", error);
     return jsonError("Failed to re-issue consent", 502);
   }
