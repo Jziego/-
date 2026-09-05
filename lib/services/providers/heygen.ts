@@ -284,13 +284,28 @@ export function createHeyGenProvider(): AvatarProvider {
       // 能直连 URL；asset_id 由我们先下载再直传，无这两个约束。
       const footage = await downloadVideoBytes(input.footageUrl, FOOTAGE_TRANSFER_TIMEOUT_MS);
       const assetId = await heyGenUploadAsset(footage);
-      const createRes = await heyGenRequest<HeyGenEnvelope<{ group_id?: string; avatar_group_id?: string; id?: string }>>(
+      const createRes = await heyGenRequest<HeyGenEnvelope<CreateDigitalTwinData>>(
         "/v3/avatars",
         "POST",
         { type: "digital_twin", name: input.name, file: { type: "asset_id", asset_id: assetId } },
       );
-      const groupId = createRes.data?.group_id ?? createRes.data?.avatar_group_id ?? createRes.data?.id;
-      if (!groupId) throw new Error("HeyGen digital_twin create returned no group id");
+      // HeyGen 部分端点 HTTP 200 但 body 带 error——不检查的话 data=undefined
+      // 会被吞成 "no group id"，真实原因（footage 不合格/槽位占满）永远看不到。
+      if (createRes.error) {
+        throw new Error(`HeyGen digital twin create failed: ${createRes.error.message}`);
+      }
+      const groupId =
+        createRes.data?.avatar_group?.id ??
+        createRes.data?.avatar_item?.group_id ??
+        createRes.data?.group_id ??
+        createRes.data?.avatar_group_id ??
+        createRes.data?.id;
+      if (!groupId) {
+        // 反失明兜底：形状再漂移也在日志里留下（截断的）真身。
+        throw new Error(
+          `HeyGen digital_twin create returned no group id: ${JSON.stringify(createRes).slice(0, 500)}`,
+        );
+      }
       const { consentUrl } = await requestConsentUrl(groupId);
       return { groupId, consentUrl };
     },
@@ -398,8 +413,24 @@ interface HeyGenAvatarGroup {
   looks?: { id?: string }[];
   look_id?: string;
   voice_id?: string;
+  /** 官方文档的 group 资源声音字段名（与 voice_id 二选一出现）。 */
+  default_voice_id?: string;
   consent_url?: string;
   url?: string;
+}
+
+/**
+ * POST /v3/avatars 创建 digital_twin 的响应 data 形状。
+ * 官方文档实测（2026-09-05 事故坐实）：**嵌套** avatar_group.id /
+ * avatar_item.group_id —— 之前按扁平 group_id 解析导致「创建其实成功却报
+ * no group id」，HeyGen 侧留下孤儿分组占住订阅槽位。扁平字段保留为防御兜底。
+ */
+interface CreateDigitalTwinData {
+  avatar_group?: { id?: string };
+  avatar_item?: { id?: string; group_id?: string };
+  group_id?: string;
+  avatar_group_id?: string;
+  id?: string;
 }
 
 interface HeyGenSpeechData {
@@ -449,7 +480,7 @@ function normalizeGroupStatus(data: HeyGenAvatarGroup): DigitalTwinStatus {
     consentStatus,
     trainingStatus,
     providerAvatarId: data.looks?.find((l) => l.id)?.id ?? data.look_id,
-    providerVoiceId: data.voice_id,
+    providerVoiceId: data.voice_id ?? data.default_voice_id,
     reason: data.reject_reason ?? data.error,
     consentUrl: data.consent_url ?? data.url,
   };

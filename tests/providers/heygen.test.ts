@@ -218,8 +218,15 @@ describe("heygen provider", () => {
       .mockResolvedValueOnce(new Response(new Uint8Array([9, 8, 7]), { status: 200 }))
       // 2. 直传 POST /v3/assets → asset_id（绕开 URL 输入的大小上限——93.7MB 实测被拒）
       .mockResolvedValueOnce(jsonResponse({ data: { asset_id: "ast_1" } }))
-      // 3. 用 asset_id 创建 digital_twin
-      .mockResolvedValueOnce(jsonResponse({ data: { group_id: "grp_1" } }))
+      // 3. 用 asset_id 创建 digital_twin —— 官方文档实测形状：嵌套
+      //    avatar_item/avatar_group（2026-09-05 事故：按扁平 group_id 解析导致
+      //    创建其实成功却报 "no group id"，HeyGen 侧留下孤儿分组占住槽位）
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          avatar_item: { id: "look_1", group_id: "grp_1", name: "店主" },
+          avatar_group: { id: "grp_1", name: "店主", consent_status: null },
+        },
+      }))
       // 4. 取授权链接
       .mockResolvedValueOnce(jsonResponse({ data: { url: "https://consent.heygen.com/abc" } }));
 
@@ -256,6 +263,42 @@ describe("heygen provider", () => {
     ).rejects.toThrow(/download failed: 403/i);
   });
 
+  it("createDigitalTwin throws the envelope error when HeyGen returns 200 + error body", async () => {
+    // HeyGen 部分端点 HTTP 200 但 body 里带 error——不检查的话 data=undefined
+    // 会被吞成莫名其妙的 "no group id"，真实原因（如 footage 不合格）永远看不到。
+    mockFetch
+      .mockResolvedValueOnce(new Response(new Uint8Array([9]), { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse({ data: { asset_id: "ast_1" } }))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: "invalid_parameter", message: "footage rejected" } }));
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    await expect(
+      createHeyGenProvider().createDigitalTwin({ name: "x", footageUrl: "https://cdn.example.com/f.mp4" }),
+    ).rejects.toThrow("footage rejected");
+  });
+
+  it("createDigitalTwin still accepts a flat group_id (defensive fallback)", async () => {
+    mockFetch
+      .mockResolvedValueOnce(new Response(new Uint8Array([9]), { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse({ data: { asset_id: "ast_1" } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { group_id: "grp_flat" } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { url: "https://consent.heygen.com/x" } }));
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    const result = await createHeyGenProvider().createDigitalTwin({ name: "x", footageUrl: "https://cdn.example.com/f.mp4" });
+    expect(result.groupId).toBe("grp_flat");
+  });
+
+  it("createDigitalTwin includes the truncated raw response when the shape drifts again", async () => {
+    // 反失明兜底：形状再变也要在日志里留下真身，而不是一句 "no group id"。
+    mockFetch
+      .mockResolvedValueOnce(new Response(new Uint8Array([9]), { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse({ data: { asset_id: "ast_1" } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { totally_new_field: "shape_xyz" } }));
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    await expect(
+      createHeyGenProvider().createDigitalTwin({ name: "x", footageUrl: "https://cdn.example.com/f.mp4" }),
+    ).rejects.toThrow(/totally_new_field/);
+  });
+
   it("createDigitalTwin throws when the asset upload returns no asset_id", async () => {
     mockFetch
       .mockResolvedValueOnce(new Response(new Uint8Array([9]), { status: 200 }))
@@ -287,6 +330,24 @@ describe("heygen provider", () => {
       providerAvatarId: "look_1",
       providerVoiceId: "voice_1",
     });
+  });
+
+  it("getDigitalTwinStatus falls back to default_voice_id (文档里的实际字段名)", async () => {
+    // 官方文档的 group 资源示例里声音字段是 default_voice_id，不是 voice_id——
+    // 读不到会导致画外音段克隆声音 TTS 失声。
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          consent_status: "approved",
+          status: "completed",
+          looks: [{ id: "look_1" }],
+          default_voice_id: "voice_d1",
+        },
+      }),
+    );
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    const status = await createHeyGenProvider().getDigitalTwinStatus({ groupId: "grp_1" });
+    expect(status.providerVoiceId).toBe("voice_d1");
   });
 
   it("getDigitalTwinStatus maps rejected consent to failed with a reason", async () => {
