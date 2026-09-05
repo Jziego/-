@@ -1,4 +1,5 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
+import { MAX_FOOTAGE_BYTES } from "@/lib/avatar-footage";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { getAssetRepository, getAvatarRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
@@ -55,6 +56,11 @@ export async function POST(request: Request) {
     footage.type !== "video"
   ) {
     return jsonError("Footage asset not found", 404);
+  }
+  // 兜底：30MB 闸门（upload-intent/confirm）上线前上传的旧素材可能仍超
+  // HeyGen 32MB 硬上限——创建时明确 400，不再让 HeyGen 的 400 变成 502。
+  if (footage.sizeBytes > MAX_FOOTAGE_BYTES) {
+    return jsonError("训练视频超过 30MB 上限，请重新上传 30 秒–5 分钟、30MB 以内的人像视频", 400);
   }
   const store = await getStoreRepository().findById(String(body.storeId));
   if (!store || store.ownerId !== ownerId) {

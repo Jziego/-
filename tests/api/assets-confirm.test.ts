@@ -152,6 +152,73 @@ describe("POST /api/assets/confirm", () => {
     expect((await repo.findById("asset_mat1"))?.category).toBe("material");
   });
 
+  it("rejects avatar_footage whose real size exceeds 30MB and deletes the uploaded object", async () => {
+    // 客户端可能伪造声明大小——以 HeadObject 的真实 contentLength 为准；
+    // 超限对象直接删除（与 MIME 不符同处理），不占存储、不留坏素材。
+    await seedStore();
+    vi.spyOn(storage, "headObject").mockResolvedValue({
+      exists: true,
+      contentLength: 31 * 1024 * 1024,
+      contentType: "video/mp4"
+    });
+    const deleteSpy = vi.spyOn(storage, "deleteObject").mockResolvedValue(undefined);
+
+    const response = await POST(
+      new Request("http://localhost/api/assets/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetId: "asset_big",
+          storeId: "store_1",
+          storageKey: "stores/store_1/assets/asset_big-demo.mp4",
+          originalFilename: "demo.mp4",
+          mimeType: "video/mp4",
+          type: "video",
+          sizeBytes: 1000,
+          category: "avatar_footage"
+        })
+      })
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toContain("30MB");
+    expect(deleteSpy).toHaveBeenCalledWith("stores/store_1/assets/asset_big-demo.mp4");
+    const repo = new MemoryAssetRepository();
+    expect(await repo.findById("asset_big")).toBeFalsy();
+  });
+
+  it("still accepts material assets above 30MB (footage cap does not leak to 素材库)", async () => {
+    await seedStore();
+    vi.spyOn(storage, "headObject").mockResolvedValue({
+      exists: true,
+      contentLength: 150 * 1024 * 1024,
+      contentType: "video/mp4"
+    });
+    const mp4Magic = new Uint8Array(8);
+    mp4Magic.set([0x66, 0x74, 0x79, 0x70], 4);
+    vi.spyOn(storage, "getFirstBytes").mockResolvedValue(mp4Magic);
+
+    const response = await POST(
+      new Request("http://localhost/api/assets/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetId: "asset_mat_big",
+          storeId: "store_1",
+          storageKey: "stores/store_1/assets/asset_mat_big-demo.mp4",
+          originalFilename: "demo.mp4",
+          mimeType: "video/mp4",
+          type: "video",
+          sizeBytes: 150 * 1024 * 1024,
+          category: "material"
+        })
+      })
+    );
+
+    expect(response.status).toBe(201);
+  });
+
   it("returns 404 when the uploaded object is missing", async () => {
     await seedStore();
     vi.spyOn(storage, "headObject").mockResolvedValue({ exists: false });

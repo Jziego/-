@@ -1,4 +1,5 @@
 import { createId, nowIso } from "@/lib/ids";
+import { MAX_FOOTAGE_BYTES } from "@/lib/avatar-footage";
 import { hasAI, chatCompletionJSON, sanitizePromptField } from "@/lib/services/ai-client";
 import {
   ALLOWED_MIME_PREFIXES,
@@ -118,6 +119,14 @@ export async function createUploadIntent(input: UploadIntentInput): Promise<Uplo
 
   if (input.sizeBytes <= 0 || input.sizeBytes > MAX_UPLOAD_BYTES) {
     throw new UploadValidationError(`File size must be between 1 and ${MAX_UPLOAD_BYTES} bytes`);
+  }
+
+  // 分身训练素材走更严的 30MB 上限：HeyGen /v3/assets 直传硬上限 32MB
+  // （2026-09-05 生产实测 89.3MB 被 400 拒）。在上传入口拦死，避免用户
+  // 传完大文件后创建分身时才炸。时长维度（30s–5min）只能由前端读元数据
+  // 拦截，服务端以大小为准。
+  if (input.category === "avatar_footage" && input.sizeBytes > MAX_FOOTAGE_BYTES) {
+    throw new UploadValidationError("人像训练视频超过 30MB 上限：请缩短时长，或把手机录像分辨率调低后重拍");
   }
 
   const assetId = createId("asset");

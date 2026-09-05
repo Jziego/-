@@ -34,6 +34,8 @@ import {
 import { ScriptConfirm } from "@/components/script-confirm";
 import { MAX_ASSETS_PER_STORE, clampUploadBatch } from "@/lib/asset-library";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
+import { validateFootageDuration, validateFootageSize } from "@/lib/avatar-footage";
+import { probeVideoDurationSec } from "@/lib/probe-video-duration";
 import { isPlatformAvatarId } from "@/lib/services/platform-avatar";
 import {
   clearStoreDraft,
@@ -857,8 +859,16 @@ export function Dashboard() {
       setMessage("人像素材仅支持视频文件。");
       return;
     }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setMessage("视频不超过 200MB。");
+    // 上传前闸门（2026-09-05 生产事故：89MB 视频超 HeyGen 32MB 硬上限）——
+    // 超限直接拒传，不浪费用户流量。时长读不出（0）时放行，由 HeyGen 权威校验。
+    const sizeError = validateFootageSize(file.size);
+    if (sizeError) {
+      setMessage(sizeError);
+      return;
+    }
+    const durationError = validateFootageDuration(await probeVideoDurationSec(file));
+    if (durationError) {
+      setMessage(durationError);
       return;
     }
     setFootageUploading(true);
@@ -887,8 +897,10 @@ export function Dashboard() {
       setSelectedFootageId(uploaded.id);
       await queryClient.invalidateQueries({ queryKey: ["assets"] });
       setMessage("人像视频已上传。填写形象名字并确认授权后，创建你的 AI 分身。");
-    } catch {
-      setMessage("人像视频上传失败，请重试。");
+    } catch (error) {
+      // 透出服务端闸门返回的具体原因（如 30MB 上限），而不是一句通用失败。
+      const detail = error instanceof Error ? error.message : "请稍后重试";
+      setMessage(`人像视频上传失败：${detail}`);
     } finally {
       setFootageUploading(false);
     }
@@ -1406,7 +1418,7 @@ export function Dashboard() {
           />
 
           <div className="footageSection">
-            <p className="resultHint">拍摄要求：30秒–5分钟、正脸面对镜头、光线充足、人声清晰、无背景音乐。</p>
+            <p className="resultHint">拍摄要求：时长 30 秒–5 分钟、文件不超过 30MB、正脸面对镜头、光线充足、人声清晰、无背景音乐。视频太大时，把手机相机分辨率调低（如 720p）再拍。</p>
             {footageAssets.length > 0 ? (
               <div className="mediaGrid" role="list" aria-label="人像视频列表">
                 {footageAssets.map((item) => (

@@ -5,6 +5,13 @@ import { Dashboard } from "@/components/dashboard";
 import { Providers } from "@/components/providers";
 import * as apiClient from "@/lib/api-client";
 
+// 视频时长探测依赖真实媒体加载，jsdom 永远不会触发——mock 成可控值。
+// 各用例按需改 probeDuration.value（默认 45s，在 30s–5min 合法窗内）。
+const { probeDuration } = vi.hoisted(() => ({ probeDuration: { value: 45 } }));
+vi.mock("@/lib/probe-video-duration", () => ({
+  probeVideoDurationSec: vi.fn(async () => probeDuration.value),
+}));
+
 function mockApiFetch() {
   return vi.fn(async (url: string, init?: RequestInit) => {
   const method = init?.method ?? "GET";
@@ -53,6 +60,7 @@ function renderDashboard() {
 describe("AI video assistant dashboard", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    probeDuration.value = 45;
     vi.stubGlobal("fetch", mockApiFetch());
   });
 
@@ -754,6 +762,83 @@ describe("AI video assistant dashboard", () => {
       consentAccepted: true
     });
     expect(openSpy).toHaveBeenCalledWith("https://consent/xyz", "_blank", "noopener,noreferrer");
+  });
+
+  // 素材闸门（2026-09-05 生产事故：89MB 视频超 HeyGen 32MB 硬上限）——
+  // 超限/超时长直接拒传，不发出任何上传请求。
+  function stubFootageGateFetch(fetchedBodies: Record<string, unknown>) {
+    const savedStore = {
+      id: "store_gate",
+      ownerId: "demo_user",
+      name: "闸门店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method !== "GET") {
+          fetchedBodies[`${method} ${url}`] = init?.body ? JSON.parse(init.body as string) : {};
+        }
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: [] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+  }
+
+  it("blocks avatar footage over 30MB before any upload request", async () => {
+    const user = userEvent.setup();
+    const fetchedBodies: Record<string, unknown> = {};
+    stubFootageGateFetch(fetchedBodies);
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "上传人像视频" })).toBeEnabled();
+    });
+    const footageInput = document.querySelector('input[accept="video/*"]') as HTMLInputElement;
+    await user.upload(
+      footageInput,
+      new File([new Uint8Array(31 * 1024 * 1024)], "big.mp4", { type: "video/mp4" })
+    );
+
+    expect(await within(screen.getByRole("status")).findByText(/30MB/)).toBeInTheDocument();
+    expect(fetchedBodies["POST /api/assets/upload-intent"]).toBeUndefined();
+  });
+
+  it("blocks avatar footage shorter than 30 seconds before any upload request", async () => {
+    probeDuration.value = 10;
+    const user = userEvent.setup();
+    const fetchedBodies: Record<string, unknown> = {};
+    stubFootageGateFetch(fetchedBodies);
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "上传人像视频" })).toBeEnabled();
+    });
+    const footageInput = document.querySelector('input[accept="video/*"]') as HTMLInputElement;
+    await user.upload(footageInput, new File(["video"], "me.mp4", { type: "video/mp4" }));
+
+    expect(await within(screen.getByRole("status")).findByText(/太短/)).toBeInTheDocument();
+    expect(fetchedBodies["POST /api/assets/upload-intent"]).toBeUndefined();
   });
 
   it("shows a 去完成授权 button for an awaiting-consent avatar and opens the consent url", async () => {

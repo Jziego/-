@@ -1,4 +1,5 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
+import { MAX_FOOTAGE_BYTES } from "@/lib/avatar-footage";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { hasObjectStorage } from "@/lib/env";
 import { nowIso } from "@/lib/ids";
@@ -58,6 +59,13 @@ export async function POST(request: Request) {
   const sizeBytes = head.contentLength ?? input.sizeBytes;
   if (!sizeBytes || sizeBytes <= 0 || sizeBytes > MAX_UPLOAD_BYTES) {
     return jsonError("Uploaded object size is invalid or exceeds limit", 400);
+  }
+
+  // 分身训练素材 30MB 复核（以 HeadObject 的真实大小为准，防伪造声明绕过
+  // upload-intent 闸门）。超限对象直接删除——与 MIME 不符同处理，不占存储。
+  if (input.category === "avatar_footage" && sizeBytes > MAX_FOOTAGE_BYTES) {
+    await deleteObject(input.storageKey);
+    return jsonError("人像训练视频超过 30MB 上限，请缩短时长或调低画质后重传", 400);
   }
 
   // Server-side MIME verification: never trust the client-supplied contentType

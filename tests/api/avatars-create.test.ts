@@ -107,6 +107,24 @@ describe("POST /api/avatars (digital twin)", () => {
     expect((await post({ storeId: "store_1", footageAssetId: "asset_m", name: "x", consentAccepted: true })).status).toBe(404);
   });
 
+  it("400s when the footage exceeds the 30MB cap (legacy oversized asset)", async () => {
+    // 闸门上线的之前上传的素材可能超过 HeyGen 32MB 硬上限——创建时明确 400，
+    // 不再让 HeyGen 的 400 变成用户看不懂的 502（2026-09-05 生产事故）。
+    const oversized: Asset = {
+      ...seedStoreAndFootage("avatar_footage").footage,
+      id: "asset_big",
+      sizeBytes: 94 * 1024 * 1024,
+    };
+    await getAssetRepository().create(oversized);
+
+    const res = await post({ storeId: "store_1", footageAssetId: "asset_big", name: "店主", consentAccepted: true });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("30MB");
+    // 不落库、不 presign（不触 provider）
+    expect(await getAvatarRepository().listByOwner("demo_user")).toHaveLength(0);
+  });
+
   it("400s on missing fields and overlong names", async () => {
     expect((await post({ storeId: "store_1", name: "x", consentAccepted: true })).status).toBe(400);
     expect((await post({ storeId: "store_1", footageAssetId: "asset_footage_1", name: "很".repeat(21), consentAccepted: true })).status).toBe(400);
