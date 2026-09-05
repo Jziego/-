@@ -176,10 +176,15 @@ strong {
   font-size: 13px;
   gap: 12px;
   line-height: 1.5;
-  margin-left: auto;
   max-width: 520px;
   overflow: hidden;
   padding: 12px 16px 12px 0;
+  /* 固定右下角：消息不随页面滚动跑出视口（此前用户滚动到下方操作时
+     看不到提示，误以为"没反应"）。 */
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 60;
 }
 
 .toastBar {
@@ -1040,7 +1045,9 @@ strong {
   }
 
   .toast {
-    margin-left: 0;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
     max-width: none;
   }
 

@@ -924,6 +924,13 @@ export function Dashboard() {
       return;
     }
     setPendingAction("avatar");
+    // 弹窗契约：必须在点击手势里同步开占位窗——异步 await 之后再 window.open
+    // 会被浏览器当弹窗拦截（2026-09-05 生产实测被拦）。拿到地址后写 location；
+    // 失败关窗；连同步开窗都被拦（返回 null）则留明确指引，不能"没反应"。
+    const popup = window.open("about:blank", "_blank");
+    // reverse-tabnabbing 加固：断掉目标页反向控制本标签页的句柄；
+    // 本地 popup 引用不受影响（location.href / close 照用）。
+    if (popup) popup.opener = null;
     try {
       const { avatar: profile, consentUrl } = await createAvatarApi({
         storeId: store.id,
@@ -933,10 +940,15 @@ export function Dashboard() {
       });
       setLocalAvatar(profile);
       await queryClient.invalidateQueries({ queryKey: ["avatars"] });
-      // HeyGen webcam 授权：新窗口打开（24h 有效），用户念授权词完成授权。
-      window.open(consentUrl, "_blank", "noopener,noreferrer");
-      setMessage("已创建分身任务：请在新窗口完成真人授权（念一段授权词），完成后回到这里自动刷新状态。");
+      if (popup) {
+        // HeyGen webcam 授权：占位窗跳真授权页（24h 有效）。
+        popup.location.href = consentUrl;
+        setMessage("已创建分身任务：请在新窗口完成真人授权（念一段授权词），完成后回到这里自动刷新状态。");
+      } else {
+        setMessage("分身已创建，但授权弹窗被浏览器拦截：请点下方分身卡片的「去完成授权」。");
+      }
     } catch (error) {
+      popup?.close();
       const detail = error instanceof Error ? error.message : "请稍后重试";
       setMessage(`创建 AI 分身失败：${detail}`);
     } finally {
@@ -945,26 +957,45 @@ export function Dashboard() {
   }
 
   async function handleOpenConsent(avatarId: string) {
+    const popup = window.open("about:blank", "_blank");
+    // reverse-tabnabbing 加固：断掉目标页反向控制本标签页的句柄；
+    // 本地 popup 引用不受影响（location.href / close 照用）。
+    if (popup) popup.opener = null;
     try {
       const { consentUrl } = await fetchAvatarStatusApi(avatarId);
       if (consentUrl) {
-        window.open(consentUrl, "_blank", "noopener,noreferrer");
-        setMessage("请在新窗口完成真人授权。");
+        if (popup) {
+          popup.location.href = consentUrl;
+          setMessage("请在新窗口完成真人授权。");
+        } else {
+          setMessage("授权弹窗被浏览器拦截：请允许本站弹出窗口后，再点一次「去完成授权」。");
+        }
       } else {
+        popup?.close();
         setMessage("授权链接已轮换，请点击「重新发起授权」。");
       }
     } catch {
+      popup?.close();
       setMessage("获取授权链接失败，请稍后重试。");
     }
   }
 
   async function handleReissueConsent(avatarId: string) {
+    const popup = window.open("about:blank", "_blank");
+    // reverse-tabnabbing 加固：断掉目标页反向控制本标签页的句柄；
+    // 本地 popup 引用不受影响（location.href / close 照用）。
+    if (popup) popup.opener = null;
     try {
       const { consentUrl } = await reissueAvatarConsentApi(avatarId);
       await queryClient.invalidateQueries({ queryKey: ["avatars"] });
-      window.open(consentUrl, "_blank", "noopener,noreferrer");
-      setMessage("已重新发起授权：请在新窗口完成真人授权。");
+      if (popup) {
+        popup.location.href = consentUrl;
+        setMessage("已重新发起授权：请在新窗口完成真人授权。");
+      } else {
+        setMessage("已重新发起授权，但弹窗被浏览器拦截：请允许本站弹出窗口后点「去完成授权」。");
+      }
     } catch {
+      popup?.close();
       setMessage("重新发起授权失败，请稍后重试。");
     }
   }

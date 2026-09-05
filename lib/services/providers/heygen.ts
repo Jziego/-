@@ -324,7 +324,13 @@ export function createHeyGenProvider(): AvatarProvider {
       if (res.error) {
         throw new Error(`HeyGen avatar status check failed: ${res.error.message}`);
       }
-      return normalizeGroupStatus(res.data ?? {});
+      const data = res.data ?? {};
+      // 契约排障（2026-09-05：创建/授权链两度因形状漂移失明）：每次轮询留一行
+      // 原始关键字段。前端只在非终态时每 10s 轮一次，量有界；无 PII。
+      console.info(
+        `[avatars] group ${input.groupId} raw status: consent_status=${data.consent_status ?? "<missing>"}, status=${data.status ?? "<missing>"}`,
+      );
+      return normalizeGroupStatus(data);
     },
 
     async synthesizeSpeech(input) {
@@ -446,7 +452,10 @@ async function requestConsentUrl(groupId: string): Promise<{ consentUrl: string 
     {},
   );
   const url = res.data?.url ?? res.data?.consent_url;
-  if (!url) throw new Error("HeyGen consent endpoint returned no url");
+  // 反失明兜底：形状漂移时留下截断原文（仅服务端日志）。
+  if (!url) {
+    throw new Error(`HeyGen consent endpoint returned no url: ${JSON.stringify(res).slice(0, 500)}`);
+  }
   return { consentUrl: url };
 }
 

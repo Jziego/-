@@ -627,7 +627,10 @@ describe("AI video assistant dashboard", () => {
 
   it("uploads footage and creates an AI avatar with the new contract, opening the consent window", async () => {
     const user = userEvent.setup();
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    // 弹窗契约（2026-09-05 修复）：点击手势里同步开 about:blank 占位窗，
+    // 异步拿到 consentUrl 后写 location——否则浏览器把异步 window.open 当弹窗拦截。
+    const popup = { location: { href: "" }, close: vi.fn() };
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => popup as unknown as Window);
     const savedStore = {
       id: "store_av",
       ownerId: "demo_user",
@@ -761,7 +764,8 @@ describe("AI video assistant dashboard", () => {
       name: "店主",
       consentAccepted: true
     });
-    expect(openSpy).toHaveBeenCalledWith("https://consent/xyz", "_blank", "noopener,noreferrer");
+    expect(openSpy).toHaveBeenCalledWith("about:blank", "_blank");
+    expect(popup.location.href).toBe("https://consent/xyz");
   });
 
   // 素材闸门（2026-09-05 生产事故：89MB 视频超 HeyGen 32MB 硬上限）——
@@ -843,7 +847,8 @@ describe("AI video assistant dashboard", () => {
 
   it("shows a 去完成授权 button for an awaiting-consent avatar and opens the consent url", async () => {
     const user = userEvent.setup();
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const popup = { location: { href: "" }, close: vi.fn() };
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => popup as unknown as Window);
     const savedStore = {
       id: "store_consent",
       ownerId: "demo_user",
@@ -899,13 +904,15 @@ describe("AI video assistant dashboard", () => {
     await user.click(consentButton);
 
     await waitFor(() => {
-      expect(openSpy).toHaveBeenCalledWith("https://consent/live", "_blank", "noopener,noreferrer");
+      expect(openSpy).toHaveBeenCalledWith("about:blank", "_blank");
     });
+    expect(popup.location.href).toBe("https://consent/live");
   });
 
   it("shows the failure reason for a failed avatar and reissues consent on demand", async () => {
     const user = userEvent.setup();
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const popup = { location: { href: "" }, close: vi.fn() };
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => popup as unknown as Window);
     const savedStore = {
       id: "store_failed",
       ownerId: "demo_user",
@@ -975,7 +982,143 @@ describe("AI video assistant dashboard", () => {
     await waitFor(() => {
       expect(reissued).toBe(true);
     });
-    expect(openSpy).toHaveBeenCalledWith("https://consent/new", "_blank", "noopener,noreferrer");
+    expect(openSpy).toHaveBeenCalledWith("about:blank", "_blank");
+    expect(popup.location.href).toBe("https://consent/new");
+  });
+
+  it("shows an explicit hint instead of dead air when the consent popup is blocked", async () => {
+    // window.open 返回 null（浏览器拦截）时不能"没反应"——必须留明确指引。
+    const user = userEvent.setup();
+    vi.spyOn(window, "open").mockImplementation(() => null);
+    const savedStore = {
+      id: "store_blocked",
+      ownerId: "demo_user",
+      name: "拦截店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const awaitingAvatar = {
+      id: "avatar_blocked",
+      ownerId: "demo_user",
+      storeId: "store_blocked",
+      name: "店长",
+      provider: "heygen",
+      consentStatus: "awaiting_user",
+      trainingStatus: "pending",
+      consentAcceptedAt: "2026-01-01T00:00:00.000Z",
+      fallbackMode: "tts_voiceover",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: [] };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [awaitingAvatar] };
+          if (url === "/api/avatars/avatar_blocked/status") {
+            return { avatar: awaitingAvatar, consentUrl: "https://consent/live" };
+          }
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        }
+      }))
+    );
+
+    renderDashboard();
+    await user.click(await screen.findByRole("button", { name: "去完成授权" }));
+
+    expect(
+      await within(screen.getByRole("status")).findByText(/拦截/)
+    ).toBeInTheDocument();
+  });
+
+  it("closes the placeholder window when avatar creation fails", async () => {
+    // 创建失败时占位窗必须关掉，不能留个空白新标签页。
+    const user = userEvent.setup();
+    const popup = { location: { href: "" }, close: vi.fn() };
+    vi.spyOn(window, "open").mockImplementation(() => popup as unknown as Window);
+    const savedStore = {
+      id: "store_fail",
+      ownerId: "demo_user",
+      name: "失败创建店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const existingFootage = {
+      id: "asset_exist",
+      ownerId: "demo_user",
+      storeId: "store_fail",
+      type: "video",
+      originalFilename: "me.mp4",
+      storageKey: "stores/store_fail/assets/asset_exist-me.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 3000,
+      tags: [],
+      businessTags: [],
+      status: "uploaded",
+      category: "avatar_footage",
+      createdAt: "2026-01-01T00:00:00.000Z"
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (url === "/api/avatars" && method === "POST") {
+          return { ok: false, status: 502, json: async () => ({ error: "Avatar creation failed" }) };
+        }
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: [existingFootage] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+    await user.click(await screen.findByLabelText("选择人像视频 me.mp4"));
+    await user.type(screen.getByLabelText("形象名字"), "店主");
+    await user.click(screen.getByRole("checkbox", { name: /我是视频中的本人/ }));
+    await user.click(screen.getByRole("button", { name: "创建 AI 分身" }));
+
+    expect(
+      await within(screen.getByRole("status")).findByText(/创建 AI 分身失败/)
+    ).toBeInTheDocument();
+    expect(popup.close).toHaveBeenCalled();
+    expect(popup.location.href).toBe("");
+  });
+
+  it("always renders the status toast with guidance (fixed-position contract)", () => {
+    // toast 恒在（初始引导语）且 CSS 固定定位——消息不再因为页面滚动而"看不见"。
+    renderDashboard();
+    expect(screen.getByRole("status")).toHaveTextContent("准备开始");
   });
 
   it("uploads a selected file through intent, storage PUT and confirm", async () => {

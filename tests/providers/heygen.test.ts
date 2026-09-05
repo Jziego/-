@@ -299,6 +299,19 @@ describe("heygen provider", () => {
     ).rejects.toThrow(/totally_new_field/);
   });
 
+  it("createDigitalTwin includes the truncated raw response when consent returns no url", async () => {
+    // 同类失明点：consent 端点形状漂移时也要留下原文。
+    mockFetch
+      .mockResolvedValueOnce(new Response(new Uint8Array([9]), { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse({ data: { asset_id: "ast_1" } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { avatar_group: { id: "grp_1" } } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { unexpected_consent: true } }));
+    const { createHeyGenProvider } = await import("@/lib/services/providers/heygen");
+    await expect(
+      createHeyGenProvider().createDigitalTwin({ name: "x", footageUrl: "https://cdn.example.com/f.mp4" }),
+    ).rejects.toThrow(/unexpected_consent/);
+  });
+
   it("createDigitalTwin throws when the asset upload returns no asset_id", async () => {
     mockFetch
       .mockResolvedValueOnce(new Response(new Uint8Array([9]), { status: 200 }))
