@@ -121,3 +121,43 @@ export function getWechatAppSecret(): string | undefined {
 export function hasWechatProvider(): boolean {
   return Boolean(getWechatAppId() && getWechatAppSecret());
 }
+
+// ── 火山引擎对口型（MediaKit + 豆包 TTS）────────────────────────────────────
+// 对口型供应商双 Key：MediaKit 管视频改口型任务，豆包语音管配音合成。
+// 2026-09-16 实测：两个产品线 Key 不通用（MediaKit Key 调语音服务 401）。
+
+export function getMediakitApiKey(): string | undefined {
+  return process.env.MEDIKIT_API_KEY?.trim() || undefined;
+}
+
+export function getMediakitBaseUrl(): string {
+  return process.env.MEDIKIT_BASE_URL?.trim() || "https://mediakit.cn-beijing.volces.com";
+}
+
+export function getMediakitPollIntervalMs(): number {
+  const raw = Number(process.env.MEDIKIT_POLL_INTERVAL_MS?.trim());
+  return Number.isFinite(raw) && raw > 0 ? raw : 15_000;
+}
+
+export function getMediakitPollTimeoutMs(): number {
+  const raw = Number(process.env.MEDIKIT_POLL_TIMEOUT_MS?.trim());
+  return Number.isFinite(raw) && raw > 0 ? raw : 40 * 60_000;
+}
+
+export function getDoubaoTtsApiKey(): string | undefined {
+  return process.env.DOUBAO_TTS_API_KEY?.trim() || undefined;
+}
+
+/** 豆包 TTS 2.0 音色（发音人 id）。后续声音复刻上线后按形象写 providerVoiceId 覆盖。 */
+export function getDoubaoTtsVoice(): string {
+  return process.env.DOUBAO_TTS_VOICE?.trim() || "zh_female_vv_uranus_bigtts";
+}
+
+/** 计费/模型资源位：seed-tts-2.0（标准音色）；声音复刻上线后改 seed-icl-2.0。 */
+export function getDoubaoTtsResourceId(): string {
+  return process.env.DOUBAO_TTS_RESOURCE_ID?.trim() || "seed-tts-2.0";
+}
+
+export function hasLipSyncProvider(): boolean {
+  return Boolean(getMediakitApiKey() && getDoubaoTtsApiKey());
+}

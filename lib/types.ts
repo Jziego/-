@@ -2,9 +2,9 @@ export type AssetType = "video" | "image" | "audio";
 
 export type AssetStatus = "uploading" | "uploaded" | "processing" | "ready" | "failed";
 
-export type AssetCategory = "material" | "avatar_footage";
+export type AssetCategory = "material" | "avatar_footage" | "lipsync_footage";
 
-export type AvatarProviderName = "heygen" | "d-id" | "tavus" | "synthesia" | "mock-avatar";
+export type AvatarProviderName = "heygen" | "volcengine-lipsync" | "d-id" | "tavus" | "synthesia" | "mock-avatar";
 
 export type AvatarTrainingStatus = "pending" | "processing" | "ready" | "failed";
 
@@ -73,7 +73,7 @@ export interface Asset {
   tags: string[];
   businessTags: string[];
   status: AssetStatus;
-  /** material=素材库 b-roll；avatar_footage=数字分身训练人像视频（永不进渲染时间线）。 */
+  /** material=素材库 b-roll；avatar_footage=HeyGen 分身训练人像视频；lipsync_footage=对口型出镜底板视频。两者都永不进渲染时间线。 */
   category: AssetCategory;
   createdAt: string;
 }
@@ -100,7 +100,7 @@ export interface AvatarProfile {
   provider: AvatarProviderName;
   providerAvatarId?: string;
   providerVoiceId?: string;
-  /** HeyGen avatar group id（digital_twin 创建时返回；授权/训练状态轮询的句柄）。 */
+  /** HeyGen avatar group id（digital_twin 创建时返回；授权/训练状态轮询的句柄）。对口型形象为 `lipsync:{footageStorageKey}`（本地句柄，无远端资源）。 */
   providerGroupId?: string;
   /** 授权状态机：awaiting_user → approved | rejected | expired。老数据视为 approved。 */
   consentStatus: AvatarConsentStatus;
