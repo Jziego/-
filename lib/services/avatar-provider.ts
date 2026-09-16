@@ -37,9 +37,11 @@ export interface AvatarProvider {
   ): Promise<{
     videoAssetId: string;
     durationSeconds: number;
+    /** 字级时间轴（相对本段起点秒）：对口型 provider 由内部 TTS 免费带回；HeyGen 无此能力，保持 undefined。 */
+    words?: WordTimestamp[];
   }>;
-  /** 创建数字分身（digital_twin），返回 group 句柄 + webcam 授权链接（24h 有效）。 */
-  createDigitalTwin(input: { name: string; footageUrl: string }): Promise<{ groupId: string; consentUrl: string }>;
+  /** 创建数字形象：HeyGen=分身训练（返回 group 句柄+授权链接）；对口型=本地句柄（无远端调用）。 */
+  createDigitalTwin(input: { name: string; footageUrl: string; footageStorageKey?: string }): Promise<{ groupId: string; consentUrl: string }>;
   /** 授权链接过期/被拒后重发。 */
   refreshConsent(input: { groupId: string }): Promise<{ consentUrl: string }>;
   /** 轮询授权 + 训练状态。 */
@@ -109,6 +111,8 @@ export async function requestAvatarTalkingHead(input: {
   avatarProfileId: string;
   videoAssetId: string;
   durationSeconds: number;
+  /** 字级时间轴：provider 未带回时为 undefined（HeyGen）。 */
+  words?: WordTimestamp[];
 }> {
   const result = await input.provider.generateTalkingHead(
     {
@@ -123,7 +127,8 @@ export async function requestAvatarTalkingHead(input: {
     mode: "talking_head",
     avatarProfileId: input.avatarProfileId,
     videoAssetId: result.videoAssetId,
-    durationSeconds: result.durationSeconds
+    durationSeconds: result.durationSeconds,
+    words: result.words
   };
 }
 
@@ -138,6 +143,8 @@ export async function createDigitalTwinProfile(input: {
   name: string;
   footageAssetId: string;
   footageUrl: string;
+  /** 素材在 R2 的 storageKey：对口型 provider 编码进 groupId 用；HeyGen 忽略。 */
+  footageStorageKey?: string;
   consentAccepted: boolean;
   provider: AvatarProvider;
 }): Promise<{ profile: AvatarProfile; consentUrl: string }> {
@@ -147,6 +154,7 @@ export async function createDigitalTwinProfile(input: {
   const { groupId, consentUrl } = await input.provider.createDigitalTwin({
     name: input.name,
     footageUrl: input.footageUrl,
+    footageStorageKey: input.footageStorageKey,
   });
   const now = nowIso();
   return {

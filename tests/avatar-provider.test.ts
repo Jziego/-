@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createAvatarProfile,
+  createDigitalTwinProfile,
   requestAvatarTalkingHead
 } from "@/lib/services/avatar-provider";
 import { createMockProvider } from "@/lib/services/providers/mock";
@@ -128,5 +129,44 @@ describe("digital twin provider contract (mock)", () => {
     await expect(
       createMockProvider({ failTts: true }).synthesizeSpeech({ providerVoiceId: "v", text: "x" }),
     ).rejects.toThrow();
+  });
+});
+
+describe("avatar provider contract extensions (lipsync)", () => {
+  it("createDigitalTwinProfile passes footageStorageKey through to the provider", async () => {
+    const seen: { footageStorageKey?: string } = {};
+    const provider = createMockProvider();
+    const spy = vi.spyOn(provider, "createDigitalTwin").mockImplementation(async (input) => {
+      seen.footageStorageKey = input.footageStorageKey;
+      return { groupId: "g1", consentUrl: "https://consent.example.com/g1" };
+    });
+    await createDigitalTwinProfile({
+      ownerId: "user_1",
+      storeId: "store_1",
+      name: "老刘",
+      footageAssetId: "asset_1",
+      footageUrl: "https://cdn.example.com/presigned.mp4",
+      footageStorageKey: "stores/store_1/assets/asset_1-me.mp4",
+      consentAccepted: true,
+      provider,
+    });
+    expect(spy).toHaveBeenCalledOnce();
+    expect(seen.footageStorageKey).toBe("stores/store_1/assets/asset_1-me.mp4");
+  });
+
+  it("requestAvatarTalkingHead still works when the provider returns words (optional field)", async () => {
+    const provider = createMockProvider();
+    vi.spyOn(provider, "generateTalkingHead").mockImplementation(async () => ({
+      videoAssetId: "avatars/vid_words.mp4",
+      durationSeconds: 10,
+      words: [{ word: "好", startSec: 0, endSec: 0.3 }],
+    }));
+    const result = await requestAvatarTalkingHead({
+      provider,
+      avatarProfileId: "avatar_1",
+      providerAvatarId: "ext",
+      scriptText: "好",
+    });
+    expect(result.videoAssetId).toBe("avatars/vid_words.mp4");
   });
 });
