@@ -68,4 +68,9 @@ describe("provider factory", () => {
     expect(createProviderByName(undefined).name).toBe("mock-avatar");
     expect(createProviderByName("d-id").name).toBe("mock-avatar");
   });
+
+  it("createProviderByName('mock-avatar') throws in production (mock rows are always bad data there)", () => {
+    vi.stubEnv("APP_MODE", "production");
+    expect(() => createProviderByName("mock-avatar")).toThrow(AvatarProviderNotConfiguredError);
+  });
 });

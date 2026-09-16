@@ -51,8 +51,10 @@ export function createProviderFromEnv(): AvatarProvider {
 
 /**
  * 按 profile.provider 逐形象解析（渲染/轮询链路用）：老 HeyGen 形象与对口型
- * 形象混排时各走各的供应商。未知/缺省名（平台公共形象约定 id、mock 时代
- * 老数据）回退到 env 创建 provider——与历史行为一致。
+ * 形象混排时各走各的供应商。"heygen"/"volcengine-lipsync"/"mock-avatar" 为
+ * 显式已知名，各有专属分支——其中 mock-avatar 在 production 下抛
+ * AvatarProviderNotConfiguredError（生产库出现 mock 形象=脏数据，绝不静默造假）。
+ * 未知/缺省名（平台公共形象约定 id 等）才回退到 env 创建 provider——与历史行为一致。
  */
 export function createProviderByName(name: string | undefined): AvatarProvider {
   switch ((name ?? "").toLowerCase()) {
@@ -61,6 +63,10 @@ export function createProviderByName(name: string | undefined): AvatarProvider {
     case LIPSYNC_PROVIDER_NAME:
       return createVolcEngineLipSyncProvider();
     case "mock-avatar":
+      // 生产环境出现 mock 形象=脏数据（08-30 事故窗口期残留）——响亮失败，绝不静默造假。
+      if (getAppMode() === "production") {
+        throw new AvatarProviderNotConfiguredError();
+      }
       return createMockProvider();
     default:
       return createProviderFromEnv();
