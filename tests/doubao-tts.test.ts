@@ -126,4 +126,28 @@ describe("synthesizeDoubaoSpeech", () => {
     vi.stubEnv("DOUBAO_TTS_API_KEY", "");
     await expect(synthesizeDoubaoSpeech({ text: "大家好" })).rejects.toThrow(/DOUBAO_TTS_API_KEY/);
   });
+
+  it("throws on a non-JSON line (protocol drift)", async () => {
+    const deps = makeDeps({
+      fetchImpl: vi.fn(async () =>
+        okResponse(chunkedBody([audioFrame("x"), subtitleFrame, endFrame]) + "\nNOT-JSON")),
+    });
+    await expect(synthesizeDoubaoSpeech({ text: "大家好" }, deps)).rejects.toThrow(/非 JSON/);
+  });
+
+  it("throws on an invalid base64 audio frame (decodes to zero bytes)", async () => {
+    const deps = makeDeps({
+      fetchImpl: vi.fn(async () =>
+        okResponse(chunkedBody([{ code: 0, message: "", data: "!!!" }, subtitleFrame, endFrame]))),
+    });
+    await expect(synthesizeDoubaoSpeech({ text: "大家好" }, deps)).rejects.toThrow(/无音频/);
+    expect(deps.putObject).not.toHaveBeenCalled();
+  });
+
+  it("rejects empty text before spending an API call", async () => {
+    const deps = makeDeps();
+    await expect(synthesizeDoubaoSpeech({ text: "" }, deps)).rejects.toThrow(/为空/);
+    await expect(synthesizeDoubaoSpeech({ text: "   " }, deps)).rejects.toThrow(/为空/);
+    expect(deps.fetchImpl).not.toHaveBeenCalled();
+  });
 });

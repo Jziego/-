@@ -67,6 +67,9 @@ export async function synthesizeDoubaoSpeech(
     throw new Error("DOUBAO_TTS_API_KEY is not configured");
   }
   const textBytes = Buffer.byteLength(input.text, "utf8");
+  if (textBytes === 0 || !input.text.trim()) {
+    throw new Error("豆包 TTS 文本为空");
+  }
   if (textBytes > MAX_TEXT_BYTES) {
     throw new Error(`豆包 TTS 文本超长（${textBytes}B > ${MAX_TEXT_BYTES}B）——单句不应到此量级，请检查分段逻辑`);
   }
@@ -134,6 +137,10 @@ export async function synthesizeDoubaoSpeech(
     throw new Error("豆包 TTS 返回无音频数据");
   }
   const audio = Buffer.concat(audioChunks);
+  // 非法 base64 会被 Node 静默解码成空 buffer——帧数检查兜不住，按零字节再拦一次。
+  if (audio.length === 0) {
+    throw new Error("豆包 TTS 返回无音频数据");
+  }
 
   const putObject = deps?.putObject ?? putObjectFromBuffer;
   const storageKey = `voices/${createId("tts")}.mp3`;
