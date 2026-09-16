@@ -50,7 +50,7 @@ export const confirmAssetUploadSchema = z.object({
   mimeType: z.string().min(1),
   type: z.enum(["video", "image", "audio"]),
   sizeBytes: z.number().positive().optional(),
-  category: z.enum(["material", "avatar_footage"]).default("material")
+  category: z.enum(["material", "avatar_footage", "lipsync_footage"]).default("material")
 });
 
 export const assetSchema = z.object({

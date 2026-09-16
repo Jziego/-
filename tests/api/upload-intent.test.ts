@@ -113,4 +113,34 @@ describe("POST /api/assets/upload-intent", () => {
     expect(response.status).toBe(400);
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it("passes category=lipsync_footage through to the service", async () => {
+    vi.spyOn(env, "hasObjectStorage").mockReturnValue(true);
+    const spy = vi.spyOn(assetsService, "createUploadIntent").mockResolvedValue({
+      assetId: "asset_1",
+      storageKey: "stores/store_1/assets/asset_1-demo.mp4",
+      uploadUrl: "https://signed.example/upload",
+      headers: { "Content-Type": "video/mp4" },
+      maxSizeBytes: 200 * 1024 * 1024,
+      expiresInSeconds: 900,
+      category: "lipsync_footage"
+    });
+
+    const response = await POST(
+      new Request("http://localhost/api/assets/upload-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId: "store_1",
+          filename: "demo.mp4",
+          contentType: "video/mp4",
+          sizeBytes: 1000,
+          category: "lipsync_footage"
+        })
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ category: "lipsync_footage" }));
+  });
 });

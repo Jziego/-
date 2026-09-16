@@ -63,6 +63,8 @@ export async function POST(request: Request) {
 
   // 分身训练素材 30MB 复核（以 HeadObject 的真实大小为准，防伪造声明绕过
   // upload-intent 闸门）。超限对象直接删除——与 MIME 不符同处理，不占存储。
+  // lipsync_footage 不受 30MB 约束（对口型无 HeyGen 32MB 硬上限），上方全局
+  // MAX_UPLOAD_BYTES（200MB）已覆盖。
   if (input.category === "avatar_footage" && sizeBytes > MAX_FOOTAGE_BYTES) {
     await deleteObject(input.storageKey);
     return jsonError("人像训练视频超过 30MB 上限，请缩短时长或调低画质后重传", 400);

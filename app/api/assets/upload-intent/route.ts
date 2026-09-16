@@ -22,8 +22,8 @@ export async function POST(request: Request) {
 
   // category 校验后透传：前端 confirm 时回传同一值落库（见 assets/confirm）。
   const category = body.category === undefined ? "material" : body.category;
-  if (category !== "material" && category !== "avatar_footage") {
-    return jsonError("category must be material or avatar_footage", 400);
+  if (category !== "material" && category !== "avatar_footage" && category !== "lipsync_footage") {
+    return jsonError("category must be material, avatar_footage or lipsync_footage", 400);
   }
 
   try {

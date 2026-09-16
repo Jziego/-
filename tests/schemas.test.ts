@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assetSchema,
   avatarProfileSchema,
+  confirmAssetUploadSchema,
   renderProjectSchema,
   storeProfileSchema
 } from "@/lib/schemas";
@@ -126,5 +127,20 @@ describe("core SaaS schemas", () => {
 
     expect(project.selectedAssetIds).toHaveLength(2);
     expect(project.aspectRatio).toBe("9:16");
+  });
+
+  it("confirmAssetUploadSchema accepts category=lipsync_footage", () => {
+    const parsed = confirmAssetUploadSchema.safeParse({
+      assetId: "asset_1",
+      storeId: "store_1",
+      storageKey: "stores/store_1/assets/asset_1-a.mp4",
+      originalFilename: "a.mp4",
+      mimeType: "video/mp4",
+      type: "video",
+      sizeBytes: 1000,
+      category: "lipsync_footage",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.category).toBe("lipsync_footage");
   });
 });

@@ -16,8 +16,8 @@ interface UploadIntentInput {
   filename: string;
   contentType: string;
   sizeBytes: number;
-  /** material（默认）| avatar_footage。人像视频走同一存储链路与 MIME 校验。 */
-  category?: "material" | "avatar_footage";
+  /** material（默认）| avatar_footage（HeyGen 训练素材，30MB 闸）| lipsync_footage（对口型底板，仅全局 200MB 闸）。人像视频走同一存储链路与 MIME 校验。 */
+  category?: "material" | "avatar_footage" | "lipsync_footage";
 }
 
 export interface UploadIntent {
@@ -27,7 +27,7 @@ export interface UploadIntent {
   headers: Record<string, string>;
   maxSizeBytes: number;
   expiresInSeconds: number;
-  category: "material" | "avatar_footage";
+  category: "material" | "avatar_footage" | "lipsync_footage";
 }
 
 interface ClassifyAssetInput {
@@ -123,8 +123,8 @@ export async function createUploadIntent(input: UploadIntentInput): Promise<Uplo
 
   // 分身训练素材走更严的 30MB 上限：HeyGen /v3/assets 直传硬上限 32MB
   // （2026-09-05 生产实测 89.3MB 被 400 拒）。在上传入口拦死，避免用户
-  // 传完大文件后创建分身时才炸。时长维度（30s–5min）只能由前端读元数据
-  // 拦截，服务端以大小为准。
+  // 传完大文件后创建分身时才炸。时长维度只能由前端读元数据拦截，服务端以大小为准。
+  // lipsync_footage（对口型底板）不受此闸——MediaKit 无 32MB 限制，全局 200MB 即可。
   if (input.category === "avatar_footage" && input.sizeBytes > MAX_FOOTAGE_BYTES) {
     throw new UploadValidationError("人像训练视频超过 30MB 上限：请缩短时长，或把手机录像分辨率调低后重拍");
   }

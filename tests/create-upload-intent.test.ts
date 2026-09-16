@@ -30,3 +30,18 @@ describe("createUploadIntent avatar_footage size cap", () => {
     expect(intent.maxSizeBytes).toBeGreaterThan(30 * 1024 * 1024);
   });
 });
+
+describe("createUploadIntent lipsync_footage size cap", () => {
+  const base = { ownerId: "owner_1", storeId: "store_1", filename: "me.mp4", contentType: "video/mp4" };
+
+  it("does not apply the HeyGen 30MB cap to lipsync_footage (only the global 200MB cap)", async () => {
+    const intent = await createUploadIntent({ ...base, sizeBytes: 150 * 1024 * 1024, category: "lipsync_footage" });
+    expect(intent.category).toBe("lipsync_footage");
+  });
+
+  it("rejects lipsync_footage over the global 200MB cap", async () => {
+    await expect(
+      createUploadIntent({ ...base, sizeBytes: 201 * 1024 * 1024, category: "lipsync_footage" }),
+    ).rejects.toThrow(UploadValidationError);
+  });
+});
