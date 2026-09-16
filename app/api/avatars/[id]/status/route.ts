@@ -4,10 +4,10 @@ import { getAvatarRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
 import {
   applyDigitalTwinStatus,
-  createProviderFromEnv,
   AvatarProviderNotConfiguredError,
   type DigitalTwinStatus,
 } from "@/lib/services/avatar-provider";
+import { createProviderByName } from "@/lib/services/providers";
 
 /**
  * GET /api/avatars/[id]/status — 轮询分身授权+训练状态（spec §6.2.4）。
@@ -38,7 +38,8 @@ export async function GET(
 
   let status: DigitalTwinStatus;
   try {
-    status = await createProviderFromEnv().getDigitalTwinStatus({ groupId: avatar.providerGroupId });
+    // 按 profile.provider 逐形象解析：部署切到对口型后，老 HeyGen 形象仍走 HeyGen 轮询。
+    status = await createProviderByName(avatar.provider).getDigitalTwinStatus({ groupId: avatar.providerGroupId });
   } catch (error) {
     if (error instanceof AvatarProviderNotConfiguredError) {
       return jsonError("数字人服务未配置，请联系管理员", 503);

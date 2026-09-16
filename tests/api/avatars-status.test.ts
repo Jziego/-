@@ -11,19 +11,26 @@ import type { AvatarProfile } from "@/lib/types";
 // 统一在 beforeEach / it 内赋值。
 // 必须 importOriginal 展开真实导出——路由里的 instanceof AvatarProviderNotConfiguredError
 // 需要拿到真实的错误类；整体替换会让它变成 undefined。
-const { providerRef, factoryMode } = vi.hoisted(() => ({
+const { providerRef, factoryMode, byNameCalls } = vi.hoisted(() => ({
   providerRef: { current: null as AvatarProvider | null },
   factoryMode: { value: "ok" as "ok" | "unconfigured" },
+  /** createProviderByName 被调时记录传入的 profile.provider——钉住「按形象解析」语义。 */
+  byNameCalls: [] as (string | undefined)[],
 }));
 vi.mock("@/lib/services/providers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/services/providers")>();
+  const resolve = () => {
+    if (factoryMode.value === "unconfigured") {
+      throw new actual.AvatarProviderNotConfiguredError();
+    }
+    return providerRef.current;
+  };
   return {
     ...actual,
-    createProviderFromEnv: () => {
-      if (factoryMode.value === "unconfigured") {
-        throw new actual.AvatarProviderNotConfiguredError();
-      }
-      return providerRef.current;
+    createProviderFromEnv: resolve,
+    createProviderByName: (name: string | undefined) => {
+      byNameCalls.push(name);
+      return resolve();
     },
   };
 });
@@ -63,6 +70,7 @@ describe("GET /api/avatars/[id]/status", () => {
     resetRuntimeStateForTests();
     providerRef.current = createMockProvider();
     factoryMode.value = "ok";
+    byNameCalls.length = 0;
   });
   afterEach(() => { if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl; });
 
@@ -158,6 +166,29 @@ describe("GET /api/avatars/[id]/status", () => {
     const res = await getStatus("avatar_1");
     expect(res.status).toBe(404);
   });
+
+  it("resolves the provider from the profile (lipsync avatar polls via its own provider)", async () => {
+    providerRef.current = createMockProvider({
+      twinStatusSequence: [{
+        consentStatus: "approved", trainingStatus: "ready",
+        providerAvatarId: "stores/store_1/assets/asset_1-me.mp4", providerVoiceId: "db_voice",
+      }],
+    });
+    await getAvatarRepository().create(seedAvatar({
+      provider: "volcengine-lipsync",
+      providerGroupId: "lipsync:stores/store_1/assets/asset_1-me.mp4",
+    }));
+    const res = await getStatus("avatar_1");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.avatar).toMatchObject({
+      trainingStatus: "ready",
+      providerAvatarId: "stores/store_1/assets/asset_1-me.mp4",
+      providerVoiceId: "db_voice",
+    });
+    // 钉住：轮询按 profile.provider 解析（createProviderByName），而非部署 env 工厂。
+    expect(byNameCalls).toEqual(["volcengine-lipsync"]);
+  });
 });
 
 describe("POST /api/avatars/[id]/consent", () => {
@@ -166,6 +197,7 @@ describe("POST /api/avatars/[id]/consent", () => {
     resetRuntimeStateForTests();
     providerRef.current = createMockProvider();
     factoryMode.value = "ok";
+    byNameCalls.length = 0;
   });
   afterEach(() => { if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl; });
 
@@ -220,5 +252,18 @@ describe("POST /api/avatars/[id]/consent", () => {
     await getAvatarRepository().create(seedAvatar({ ownerId: "other" }));
     const res = await postConsent("avatar_1");
     expect(res.status).toBe(404);
+  });
+
+  it("400s consent re-issue for a lipsync avatar (no consent concept)", async () => {
+    await getAvatarRepository().create(seedAvatar({
+      provider: "volcengine-lipsync",
+      providerGroupId: "lipsync:stores/store_1/assets/asset_1-me.mp4",
+      consentStatus: "awaiting_user", trainingStatus: "pending",
+    }));
+    const res = await postConsent("avatar_1");
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("无需授权");
+    // 防御在 provider 调用之前：不该解析/触碰任何 provider。
+    expect(byNameCalls).toHaveLength(0);
   });
 });

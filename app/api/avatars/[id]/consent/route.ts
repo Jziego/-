@@ -2,7 +2,8 @@ import { jsonError, jsonOk } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { getAvatarRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
-import { createProviderFromEnv, AvatarProviderNotConfiguredError } from "@/lib/services/avatar-provider";
+import { AvatarProviderNotConfiguredError } from "@/lib/services/avatar-provider";
+import { createProviderByName } from "@/lib/services/providers";
 import { nowIso } from "@/lib/ids";
 
 /**
@@ -28,6 +29,10 @@ export async function POST(
   if (!avatar.providerGroupId) {
     return jsonError("Avatar has no provider group", 400);
   }
+  // 对口型形象无授权概念（创建即就绪）：明确 400，不给 HeyGen 语义的状态机添乱。
+  if (avatar.provider === "volcengine-lipsync") {
+    return jsonError("对口型形象无需授权，创建后会自动就绪", 400);
+  }
   if (
     avatar.consentStatus !== "awaiting_user" &&
     avatar.consentStatus !== "rejected" &&
@@ -37,7 +42,8 @@ export async function POST(
   }
 
   try {
-    const { consentUrl } = await createProviderFromEnv().refreshConsent({ groupId: avatar.providerGroupId });
+    // 按 profile.provider 解析：老 HeyGen 形象在部署切换后仍能重发授权。
+    const { consentUrl } = await createProviderByName(avatar.provider).refreshConsent({ groupId: avatar.providerGroupId });
     const updated = await repo.update(id, {
       consentStatus: "awaiting_user",
       trainingStatus: "pending",

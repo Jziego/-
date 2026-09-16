@@ -8,7 +8,7 @@ import type { Asset, StoreProfile } from "@/lib/types";
 // 用可控 mock provider 替换 env 工厂；必须 importOriginal 展开真实导出——
 // 路由里的 instanceof AvatarProviderNotConfiguredError 需要拿到真实错误类。
 const { factoryMode } = vi.hoisted(() => ({
-  factoryMode: { value: "mock" as "mock" | "unconfigured" },
+  factoryMode: { value: "mock" as "mock" | "unconfigured" | "lipsync" },
 }));
 vi.mock("@/lib/services/providers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/services/providers")>();
@@ -17,6 +17,16 @@ vi.mock("@/lib/services/providers", async (importOriginal) => {
     createProviderFromEnv: () => {
       if (factoryMode.value === "unconfigured") {
         throw new actual.AvatarProviderNotConfiguredError();
+      }
+      if (factoryMode.value === "lipsync") {
+        // 部署切到对口型生产线：createDigitalTwin 不调远端，groupId 编码 footageStorageKey。
+        return {
+          ...createMockProvider(),
+          name: "volcengine-lipsync",
+          async createDigitalTwin(input: { name: string; footageUrl: string; footageStorageKey?: string }) {
+            return { groupId: `lipsync:${input.footageStorageKey ?? ""}`, consentUrl: "" };
+          },
+        };
       }
       return createMockProvider();
     },
@@ -128,6 +138,61 @@ describe("POST /api/avatars (digital twin)", () => {
   it("400s on missing fields and overlong names", async () => {
     expect((await post({ storeId: "store_1", name: "x", consentAccepted: true })).status).toBe(400);
     expect((await post({ storeId: "store_1", footageAssetId: "asset_footage_1", name: "很".repeat(21), consentAccepted: true })).status).toBe(400);
+  });
+
+  it("lipsync mode: creates an instantly-polling avatar with empty consentUrl from lipsync_footage", async () => {
+    factoryMode.value = "lipsync";
+    const now = nowIso();
+    await getAssetRepository().create({
+      id: "asset_ls_1", ownerId: "demo_user", storeId: "store_1", type: "video",
+      originalFilename: "board.mp4", storageKey: "stores/store_1/assets/asset_ls_1-board.mp4",
+      mimeType: "video/mp4", sizeBytes: 50 * 1024 * 1024, tags: [], businessTags: [],
+      status: "ready", category: "lipsync_footage", createdAt: now,
+    });
+    const res = await post({ storeId: "store_1", footageAssetId: "asset_ls_1", name: "老刘", consentAccepted: true });
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.consentUrl).toBe("");
+    expect(json.avatar).toMatchObject({
+      provider: "volcengine-lipsync",
+      providerGroupId: "lipsync:stores/store_1/assets/asset_ls_1-board.mp4",
+      consentStatus: "awaiting_user",
+      trainingStatus: "pending",
+    });
+  });
+
+  it("lipsync mode: accepts legacy avatar_footage assets as lip-sync base footage", async () => {
+    factoryMode.value = "lipsync";
+    const res = await post({ storeId: "store_1", footageAssetId: "asset_footage_1", name: "老刘", consentAccepted: true });
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.avatar.provider).toBe("volcengine-lipsync");
+  });
+
+  it("lipsync mode: rejects footage over 200MB at creation time", async () => {
+    factoryMode.value = "lipsync";
+    const now = nowIso();
+    await getAssetRepository().create({
+      id: "asset_huge", ownerId: "demo_user", storeId: "store_1", type: "video",
+      originalFilename: "huge.mp4", storageKey: "stores/store_1/assets/asset_huge-h.mp4",
+      mimeType: "video/mp4", sizeBytes: 201 * 1024 * 1024, tags: [], businessTags: [],
+      status: "ready", category: "lipsync_footage", createdAt: now,
+    });
+    const res = await post({ storeId: "store_1", footageAssetId: "asset_huge", name: "老刘", consentAccepted: true });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("200MB");
+  });
+
+  it("heygen (mock) mode: rejects lipsync_footage category (creation provider mismatch)", async () => {
+    const now = nowIso();
+    await getAssetRepository().create({
+      id: "asset_ls_2", ownerId: "demo_user", storeId: "store_1", type: "video",
+      originalFilename: "board.mp4", storageKey: "stores/store_1/assets/asset_ls_2-board.mp4",
+      mimeType: "video/mp4", sizeBytes: 1024, tags: [], businessTags: [],
+      status: "ready", category: "lipsync_footage", createdAt: now,
+    });
+    const res = await post({ storeId: "store_1", footageAssetId: "asset_ls_2", name: "老刘", consentAccepted: true });
+    expect(res.status).toBe(404);
   });
 });
 

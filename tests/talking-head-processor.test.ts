@@ -532,5 +532,114 @@ describe("talking_head processor", () => {
       expect(captured?.segments[1]?.words).toEqual([{ word: "第", startSec: 0, endSec: 0.2 }]);
       expect(captured?.segments[0]?.words).toBeUndefined();
     });
+
+    it("legacy path with a resolver still resolves per profile (forceLegacy lipsync avatar)", async () => {
+      // talking-head.ts legacy 分支（forceLegacy/无 segments）必须同样走 providerResolver——
+      // 否则 HeyGen-env 服务器给 lipsync 形象预览会把 R2 storageKey 喂给 HeyGen。
+      const now = nowIso();
+      await getAvatarRepository().create({
+        id: "av_ls", ownerId: "owner_1", storeId: "store_1", name: "对口型形象",
+        provider: "volcengine-lipsync",
+        providerAvatarId: "stores/store_1/assets/asset_1-me.mp4", providerVoiceId: "db_voice",
+        consentStatus: "approved", consentAcceptedAt: now, trainingStatus: "ready",
+        fallbackMode: "tts_voiceover", createdAt: now, updatedAt: now,
+      });
+      const draft = await seedSegmentedDraft(); // 有 segments，但 forceLegacy 覆盖走整段单视频
+
+      const resolverCalls: (string | undefined)[] = [];
+      const heygenProvider: AvatarProvider = {
+        ...createMockProvider(),
+        name: "heygen",
+        async generateTalkingHead() {
+          throw new Error("deps.provider must not be used for a lipsync avatar");
+        },
+      };
+      const lipsyncProvider: AvatarProvider = {
+        ...createMockProvider(),
+        name: "volcengine-lipsync",
+        async generateTalkingHead() {
+          return { videoAssetId: "avatars/ls_legacy.mp4", durationSeconds: 6 };
+        },
+      };
+      const providerResolver = (name: string | undefined) => {
+        resolverCalls.push(name);
+        return name === "volcengine-lipsync" ? lipsyncProvider : heygenProvider;
+      };
+
+      const output = await processTalkingHead(
+        makeSegmentJob({ avatarProfileIds: ["av_ls"], scriptDraftId: draft.id, forceLegacy: true }),
+        { ...depsWith(heygenProvider), providerResolver, uploadManifest: manifestSpy() }
+      );
+
+      expect(resolverCalls).toEqual(["volcengine-lipsync"]);
+      expect(output.kind).toBe("talking_head");
+      expect(output.storageKey).toBe("avatars/ls_legacy.mp4");
+    });
+
+    it("off-camera segments synthesize speech via the per-speaker provider (mixed heygen + lipsync)", async () => {
+      const now = nowIso();
+      await getAvatarRepository().create({
+        id: "av_hg", ownerId: "owner_1", storeId: "store_1", name: "克隆形象",
+        provider: "heygen", providerAvatarId: "hg_look", providerVoiceId: "hg_voice",
+        consentStatus: "approved", consentAcceptedAt: now, trainingStatus: "ready",
+        fallbackMode: "tts_voiceover", createdAt: now, updatedAt: now,
+      });
+      await getAvatarRepository().create({
+        id: "av_ls", ownerId: "owner_1", storeId: "store_1", name: "对口型形象",
+        provider: "volcengine-lipsync",
+        providerAvatarId: "stores/store_1/assets/asset_1-me.mp4", providerVoiceId: "db_voice",
+        consentStatus: "approved", consentAcceptedAt: now, trainingStatus: "ready",
+        fallbackMode: "tts_voiceover", createdAt: now, updatedAt: now,
+      });
+      const draft = await seedDraft();
+      const segments: ScriptSegment[] = [
+        { index: 0, text: "出镜句", speakerIndex: 0, onCamera: true },
+        { index: 1, text: "画外音句", speakerIndex: 1, onCamera: false },
+      ];
+      await getScriptRepository().update(draft.id, {
+        segments,
+        speakerAvatarIds: ["av_hg", "av_ls"],
+      } as Partial<ScriptDraft>);
+
+      const lipsyncSynthesize = vi.fn(async (_input: { providerVoiceId: string; text: string }) => ({
+        audioStorageKey: "voice_audio_ls",
+        durationSeconds: 2,
+        words: [{ word: "画", startSec: 0, endSec: 0.3 }],
+      }));
+      const heygenSynthesize = vi.fn(async (_input: { providerVoiceId: string; text: string }) => {
+        throw new Error("heygen provider must not TTS a lipsync speaker's segment");
+      });
+      const heygenProvider: AvatarProvider = {
+        ...createMockProvider(),
+        name: "heygen",
+        synthesizeSpeech: heygenSynthesize,
+      };
+      const lipsyncProvider: AvatarProvider = {
+        ...createMockProvider(),
+        name: "volcengine-lipsync",
+        synthesizeSpeech: lipsyncSynthesize,
+      };
+      const providerResolver = (name: string | undefined) =>
+        name === "volcengine-lipsync" ? lipsyncProvider : heygenProvider;
+
+      let captured: VoiceTrackManifest | undefined;
+      await processTalkingHead(
+        makeSegmentJob({ avatarProfileIds: ["av_hg", "av_ls"], scriptDraftId: draft.id }),
+        {
+          ...depsWith(heygenProvider),
+          providerResolver,
+          uploadManifest: async (_key, manifest) => { captured = manifest; },
+        }
+      );
+
+      // 画外音段的 TTS 走 speaker 自己的 provider（豆包声音 db_voice），不碰 heygen provider
+      expect(lipsyncSynthesize).toHaveBeenCalledTimes(1);
+      expect(lipsyncSynthesize).toHaveBeenCalledWith({ providerVoiceId: "db_voice", text: "画外音句" });
+      expect(heygenSynthesize).not.toHaveBeenCalled();
+      expect(captured?.segments[1]).toMatchObject({
+        index: 1, onCamera: false, audioStorageKey: "voice_audio_ls",
+      });
+      expect(captured?.segments[1]?.words).toEqual([{ word: "画", startSec: 0, endSec: 0.3 }]);
+    });
   });
 });
