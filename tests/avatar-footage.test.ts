@@ -5,6 +5,8 @@ import {
   MIN_FOOTAGE_DURATION_SEC,
   validateFootageDuration,
   validateFootageSize,
+  validateLipSyncFootageDuration,
+  validateLipSyncFootageSize,
 } from "@/lib/avatar-footage";
 
 // HeyGen 数字人训练素材约束（2026-09-05 生产事故后确立）：
@@ -31,5 +33,22 @@ describe("avatar footage constraints", () => {
 
   it("unreadable duration (<=0) passes — HeyGen validates authoritatively at creation", () => {
     expect(validateFootageDuration(0)).toBeNull();
+  });
+});
+
+// 对口型出镜底板素材闸门（火山 MediaKit）：独立于 HeyGen 训练素材——
+// 底板不做训练/克隆，画面循环复用，故时长 10s–3min、大小 ≤200MB。
+describe("lipsync footage gates", () => {
+  it("validateLipSyncFootageSize rejects over 200MiB with a user-facing message", () => {
+    expect(validateLipSyncFootageSize(201 * 1024 * 1024)).toMatch(/200MB/);
+    expect(validateLipSyncFootageSize(200 * 1024 * 1024)).toBeNull();
+  });
+
+  it("validateLipSyncFootageDuration enforces 10s–3min and passes unreadable metadata through", () => {
+    expect(validateLipSyncFootageDuration(0)).toBeNull(); // 读不出元数据放行，权威校验在 provider
+    expect(validateLipSyncFootageDuration(5)).toMatch(/10 秒/);
+    expect(validateLipSyncFootageDuration(10)).toBeNull();
+    expect(validateLipSyncFootageDuration(180)).toBeNull();
+    expect(validateLipSyncFootageDuration(181)).toMatch(/3 分钟/);
   });
 });
