@@ -76,7 +76,8 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
   const synthesize = deps?.synthesizeSpeechFn ?? synthesizeDoubaoSpeech;
   const presignGet = deps?.presignGet ?? createPresignedGetUrl;
   const putObject = deps?.putObject ?? putObjectFromBuffer;
-  const pollIntervalMs = deps?.pollIntervalMs ?? getMediakitPollIntervalMs();
+  // 钳位下限 1ms：deps 注入 0 会让 ceil(timeout/0)=Infinity 变成死循环 hammering 供应商。
+  const pollIntervalMs = Math.max(1, deps?.pollIntervalMs ?? getMediakitPollIntervalMs());
   const pollTimeoutMs = deps?.pollTimeoutMs ?? getMediakitPollTimeoutMs();
 
   function requireApiKey(): string {
@@ -118,7 +119,12 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
     if (!res.ok) {
       throw new Error(`MediaKit 产物下载失败 HTTP ${res.status}`);
     }
-    return new Uint8Array(await res.arrayBuffer());
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    // 200 + 空 body 入库后会在 ffmpeg 侧以更隐晦的方式炸——此处 fail-fast。
+    if (bytes.length === 0) {
+      throw new Error("MediaKit 产物下载为空");
+    }
+    return bytes;
   }
 
   return {
@@ -190,6 +196,11 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
           await sleep(pollIntervalMs);
         }
         task = await mediakitCall<MediaKitTaskResponse>("GET", `/api/v1/tasks/${taskId}`);
+        // HTTP 200 + 合法 JSON 但无 status（如 {}）= 供应商协议漂移。空转到超时会把
+        // 漂移误判成"供应商慢"（HeyGen 侧吃过三次同类亏）——立即炸出原始响应。
+        if (!task.status) {
+          throw new Error(`MediaKit 任务响应缺少 status 字段（协议漂移）：${JSON.stringify(task).slice(0, 300)}`);
+        }
         if (task.status === "completed") break;
         if (task.status === "failed") {
           const msg = task.error?.message ?? "未知原因";
@@ -209,10 +220,14 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
       const storageKey = `avatars/lipsync/${taskId}.mp4`;
       await putObject(storageKey, bytes, "video/mp4");
 
+      // 时长权威来源 MediaKit result.duration；缺失或为 0（?? 挡不住 0，而 0 会毒化
+      // 下游时间线计算）时兜底 TTS 音频实测时长（恒等关系见上）。
+      const mediaKitDuration = task.result?.duration;
+      const durationSeconds = mediaKitDuration && mediaKitDuration > 0 ? mediaKitDuration : speech.durationSeconds;
+
       return {
         videoAssetId: storageKey,
-        // 时长权威来源 MediaKit result.duration；缺失兜底 TTS 音频实测时长（恒等关系见上）。
-        durationSeconds: task.result?.duration ?? speech.durationSeconds,
+        durationSeconds,
         words: speech.words,
       };
     },

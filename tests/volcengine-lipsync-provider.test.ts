@@ -133,6 +133,39 @@ describe("volcengine-lipsync provider", () => {
     expect(result.durationSeconds).toBe(12.3);
   });
 
+  it("generateTalkingHead falls back to the TTS duration when the task result duration is 0", async () => {
+    const deps = makeDeps({
+      fetchImpl: vi.fn(async (url: string) => {
+        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
+        if (url.includes("/api/v1/tasks/")) {
+          return new Response(
+            JSON.stringify({ status: "completed", result: { video_url: "https://mediakit.example/result.mp4", duration: 0 } }),
+            { status: 200 },
+          );
+        }
+        return new Response(new Uint8Array([1]), { status: 200 });
+      }),
+    });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    const result = await provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" });
+    expect(result.durationSeconds).toBe(12.3);
+  });
+
+  it("generateTalkingHead rejects a zero-byte artifact download", async () => {
+    const deps = makeDeps({
+      fetchImpl: vi.fn(async (url: string) => {
+        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
+        if (url.includes("/api/v1/tasks/")) return mediakitTaskCompleted();
+        return new Response(new Uint8Array([]), { status: 200 });
+      }),
+    });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
+    ).rejects.toThrow(/下载为空/);
+    expect(deps.putObject).not.toHaveBeenCalled();
+  });
+
   it("generateTalkingHead surfaces the provider error message when the task fails", async () => {
     const deps = makeDeps({
       fetchImpl: vi.fn(async (url: string) => {
@@ -160,9 +193,25 @@ describe("volcengine-lipsync provider", () => {
       }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
-    const result = await provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" });
+    const onProgress = vi.fn();
+    const result = await provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }, onProgress);
     expect(result.durationSeconds).toBe(12.34);
     expect(taskCalls).toBe(3);
+    expect(onProgress).toHaveBeenCalledTimes(3);
+  });
+
+  it("generateTalkingHead fails fast when the poll response lacks a status field (protocol drift)", async () => {
+    const deps = makeDeps({
+      fetchImpl: vi.fn(async (url: string) => {
+        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
+        if (url.includes("/api/v1/tasks/")) return new Response(JSON.stringify({}), { status: 200 });
+        throw new Error("unexpected");
+      }),
+    });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
+    ).rejects.toThrow(/缺少 status/);
   });
 
   it("generateTalkingHead times out with a descriptive error", async () => {
@@ -205,6 +254,26 @@ describe("volcengine-lipsync provider", () => {
     await expect(
       provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
     ).rejects.toThrow(/video_url 无法下载/);
+  });
+
+  it("generateTalkingHead throws on a non-2xx submit response", async () => {
+    const deps = makeDeps({
+      fetchImpl: vi.fn(async () => new Response("Unauthorized", { status: 401 })),
+    });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
+    ).rejects.toThrow(/401/);
+  });
+
+  it("generateTalkingHead throws on a non-JSON submit response", async () => {
+    const deps = makeDeps({
+      fetchImpl: vi.fn(async () => new Response("<html>502</html>", { status: 200 })),
+    });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
+    ).rejects.toThrow(/非 JSON/);
   });
 
   it("synthesizeSpeech delegates to doubao tts with the profile voice", async () => {
