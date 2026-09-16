@@ -296,4 +296,28 @@ describe("volcengine-lipsync provider", () => {
     const lastEnd = Math.max(...(result.words ?? []).map((w) => w.endSec));
     expect(lastEnd).toBeLessThanOrEqual(result.durationSeconds + 0.2);
   });
+
+  it("clamps a zero poll interval instead of spinning forever", async () => {
+    const deps = makeDeps({
+      pollIntervalMs: 0,
+      pollTimeoutMs: 5,
+      fetchImpl: vi.fn(async (url: string) => {
+        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
+        if (url.includes("/api/v1/tasks/")) return mediakitTaskRunning();
+        throw new Error("unexpected");
+      }),
+    });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
+    ).rejects.toThrow(/超时/);
+  });
+
+  it("throws MEDIKIT_API_KEY not configured at call time when the key is missing", async () => {
+    vi.stubEnv("MEDIKIT_API_KEY", "");
+    const provider = createVolcEngineLipSyncProvider(makeDeps({ apiKey: undefined }));
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
+    ).rejects.toThrow(/MEDIKIT_API_KEY/);
+  });
 });

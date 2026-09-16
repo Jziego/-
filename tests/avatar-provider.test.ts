@@ -168,5 +168,6 @@ describe("avatar provider contract extensions (lipsync)", () => {
       scriptText: "好",
     });
     expect(result.videoAssetId).toBe("avatars/vid_words.mp4");
+    expect(result.words).toEqual([{ word: "好", startSec: 0, endSec: 0.3 }]);
   });
 });

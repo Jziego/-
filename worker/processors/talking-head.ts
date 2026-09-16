@@ -1,7 +1,8 @@
 import type { Job } from "bullmq";
 import { createId, nowIso } from "@/lib/ids";
 import type { AvatarProvider } from "@/lib/services/avatar-provider";
-import { createProviderFromEnv, requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
+import { requestAvatarTalkingHead } from "@/lib/services/avatar-provider";
+import { createProviderByName, createProviderFromEnv } from "@/lib/services/providers";
 import {
   isPlatformAvatarId,
   resolvePlatformProviderIds,
@@ -32,6 +33,8 @@ export interface TalkingHeadDeps {
   scriptRepository: ScriptRepository;
   renderRepository: RenderRepository;
   provider: AvatarProvider;
+  /** 按 profile.provider 逐形象解析（HeyGen 老形象与对口型形象可混排）。缺省=单 provider（旧行为/测试）。 */
+  providerResolver?: (providerName: string | undefined) => AvatarProvider;
   /** manifest JSON 上传（默认 R2）；测试注入捕获。 */
   uploadManifest: (key: string, manifest: VoiceTrackManifest) => Promise<void>;
 }
@@ -58,6 +61,7 @@ export const talkingHeadProcessor: ProcessorFn = (job) =>
     scriptRepository: getScriptRepository(),
     renderRepository: getRenderRepository(),
     provider: createProviderFromEnv(),
+    providerResolver: createProviderByName,
     uploadManifest: defaultUploadManifest
   });
 
@@ -93,6 +97,7 @@ async function resolveSpeakers(
       profileId: id,
       providerAvatarId: avatar.providerAvatarId,
       providerVoiceId: avatar.providerVoiceId,
+      providerName: avatar.provider,
     });
   }
   return speakers;
@@ -120,13 +125,16 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
   }
   const speakers = await resolveSpeakers(avatarIds, deps, ownerId);
 
+  const providerFor = (speaker: ResolvedSpeaker): AvatarProvider =>
+    deps.providerResolver ? deps.providerResolver(speaker.providerName) : deps.provider;
+
   const segments = draft.segments ?? [];
 
   // ── Legacy 路径：无 segments 的老 draft，或预览端点显式 forceLegacy → 整段单视频 ──
   if (payload.forceLegacy || segments.length === 0) {
     const speaker = speakers[0] as ResolvedSpeaker;
     const result = await requestAvatarTalkingHead({
-      provider: deps.provider,
+      provider: providerFor(speaker),
       avatarProfileId: speaker.profileId,
       providerAvatarId: speaker.providerAvatarId,
       providerVoiceId: speaker.providerVoiceId,
@@ -150,9 +158,10 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
 
   for (let i = 0; i < plan.length; i++) {
     const { segment, speaker } = plan[i]!;
+    const speakerProvider = providerFor(speaker);
     if (segment.onCamera) {
-      // 出镜段：数字人视频（音视频一体）
-      const result = await deps.provider.generateTalkingHead({
+      // 出镜段：数字人视频（音视频一体）。对口型 provider 由内部 TTS 带回字级时间戳。
+      const result = await speakerProvider.generateTalkingHead({
         providerAvatarId: speaker.providerAvatarId,
         providerVoiceId: speaker.providerVoiceId,
         scriptText: segment.text,
@@ -164,10 +173,11 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
         text: segment.text,
         videoStorageKey: result.videoAssetId,
         durationSec: result.durationSeconds,
+        words: result.words,
       });
     } else {
       // 画外音段：克隆声音 TTS（含词级时间轴）；失败重试 1 次 → 降级数字人视频（spec §6.5）
-      trackSegments.push(await synthesizeOffCameraSegment(segment, speaker, deps.provider));
+      trackSegments.push(await synthesizeOffCameraSegment(segment, speaker, speakerProvider));
     }
     void job.updateProgress(5 + Math.round(((i + 1) / plan.length) * 80));
   }

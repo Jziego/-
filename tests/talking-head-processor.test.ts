@@ -459,5 +459,78 @@ describe("talking_head processor", () => {
       // 整段口播文本（而非分段文本）走 requestAvatarTalkingHead 单视频路径
       expect(seenTexts).toEqual(["开场白。画外音介绍产品细节。"]);
     });
+
+    it("resolves the provider per avatar profile (mixed heygen + lipsync speakers)", async () => {
+      const now = nowIso();
+      // 两个形象：一个 heygen、一个 lipsync，分段各一句
+      await getAvatarRepository().create({
+        id: "av_hg", ownerId: "owner_1", storeId: "store_1", name: "克隆形象",
+        provider: "heygen", providerAvatarId: "hg_look", providerVoiceId: "hg_voice",
+        consentStatus: "approved", consentAcceptedAt: now, trainingStatus: "ready",
+        fallbackMode: "tts_voiceover", createdAt: now, updatedAt: now,
+      });
+      await getAvatarRepository().create({
+        id: "av_ls", ownerId: "owner_1", storeId: "store_1", name: "对口型形象",
+        provider: "volcengine-lipsync",
+        providerAvatarId: "stores/store_1/assets/asset_1-me.mp4", providerVoiceId: "db_voice",
+        consentStatus: "approved", consentAcceptedAt: now, trainingStatus: "ready",
+        fallbackMode: "tts_voiceover", createdAt: now, updatedAt: now,
+      });
+      const draft = await seedDraft();
+      const segments: ScriptSegment[] = [
+        { index: 0, text: "第一句出镜", speakerIndex: 0, onCamera: true },
+        { index: 1, text: "第二句也出镜", speakerIndex: 1, onCamera: true },
+      ];
+      await getScriptRepository().update(draft.id, {
+        segments,
+        speakerAvatarIds: ["av_hg", "av_ls"],
+      } as Partial<ScriptDraft>);
+
+      const calls: { provider: string; text: string }[] = [];
+      const heygenProvider: AvatarProvider = {
+        ...createMockProvider(),
+        name: "heygen",
+        async generateTalkingHead(input) {
+          calls.push({ provider: "heygen", text: input.scriptText });
+          return { videoAssetId: "avatars/hg.mp4", durationSeconds: 5 };
+        },
+      };
+      const lipsyncProvider: AvatarProvider = {
+        ...createMockProvider(),
+        name: "volcengine-lipsync",
+        async generateTalkingHead(input) {
+          calls.push({ provider: "lipsync", text: input.scriptText });
+          return {
+            videoAssetId: "avatars/ls.mp4", durationSeconds: 6,
+            words: [{ word: "第", startSec: 0, endSec: 0.2 }],
+          };
+        },
+      };
+      const providerResolver = (name: string | undefined) =>
+        name === "volcengine-lipsync" ? lipsyncProvider : heygenProvider;
+
+      const mockJob = {
+        data: {
+          jobId: "job_mixed", projectId: "proj_mixed", ownerId: "owner_1",
+          payload: { avatarProfileIds: ["av_hg", "av_ls"], scriptDraftId: draft.id },
+          dependsOnJobIds: [],
+        },
+        updateProgress: vi.fn(),
+      };
+      let captured: VoiceTrackManifest | undefined;
+      await processTalkingHead(mockJob as unknown as BullJob, {
+        ...depsWith(heygenProvider),
+        providerResolver,
+        uploadManifest: async (_key, manifest) => { captured = manifest; },
+      });
+
+      // 各走各的 provider；对口型段的 words 进了 manifest
+      expect(calls).toEqual([
+        { provider: "heygen", text: "第一句出镜" },
+        { provider: "lipsync", text: "第二句也出镜" },
+      ]);
+      expect(captured?.segments[1]?.words).toEqual([{ word: "第", startSec: 0, endSec: 0.2 }]);
+      expect(captured?.segments[0]?.words).toBeUndefined();
+    });
   });
 });

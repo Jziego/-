@@ -6,6 +6,8 @@ export interface ResolvedSpeaker {
   profileId: string;
   providerAvatarId: string;
   providerVoiceId?: string;
+  /** profile.provider 原样带出；平台公共形象/老数据为 undefined（→ env 创建 provider）。 */
+  providerName?: string;
 }
 
 export interface VoiceTrackSegment {
@@ -19,7 +21,7 @@ export interface VoiceTrackSegment {
   /** 画外音段：TTS 音频 storageKey。 */
   audioStorageKey?: string;
   durationSec: number;
-  /** TTS 词级时间轴（相对本段起点的秒）；onCamera 段没有（HeyGen 视频不返回）。 */
+  /** TTS 词级时间轴（相对本段起点的秒）；HeyGen 出镜段没有（其视频不返回），对口型出镜段有。 */
   words?: WordTimestamp[];
   /** TTS 重试失败后降级为数字人视频的标记（spec §6.5）。 */
   fellBackToVideo?: boolean;
