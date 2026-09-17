@@ -6,7 +6,7 @@ import { Providers } from "@/components/providers";
 import * as apiClient from "@/lib/api-client";
 
 // 视频时长探测依赖真实媒体加载，jsdom 永远不会触发——mock 成可控值。
-// 各用例按需改 probeDuration.value（默认 45s，在 30s–5min 合法窗内）。
+// 各用例按需改 probeDuration.value（默认 45s，在对口型底板 10s–3min 合法窗内）。
 const { probeDuration } = vi.hoisted(() => ({ probeDuration: { value: 45 } }));
 vi.mock("@/lib/probe-video-duration", () => ({
   probeVideoDurationSec: vi.fn(async () => probeDuration.value),
@@ -89,7 +89,7 @@ describe("AI video assistant dashboard", () => {
       screen.getByText("0 基础也能做。自动写脚本、配音乐、加字幕，你只管传素材，剩下的 AI 全包，让顾客主动找到你。")
     ).toBeInTheDocument();
     expect(screen.getByText("上传你的视频、图片或音频，AI 自动看懂内容并分类，找素材时一搜就有")).toBeInTheDocument();
-    expect(screen.getByText("我是视频中的本人（或已获其授权），同意克隆肖像和声音生成 AI 分身")).toBeInTheDocument();
+    expect(screen.getByText("我是视频中的本人（或已获其授权），同意用这段视频生成 AI 配音口播视频")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "请先完成门店档案" })).toBeDisabled();
   });
 
@@ -739,11 +739,11 @@ describe("AI video assistant dashboard", () => {
     await user.upload(footageInput, new File(["video"], "me.mp4", { type: "video/mp4" }));
 
     expect(
-      await within(screen.getByRole("status")).findByText("人像视频已上传。填写形象名字并确认授权后，创建你的 AI 分身。")
+      await within(screen.getByRole("status")).findByText("人像视频已上传。填写形象名字并确认授权后，创建你的出镜形象。")
     ).toBeInTheDocument();
-    // footage 上传链路带 category=avatar_footage，且不做素材 AI 分析。
-    expect(fetchedBodies["POST /api/assets/upload-intent"]).toMatchObject({ category: "avatar_footage" });
-    expect(fetchedBodies["POST /api/assets/confirm"]).toMatchObject({ category: "avatar_footage" });
+    // footage 上传链路带 category=lipsync_footage，且不做素材 AI 分析。
+    expect(fetchedBodies["POST /api/assets/upload-intent"]).toMatchObject({ category: "lipsync_footage" });
+    expect(fetchedBodies["POST /api/assets/confirm"]).toMatchObject({ category: "lipsync_footage" });
     expect(fetchedBodies["POST /api/assets/analyze"]).toBeUndefined();
     // 上传成功后自动选中该人像视频；invalidate 回源后同一条素材不重复出现。
     expect(screen.getByLabelText("选择人像视频 me.mp4")).toBeChecked();
@@ -753,7 +753,7 @@ describe("AI video assistant dashboard", () => {
 
     await user.type(screen.getByLabelText("形象名字"), "店主");
     await user.click(screen.getByRole("checkbox", { name: /我是视频中的本人/ }));
-    await user.click(screen.getByRole("button", { name: "创建 AI 分身" }));
+    await user.click(screen.getByRole("button", { name: "创建出镜形象" }));
 
     expect(
       await within(screen.getByRole("status")).findByText(/已创建分身任务/)
@@ -768,7 +768,7 @@ describe("AI video assistant dashboard", () => {
     expect(popup.location.href).toBe("https://consent/xyz");
   });
 
-  // 素材闸门（2026-09-05 生产事故：89MB 视频超 HeyGen 32MB 硬上限）——
+  // 素材闸门（2026-09-16 起切换对口型底板：≤200MB / 10s–3min）——
   // 超限/超时长直接拒传，不发出任何上传请求。
   function stubFootageGateFetch(fetchedBodies: Record<string, unknown>) {
     const savedStore = {
@@ -809,7 +809,7 @@ describe("AI video assistant dashboard", () => {
     );
   }
 
-  it("blocks avatar footage over 30MB before any upload request", async () => {
+  it("blocks lipsync footage over 200MB before any upload request", async () => {
     const user = userEvent.setup();
     const fetchedBodies: Record<string, unknown> = {};
     stubFootageGateFetch(fetchedBodies);
@@ -821,15 +821,15 @@ describe("AI video assistant dashboard", () => {
     const footageInput = document.querySelector('input[accept="video/*"]') as HTMLInputElement;
     await user.upload(
       footageInput,
-      new File([new Uint8Array(31 * 1024 * 1024)], "big.mp4", { type: "video/mp4" })
+      new File([new Uint8Array(201 * 1024 * 1024)], "big.mp4", { type: "video/mp4" })
     );
 
-    expect(await within(screen.getByRole("status")).findByText(/30MB/)).toBeInTheDocument();
+    expect(await within(screen.getByRole("status")).findByText(/200MB/)).toBeInTheDocument();
     expect(fetchedBodies["POST /api/assets/upload-intent"]).toBeUndefined();
   });
 
-  it("blocks avatar footage shorter than 30 seconds before any upload request", async () => {
-    probeDuration.value = 10;
+  it("blocks lipsync footage shorter than 10 seconds before any upload request", async () => {
+    probeDuration.value = 5;
     const user = userEvent.setup();
     const fetchedBodies: Record<string, unknown> = {};
     stubFootageGateFetch(fetchedBodies);
@@ -1106,13 +1106,74 @@ describe("AI video assistant dashboard", () => {
     await user.click(await screen.findByLabelText("选择人像视频 me.mp4"));
     await user.type(screen.getByLabelText("形象名字"), "店主");
     await user.click(screen.getByRole("checkbox", { name: /我是视频中的本人/ }));
-    await user.click(screen.getByRole("button", { name: "创建 AI 分身" }));
+    await user.click(screen.getByRole("button", { name: "创建出镜形象" }));
 
     expect(
-      await within(screen.getByRole("status")).findByText(/创建 AI 分身失败/)
+      await within(screen.getByRole("status")).findByText(/创建出镜形象失败/)
     ).toBeInTheDocument();
     expect(popup.close).toHaveBeenCalled();
     expect(popup.location.href).toBe("");
+  });
+
+  it("lipsync avatar creation: empty consentUrl closes the placeholder popup and shows a ready-soon message", async () => {
+    const user = userEvent.setup();
+    const popup = { location: { href: "" }, close: vi.fn() };
+    vi.spyOn(window, "open").mockImplementation(() => popup as unknown as Window);
+    const savedStore = {
+      id: "store_ls", ownerId: "demo_user", name: "对口型店", industry: "餐饮",
+      mainProducts: ["牛肉面"], targetCustomers: ["上班族"], sellingPoints: ["现熬"],
+      promotions: [], brandTone: "亲切", forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const footage = {
+      id: "asset_ls", ownerId: "demo_user", storeId: "store_ls", type: "video",
+      originalFilename: "me.mp4", storageKey: "stores/store_ls/assets/asset_ls-me.mp4",
+      mimeType: "video/mp4", sizeBytes: 3000, tags: [], businessTags: [],
+      status: "uploaded", category: "lipsync_footage", createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url === "/api/avatars" && method === "POST") {
+        return {
+          ok: true, status: 201,
+          json: async () => ({
+            avatar: {
+              id: "avatar_ls_1", ownerId: "demo_user", storeId: "store_ls", name: "老刘",
+              provider: "volcengine-lipsync",
+              providerGroupId: "lipsync:stores/store_ls/assets/asset_ls-me.mp4",
+              consentStatus: "awaiting_user", trainingStatus: "pending",
+              consentAcceptedAt: "2026-01-01T00:00:00.000Z", fallbackMode: "tts_voiceover",
+              createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+            consentUrl: "",
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => {
+          if (url === "/api/store-profiles") return { stores: [savedStore] };
+          if (url === "/api/assets") return { assets: [footage] };
+          if (url === "/api/asset-analyses") return { analyses: [] };
+          if (url === "/api/avatars") return { avatars: [] };
+          if (url === "/api/jobs") return { jobs: [] };
+          if (url === "/api/script-drafts") return { scripts: [] };
+          return {};
+        },
+      };
+    }));
+
+    renderDashboard();
+    await user.click(await screen.findByLabelText("选择人像视频 me.mp4"));
+    await user.type(screen.getByLabelText("形象名字"), "老刘");
+    await user.click(screen.getByRole("checkbox", { name: /我是视频中的本人/ }));
+    await user.click(screen.getByRole("button", { name: "创建出镜形象" }));
+
+    expect(await within(screen.getByRole("status")).findByText(/无需授权/)).toBeInTheDocument();
+    expect(popup.close).toHaveBeenCalled();
+    expect(popup.location.href).toBe("");
+    // 对口型形象永不出现授权按钮
+    expect(screen.queryByRole("button", { name: "去完成授权" })).not.toBeInTheDocument();
   });
 
   it("always renders the status toast with guidance (fixed-position contract)", () => {

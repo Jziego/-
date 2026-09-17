@@ -96,7 +96,7 @@ export interface ConfirmAssetInput {
   mimeType: string;
   type: "video" | "image" | "audio";
   sizeBytes?: number;
-  category?: "material" | "avatar_footage";
+  category?: "material" | "avatar_footage" | "lipsync_footage";
 }
 
 export async function createUploadIntentApi(input: {
@@ -105,7 +105,7 @@ export async function createUploadIntentApi(input: {
   filename: string;
   contentType: string;
   sizeBytes: number;
-  category?: "material" | "avatar_footage";
+  category?: "material" | "avatar_footage" | "lipsync_footage";
 }): Promise<UploadIntentResponse> {
   const data = await api<{ intent: UploadIntentResponse }>("/api/assets/upload-intent", {
     method: "POST",

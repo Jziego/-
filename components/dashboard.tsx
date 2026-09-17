@@ -34,7 +34,7 @@ import {
 import { ScriptConfirm } from "@/components/script-confirm";
 import { MAX_ASSETS_PER_STORE, clampUploadBatch } from "@/lib/asset-library";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
-import { validateFootageDuration, validateFootageSize } from "@/lib/avatar-footage";
+import { validateLipSyncFootageDuration, validateLipSyncFootageSize } from "@/lib/avatar-footage";
 import { probeVideoDurationSec } from "@/lib/probe-video-duration";
 import { isPlatformAvatarId } from "@/lib/services/platform-avatar";
 import {
@@ -366,13 +366,13 @@ export function Dashboard() {
     return merged.filter((a) => (a.category ?? "material") === "material");
   }, [localAssets, serverAssets, store]);
 
-  // AI 分身区的人像视频池（本店 + category=avatar_footage；与素材库同规则按 id 去重，
+  // AI 分身区的人像视频池（本店 + category=avatar_footage/lipsync_footage；与素材库同规则按 id 去重，
   // 否则本会话上传的 footage 在 assets 回源后会本地/服务端各出现一次）。
   const footageAssets = useMemo(() => {
     const storeAssets = store ? serverAssets.filter((item) => item.storeId === store.id) : [];
     const seen = new Set<string>();
     return [...localAssets, ...storeAssets].filter((a) => {
-      if (a.category !== "avatar_footage" || seen.has(a.id)) return false;
+      if ((a.category !== "avatar_footage" && a.category !== "lipsync_footage") || seen.has(a.id)) return false;
       seen.add(a.id);
       return true;
     });
@@ -859,14 +859,14 @@ export function Dashboard() {
       setMessage("人像素材仅支持视频文件。");
       return;
     }
-    // 上传前闸门（2026-09-05 生产事故：89MB 视频超 HeyGen 32MB 硬上限）——
-    // 超限直接拒传，不浪费用户流量。时长读不出（0）时放行，由 HeyGen 权威校验。
-    const sizeError = validateFootageSize(file.size);
+    // 上传前闸门（对口型底板：10s-3min/≤200MB）——超限直接拒传，不浪费用户流量。
+    // 时长读不出（0）时放行，由 MediaKit 在生成时做权威校验并经任务失败回报原因。
+    const sizeError = validateLipSyncFootageSize(file.size);
     if (sizeError) {
       setMessage(sizeError);
       return;
     }
-    const durationError = validateFootageDuration(await probeVideoDurationSec(file));
+    const durationError = validateLipSyncFootageDuration(await probeVideoDurationSec(file));
     if (durationError) {
       setMessage(durationError);
       return;
@@ -879,7 +879,7 @@ export function Dashboard() {
         filename: file.name,
         contentType: file.type,
         sizeBytes: file.size,
-        category: "avatar_footage"
+        category: "lipsync_footage"
       });
       await uploadFileToStorage(intent.uploadUrl, file, intent.headers);
       const uploaded = await confirmAssetUpload({
@@ -891,12 +891,12 @@ export function Dashboard() {
         mimeType: file.type,
         type: "video",
         sizeBytes: file.size,
-        category: "avatar_footage"
+        category: "lipsync_footage"
       });
       setLocalAssets((prev) => (prev.some((a) => a.id === uploaded.id) ? prev : [...prev, uploaded]));
       setSelectedFootageId(uploaded.id);
       await queryClient.invalidateQueries({ queryKey: ["assets"] });
-      setMessage("人像视频已上传。填写形象名字并确认授权后，创建你的 AI 分身。");
+      setMessage("人像视频已上传。填写形象名字并确认授权后，创建你的出镜形象。");
     } catch (error) {
       // 透出服务端闸门返回的具体原因（如 30MB 上限），而不是一句通用失败。
       const detail = error instanceof Error ? error.message : "请稍后重试";
@@ -940,7 +940,11 @@ export function Dashboard() {
       });
       setLocalAvatar(profile);
       await queryClient.invalidateQueries({ queryKey: ["avatars"] });
-      if (popup) {
+      if (!consentUrl) {
+        // 对口型形象：无外部授权流，首轮状态轮询（~10s）即就绪。
+        popup?.close();
+        setMessage("形象已创建：对口型模式无需授权，10 秒内自动就绪，可稍等片刻后用于成片。");
+      } else if (popup) {
         // HeyGen webcam 授权：占位窗跳真授权页（24h 有效）。
         popup.location.href = consentUrl;
         setMessage("已创建分身任务：请在新窗口完成真人授权（念一段授权词），完成后回到这里自动刷新状态。");
@@ -950,7 +954,7 @@ export function Dashboard() {
     } catch (error) {
       popup?.close();
       const detail = error instanceof Error ? error.message : "请稍后重试";
-      setMessage(`创建 AI 分身失败：${detail}`);
+      setMessage(`创建出镜形象失败：${detail}`);
     } finally {
       setPendingAction(null);
     }
@@ -1429,7 +1433,7 @@ export function Dashboard() {
           <div className="cardHeader">
             <div>
               <h2>AI 分身</h2>
-              <p>上传一段你本人讲话的视频，AI 克隆你的形象和声音，以后不用出镜也能“真人”出镜</p>
+              <p>上传一段你本人讲话的视频，AI 保留你的形象、声音口型和现场环境，只把话术换成新文案——不用反复出镜，天天都能发"真人"口播</p>
             </div>
             <span className={storeAvatars.some((a) => a.trainingStatus === "ready") ? "statusBadge success" : "statusBadge warning"}>
               {storeAvatars.some((a) => a.trainingStatus === "ready") ? "已完成" : "待完成"}
@@ -1449,7 +1453,7 @@ export function Dashboard() {
           />
 
           <div className="footageSection">
-            <p className="resultHint">拍摄要求：时长 30 秒–5 分钟、文件不超过 30MB、正脸面对镜头、光线充足、人声清晰、无背景音乐。视频太大时，把手机相机分辨率调低（如 720p）再拍。</p>
+            <p className="resultHint">拍摄要求：时长 10 秒–3 分钟（建议 30 秒以上更自然）、文件不超过 200MB、正脸面对镜头、只有一个人出镜、光线充足、无背景音乐。这段视频就是你的"出镜底板"：AI 只改口型和声音，衣服、背景、动作全部保持原样。</p>
             {footageAssets.length > 0 ? (
               <div className="mediaGrid" role="list" aria-label="人像视频列表">
                 {footageAssets.map((item) => (
@@ -1467,7 +1471,7 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="emptyState avatarEmpty">
-                <span>还没有人像视频。上传一段你本人讲话的视频开始克隆。</span>
+                <span>还没有人像视频。上传一段你本人讲话的视频，就能生成任意文案的出镜口播。</span>
               </div>
             )}
             <button
@@ -1490,13 +1494,15 @@ export function Dashboard() {
                     : a.trainingStatus === "failed" ? "statusBadge warning"
                     : "statusBadge"
                   }>
-                    {a.name || "未命名形象"}·
+                    {a.name || "未命名形象"}
+                    {a.provider === "volcengine-lipsync" ? "（实拍对口型）" : ""}·
                     {a.trainingStatus === "ready" ? "已就绪"
                       : a.trainingStatus === "failed" ? `失败${a.statusReason ? `：${a.statusReason}` : ""}`
+                      : a.provider === "volcengine-lipsync" ? "就绪中"
                       : a.consentStatus === "awaiting_user" ? "待真人授权"
                       : "训练中"}
                   </span>
-                  {a.consentStatus === "awaiting_user" ? (
+                  {a.consentStatus === "awaiting_user" && a.provider !== "volcengine-lipsync" ? (
                     <button
                       className="secondaryButton"
                       onClick={() => void handleOpenConsent(a.id)}
@@ -1505,7 +1511,7 @@ export function Dashboard() {
                       去完成授权
                     </button>
                   ) : null}
-                  {a.trainingStatus === "failed" ? (
+                  {a.trainingStatus === "failed" && a.provider !== "volcengine-lipsync" ? (
                     <button
                       className="secondaryButton"
                       onClick={() => void handleReissueConsent(a.id)}
@@ -1540,7 +1546,7 @@ export function Dashboard() {
 
           <label className="consentBox">
             <input checked={avatarConsent} onChange={(event) => setAvatarConsent(event.target.checked)} type="checkbox" />
-            <span>我是视频中的本人（或已获其授权），同意克隆肖像和声音生成 AI 分身</span>
+            <span>我是视频中的本人（或已获其授权），同意用这段视频生成 AI 配音口播视频</span>
           </label>
 
           <button
@@ -1550,7 +1556,7 @@ export function Dashboard() {
             type="button"
           >
             {pendingAction === "avatar" ? <span className="spinner" aria-hidden="true" /> : null}
-            创建 AI 分身
+            创建出镜形象
           </button>
         </article>
 
