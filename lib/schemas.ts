@@ -70,7 +70,7 @@ export const assetSchema = z.object({
   tags: z.array(z.string()).default([]),
   businessTags: z.array(z.string()).default([]),
   status: z.enum(["uploading", "uploaded", "processing", "ready", "failed"]),
-  category: z.enum(["material", "avatar_footage"]).default("material"),
+  category: z.enum(["material", "avatar_footage", "lipsync_footage"]).default("material"),
   createdAt: isoDateString
 });
 
@@ -92,7 +92,7 @@ export const avatarProfileSchema = z.object({
   ownerId: z.string().min(1),
   storeId: z.string().min(1),
   name: z.string().default(""),
-  provider: z.enum(["heygen", "d-id", "tavus", "synthesia", "mock-avatar"]),
+  provider: z.enum(["heygen", "volcengine-lipsync", "d-id", "tavus", "synthesia", "mock-avatar"]),
   providerAvatarId: z.string().optional(),
   providerVoiceId: z.string().optional(),
   providerGroupId: z.string().optional(),

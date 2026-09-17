@@ -78,10 +78,16 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
   // 预估时长：语速取全局唯一来源 lib/speech-rate.ts
   const estimatedSec = Math.round(charCount / SPEECH_CHARS_PER_SECOND);
   // 数字人成本预估（spec §6.4）：跟随编辑中的口播稿实时重切 segments
-  // （prev 命中保留出镜标记，与服务端 PATCH 重切同源），出镜段/画外音段分两档计价。
+  // （prev 命中保留出镜标记，与服务端 PATCH 重切同源）。计价币种随所选形象的
+  // provider：全对口型 → ¥（MediaKit ¥1/分钟）；含 HeyGen → $（保守高估）。
+  const selectedAvatars = avatars.filter((a) => avatarIds.includes(a.id));
+  const pricing =
+    selectedAvatars.length > 0 && selectedAvatars.every((a) => a.provider === "volcengine-lipsync")
+      ? ("lipsync" as const)
+      : ("heygen" as const);
   const costEstimate = useMemo(
-    () => estimateRenderCost(deriveSegmentsFromVoiceover(voiceover, { prev: draft.segments }), avatarIds.length),
-    [voiceover, draft.segments, avatarIds.length],
+    () => estimateRenderCost(deriveSegmentsFromVoiceover(voiceover, { prev: draft.segments }), avatarIds.length, pricing),
+    [voiceover, draft.segments, avatarIds.length, pricing],
   );
   const canConfirm = voiceover.trim().length > 0 && !pending;
 
@@ -146,8 +152,9 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
 
       {avatarIds.length > 0 ? (
         <p className="costHint" aria-label="成本预估">
-          预计数字人成本约 ${costEstimate.totalUsd.toFixed(2)}（出镜 {costEstimate.onCameraSec}s +
-          画外音 {costEstimate.voiceoverSec}s · 消耗 1 次生成配额）
+          {pricing === "lipsync"
+            ? `预计数字人成本约 ¥${costEstimate.totalCny.toFixed(2)}（对口型 ¥1/分钟 · 出镜 ${costEstimate.onCameraSec}s + 画外音 ${costEstimate.voiceoverSec}s · 消耗 1 次生成配额）`
+            : `预计数字人成本约 $${costEstimate.totalUsd.toFixed(2)}（出镜 ${costEstimate.onCameraSec}s + 画外音 ${costEstimate.voiceoverSec}s · 消耗 1 次生成配额）`}
         </p>
       ) : null}
 
