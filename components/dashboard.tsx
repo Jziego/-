@@ -1433,7 +1433,7 @@ export function Dashboard() {
           <div className="cardHeader">
             <div>
               <h2>AI 分身</h2>
-              <p>上传一段你本人讲话的视频，AI 保留你的形象、声音口型和现场环境，只把话术换成新文案——不用反复出镜，天天都能发"真人"口播</p>
+              <p>上传一段你本人讲话的视频，AI 保留你的形象、声音口型和现场环境，只把话术换成新文案——不用反复出镜，天天都能发“真人”口播</p>
             </div>
             <span className={storeAvatars.some((a) => a.trainingStatus === "ready") ? "statusBadge success" : "statusBadge warning"}>
               {storeAvatars.some((a) => a.trainingStatus === "ready") ? "已完成" : "待完成"}
@@ -1453,7 +1453,7 @@ export function Dashboard() {
           />
 
           <div className="footageSection">
-            <p className="resultHint">拍摄要求：时长 10 秒–3 分钟（建议 30 秒以上更自然）、文件不超过 200MB、正脸面对镜头、只有一个人出镜、光线充足、无背景音乐。这段视频就是你的"出镜底板"：AI 只改口型和声音，衣服、背景、动作全部保持原样。</p>
+            <p className="resultHint">拍摄要求：时长 10 秒–3 分钟（建议 30 秒以上更自然）、文件不超过 200MB、正脸面对镜头、只有一个人出镜、光线充足、无背景音乐。这段视频就是你的“出镜底板”：AI 只改口型和声音，衣服、背景、动作全部保持原样。</p>
             {footageAssets.length > 0 ? (
               <div className="mediaGrid" role="list" aria-label="人像视频列表">
                 {footageAssets.map((item) => (
