@@ -30,8 +30,8 @@ describe("estimateRenderCost", () => {
 
   it("lipsync pricing: on-camera seconds billed at ¥1/min, off-camera TTS negligible", () => {
     const segments: ScriptSegment[] = [
-      { index: 0, text: "大家好本周全场八八折", speakerIndex: 0, onCamera: true },   // 10 字 ≈ 2.2s
-      { index: 1, text: "地址在建设路二十八号", speakerIndex: 0, onCamera: false },  // 10 字 ≈ 2.2s
+      { index: 0, text: "大家好本周全场八八折", speakerIndex: 0, onCamera: true },   // 10 字 → 命中 3s 下限
+      { index: 1, text: "地址在建设路二十八号", speakerIndex: 0, onCamera: false },  // 10 字 → 命中 3s 下限
     ];
     const est = estimateRenderCost(segments, 1, "lipsync");
     expect(est.onCameraSec).toBeGreaterThan(2);
