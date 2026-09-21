@@ -5,7 +5,7 @@ import {
   getMediakitPollIntervalMs,
   getMediakitPollTimeoutMs,
 } from "@/lib/env";
-import { createPresignedGetUrl, putObjectFromBuffer } from "@/lib/storage";
+import { getObjectToBuffer, putObjectFromBuffer } from "@/lib/storage";
 import { synthesizeDoubaoSpeech, type DoubaoTtsResult } from "@/lib/services/doubao-tts";
 import type {
   AvatarProvider,
@@ -22,24 +22,28 @@ import type {
  *  - getDigitalTwinStatus 立即 ready（状态机复用现有轮询端点，~10s 收敛）；
  *  - generateTalkingHead 内部串 TTS → 双 presigned URL → lip-sync 任务 → 转存 R2。
  *
- * 素材传递用 R2 presigned GET（2h 过期，任务分钟级完成，足够）而非 mediakit://
- * file_id（30 天过期，需维护重传状态机）——无状态优先。
+ * 素材投递用字节直传火山存储（request-media-upload-url → PUT → file_id），
+ * **不走 R2 presigned URL**——MediaKit 存储网关从 cn-beijing 拉取 Cloudflare R2
+ * 不可靠（2026-09-21 生产实证：任务处理期 storageGW 500；探针走 file_id 则成功）。
+ * file_id 30 天有效但本次任务用完即弃，不维护复用状态机（无状态优先，
+ * 代价=每次渲染多一次 PUT，底板 ≤200MB 可接受）。
  * 探针实证（2026-09-16，scripts/probe-lipsync.mjs）：RTF≈7、并发≥2、9:16 保持、
  * 无可见水印、enable_video_loop=true 时输出时长恒等于音频时长。
  */
 
 const LIPSYNC_GROUP_PREFIX = "lipsync:";
-/** presigned URL 有效期：覆盖任务排队+拉取，远超分钟级处理时长。 */
-const PRESIGN_TTL_SECONDS = 2 * 3600;
 const SUBMIT_TIMEOUT_MS = 60_000;
+/** 媒体上传预算：底板 ≤200MB，参考探针 PUT 超时取 10 分钟。 */
+const UPLOAD_TIMEOUT_MS = 10 * 60_000;
 /** 产物下行预算：45s 成片约 20MB，10 分钟足够。 */
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 
 export interface LipSyncProviderDeps {
-  /** 本 provider 只拉取字符串 URL（MediaKit REST + 产物地址）——窄化签名便于测试注入 mock。 */
+  /** 本 provider 只拉取字符串 URL（MediaKit REST + 上传/产物地址）——窄化签名便于测试注入 mock。 */
   fetchImpl: (url: string, init?: RequestInit) => Promise<Response>;
   synthesizeSpeechFn: (input: { text: string; voice?: string }) => Promise<DoubaoTtsResult>;
-  presignGet: (storageKey: string, expiresInSec: number) => Promise<string>;
+  /** 底板字节从 R2 服务端直拉（SDK 直连，不经公网 presigned URL）。 */
+  getObjectBytes: (storageKey: string) => Promise<Uint8Array>;
   putObject: (key: string, bytes: Uint8Array, contentType: string) => Promise<unknown>;
   pollIntervalMs: number;
   pollTimeoutMs: number;
@@ -66,6 +70,15 @@ interface MediaKitTaskResponse {
   result?: { video_url?: string; duration?: number };
   expires_at?: number;
 }
+interface MediaKitUploadApplyResponse {
+  success?: boolean;
+  error?: MediaKitError;
+  result?: {
+    file_id?: string;
+    upload_url?: string;
+    upload_headers?: { key?: string; value?: string }[];
+  };
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,7 +87,7 @@ function sleep(ms: number): Promise<void> {
 export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDeps>): AvatarProvider {
   const fetchImpl = deps?.fetchImpl ?? fetch;
   const synthesize = deps?.synthesizeSpeechFn ?? synthesizeDoubaoSpeech;
-  const presignGet = deps?.presignGet ?? createPresignedGetUrl;
+  const getObjectBytes = deps?.getObjectBytes ?? getObjectToBuffer;
   const putObject = deps?.putObject ?? putObjectFromBuffer;
   // 钳位下限 1ms：deps 注入 0 会让 ceil(timeout/0)=Infinity 变成死循环 hammering 供应商。
   const pollIntervalMs = Math.max(1, deps?.pollIntervalMs ?? getMediakitPollIntervalMs());
@@ -127,6 +140,38 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
     return bytes;
   }
 
+  /**
+   * 字节直传火山存储换 file_id（探针实证路径：申请上传地址 → PUT 二进制）。
+   * 上传地址是火山内部存储的预签名 PUT——不带 Authorization、Content-Type 按
+   * 真实媒体类型，外加 apply 响应里要求的额外头（探针实测必须透传）。
+   */
+  async function uploadToMediaKit(bytes: Uint8Array, contentType: string): Promise<string> {
+    if (!bytes || bytes.byteLength === 0) {
+      throw new Error("待上传媒体为空（0 字节）——拒绝向 MediaKit 提交空文件");
+    }
+    const apply = await mediakitCall<MediaKitUploadApplyResponse>("POST", "/api/v1/tools-sync/request-media-upload-url", {});
+    const fileId = apply.result?.file_id;
+    const uploadUrl = apply.result?.upload_url;
+    if (!fileId || !uploadUrl) {
+      throw new Error(`MediaKit 申请上传地址响应缺字段（协议漂移）：${JSON.stringify(apply).slice(0, 300)}`);
+    }
+    const headers: Record<string, string> = { "Content-Type": contentType };
+    for (const h of apply.result?.upload_headers ?? []) {
+      if (h?.key) headers[h.key] = h.value ?? "";
+    }
+    const res = await fetchImpl(uploadUrl, {
+      method: "PUT",
+      headers,
+      // TS 5.7 的 Uint8Array<ArrayBufferLike> 不在 BodyInit 联合里；运行时 fetch 接受。
+      body: bytes as unknown as BodyInit,
+      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      throw new Error(`MediaKit 媒体上传失败 HTTP ${res.status}`);
+    }
+    return fileId;
+  }
+
   return {
     name: "volcengine-lipsync",
 
@@ -171,14 +216,14 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
       // Stage 1: 文案 → 配音（字级时间戳随音频一起回来）
       const speech = await synthesize({ text: input.scriptText, voice: input.providerVoiceId });
 
-      // Stage 2: 底板 + 音频双 presigned URL → 提交对口型任务
-      const [videoUrl, audioUrl] = await Promise.all([
-        presignGet(input.providerAvatarId, PRESIGN_TTL_SECONDS),
-        presignGet(speech.audioStorageKey, PRESIGN_TTL_SECONDS),
-      ]);
+      // Stage 2: 底板 + 音频字节直传火山存储换 file_id，提交对口型任务。
+      // 顺序上传（先视频后音频）：音频 ~1MB 跟在大文件后面不过 +1s，换确定性。
+      const footageBytes = await getObjectBytes(input.providerAvatarId);
+      const videoFileId = await uploadToMediaKit(footageBytes, "video/mp4");
+      const audioFileId = await uploadToMediaKit(speech.audioBytes, "audio/mpeg");
       const submitted = await mediakitCall<MediaKitSubmitResponse>("POST", "/api/v1/tools/lip-sync", {
-        video_url: videoUrl,
-        audio_url: audioUrl,
+        video_url: videoFileId,
+        audio_url: audioFileId,
         // 恒 true：输出时长=音频时长（底板短则镜像循环，长则截断到音频长度）。
         enable_video_loop: true,
       });
@@ -204,7 +249,10 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
         if (task.status === "completed") break;
         if (task.status === "failed") {
           const msg = task.error?.message ?? "未知原因";
-          throw new Error(`对口型生成失败：${msg}（code=${task.error?.code ?? "-"}）。如提示画面/人脸问题，请按拍摄要求重录底板视频`);
+          // 重录提示只挂在画面/人脸类失败上——存储/网关类失败与底板质量无关，
+          // 误导用户重录只会浪费时间（2026-09-21 storageGW 500 教训）。
+          const hint = /脸|画面|face/i.test(msg) ? "。如提示画面/人脸问题，请按拍摄要求重录底板视频" : "";
+          throw new Error(`对口型生成失败：${msg}（code=${task.error?.code ?? "-"}）${hint}`);
         }
       }
       if (!task || task.status !== "completed") {

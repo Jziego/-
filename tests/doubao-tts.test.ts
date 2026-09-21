@@ -71,6 +71,8 @@ describe("synthesizeDoubaoSpeech", () => {
       { word: "好", startSec: 0.4, endSec: 0.65 },
     ]);
     expect(result.audioStorageKey).toMatch(/^voices\//);
+    // 音频原始字节随结果返回（对口型链路直传火山存储用，免 R2 往返）。
+    expect(result.audioBytes).toEqual(new Uint8Array(Buffer.from("fake-mp3-bytes")));
   });
 
   it("falls back to the env default voice when none is passed", async () => {

@@ -29,6 +29,8 @@ const MAX_TEXT_BYTES = 3000;
 
 export interface DoubaoTtsResult {
   audioStorageKey: string;
+  /** 音频原始字节（mp3）——对口型链路直传火山存储用，免一次 R2 往返。 */
+  audioBytes: Uint8Array;
   durationSeconds: number;
   words: WordTimestamp[];
 }
@@ -144,7 +146,8 @@ export async function synthesizeDoubaoSpeech(
 
   const putObject = deps?.putObject ?? putObjectFromBuffer;
   const storageKey = `voices/${createId("tts")}.mp3`;
-  await putObject(storageKey, new Uint8Array(audio), "audio/mpeg");
+  const audioBytes = new Uint8Array(audio);
+  await putObject(storageKey, audioBytes, "audio/mpeg");
 
   // 时长权威来源：ffprobe 实测（字幕末词只是兜底；再兜不住按全局语速估算）。
   const makeTmpDir = deps?.makeTmpDir ?? (() => mkdtempSync(join(tmpdir(), "tts-")));
@@ -165,5 +168,5 @@ export async function synthesizeDoubaoSpeech(
     durationSeconds = lastWordEnd > 0 ? lastWordEnd : Array.from(input.text).length / SPEECH_CHARS_PER_SECOND;
   }
 
-  return { audioStorageKey: storageKey, durationSeconds, words };
+  return { audioStorageKey: storageKey, audioBytes, durationSeconds, words };
 }

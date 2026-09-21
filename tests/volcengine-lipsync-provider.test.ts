@@ -2,10 +2,25 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { createVolcEngineLipSyncProvider } from "@/lib/services/providers/volcengine-lipsync";
 
 const FOOTAGE_KEY = "stores/store_1/assets/asset_1-me.mp4";
+const FOOTAGE_BYTES = new Uint8Array([9, 9, 9]);
+const TTS_BYTES = new Uint8Array([7, 7]);
 
 /** MediaKit 响应帧工厂。 */
 function mediakitSubmitOk(taskId = "amk-tool-lip-sync-1") {
   return new Response(JSON.stringify({ task_id: taskId }), { status: 200 });
+}
+function mediakitUploadApplyOk(fileId: string) {
+  return new Response(
+    JSON.stringify({
+      success: true,
+      result: {
+        file_id: fileId,
+        upload_url: `https://mediakit.example/upload/${fileId}`,
+        upload_headers: [{ key: "x-upload-flag", value: "1" }],
+      },
+    }),
+    { status: 200 },
+  );
 }
 function mediakitTaskRunning() {
   return new Response(JSON.stringify({ status: "running" }), { status: 200 });
@@ -23,29 +38,59 @@ function mediakitTaskFailed(message = "视频中未检测到单人真人脸") {
   );
 }
 
-function makeDeps(overrides: Record<string, unknown> = {}) {
-  const fetchImpl = vi.fn(async (url: string) => {
-    if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-    if (url.includes("/api/v1/tasks/")) return mediakitTaskCompleted();
+/**
+ * 上传+任务全链路正常的路由 mock（各测试按需覆盖 submit/task/download 单点）。
+ * 上传 apply 顺序恒定：先视频后音频（实现为顺序上传）。
+ */
+function makeMediakitRouter(overrides: {
+  apply?: (fileId: string) => Response;
+  put?: (url: string) => Response;
+  submit?: () => Response;
+  task?: () => Response;
+  download?: () => Response;
+} = {}) {
+  let applies = 0;
+  return vi.fn(async (url: string) => {
+    if (url.includes("/api/v1/tools-sync/request-media-upload-url")) {
+      applies++;
+      const fileId = applies === 1 ? "fid-video" : "fid-audio";
+      return overrides.apply ? overrides.apply(fileId) : mediakitUploadApplyOk(fileId);
+    }
+    if (url.startsWith("https://mediakit.example/upload/")) {
+      return overrides.put ? overrides.put(url) : new Response("ok", { status: 200 });
+    }
+    if (url.includes("/api/v1/tools/lip-sync")) return overrides.submit?.() ?? mediakitSubmitOk();
+    if (url.includes("/api/v1/tasks/")) return overrides.task?.() ?? mediakitTaskCompleted();
     if (url === "https://mediakit.example/result.mp4") {
-      return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      return overrides.download?.() ?? new Response(new Uint8Array([1, 2, 3]), { status: 200 });
     }
     throw new Error(`unexpected fetch: ${url}`);
   });
+}
+
+function makeDeps(overrides: Record<string, unknown> = {}) {
   return {
-    fetchImpl,
+    fetchImpl: makeMediakitRouter(),
     synthesizeSpeechFn: vi.fn(async () => ({
       audioStorageKey: "voices/tts_fake.mp3",
+      audioBytes: TTS_BYTES,
       durationSeconds: 12.3,
       words: [{ word: "大", startSec: 0, endSec: 0.2 }],
     })),
-    presignGet: vi.fn(async (key: string) => `https://r2.example/presigned/${key}`),
+    getObjectBytes: vi.fn(async (_key: string) => FOOTAGE_BYTES),
     putObject: vi.fn(async () => undefined),
     pollIntervalMs: 1,
     pollTimeoutMs: 10_000,
     apiKey: "test-mediakit-key",
     ...overrides,
   };
+}
+
+/** 从 fetchImpl mock 里捞出媒体 PUT 调用（[url, init]）。 */
+function uploadPutCalls(fetchImpl: unknown): [string, RequestInit][] {
+  return (fetchImpl as ReturnType<typeof vi.fn>).mock.calls.filter(([url]) =>
+    String(url).startsWith("https://mediakit.example/upload/"),
+  ) as unknown as [string, RequestInit][];
 }
 
 describe("volcengine-lipsync provider", () => {
@@ -83,7 +128,7 @@ describe("volcengine-lipsync provider", () => {
     expect(status.reason).toBeTruthy();
   });
 
-  it("generateTalkingHead: TTS → presigned urls → lip-sync submit → poll → download → R2, with words + duration", async () => {
+  it("generateTalkingHead: TTS → 字节直传换 file_id → lip-sync submit → poll → download → R2, with words + duration", async () => {
     const deps = makeDeps();
     const provider = createVolcEngineLipSyncProvider(deps);
     const onProgress = vi.fn();
@@ -95,14 +140,26 @@ describe("volcengine-lipsync provider", () => {
 
     // TTS 用形象的声音
     expect(deps.synthesizeSpeechFn).toHaveBeenCalledWith({ text: "大家好，本周全场八八折", voice: "voice_a" });
-    // MediaKit 提交体：双 presigned URL + 恒 enable_video_loop
+    // 底板字节从 R2 服务端直拉（不经公网 presigned URL）
+    expect(deps.getObjectBytes).toHaveBeenCalledWith(FOOTAGE_KEY);
+    // 两次媒体 PUT：先视频后音频，各带火山要求的额外上传头与原始字节
+    const puts = uploadPutCalls(deps.fetchImpl);
+    expect(puts).toHaveLength(2);
+    expect(puts[0][0]).toBe("https://mediakit.example/upload/fid-video");
+    expect((puts[0][1].headers as Record<string, string>)["Content-Type"]).toBe("video/mp4");
+    expect((puts[0][1].headers as Record<string, string>)["x-upload-flag"]).toBe("1");
+    expect(puts[0][1].body as unknown as Uint8Array).toEqual(FOOTAGE_BYTES);
+    expect(puts[1][0]).toBe("https://mediakit.example/upload/fid-audio");
+    expect((puts[1][1].headers as Record<string, string>)["Content-Type"]).toBe("audio/mpeg");
+    expect(puts[1][1].body as unknown as Uint8Array).toEqual(TTS_BYTES);
+    // MediaKit 提交体：file_id 而非 URL + 恒 enable_video_loop
     const submitCall = (deps.fetchImpl as ReturnType<typeof vi.fn>).mock.calls.find(([url]) =>
       String(url).includes("/api/v1/tools/lip-sync"),
     ) as unknown as [string, RequestInit];
     const submitBody = JSON.parse(String(submitCall[1].body));
     expect(submitBody).toEqual({
-      video_url: `https://r2.example/presigned/${FOOTAGE_KEY}`,
-      audio_url: "https://r2.example/presigned/voices/tts_fake.mp3",
+      video_url: "fid-video",
+      audio_url: "fid-audio",
       enable_video_loop: true,
     });
     expect((submitCall[1].headers as Record<string, string>).Authorization).toBe("Bearer test-mediakit-key");
@@ -118,14 +175,47 @@ describe("volcengine-lipsync provider", () => {
     expect(onProgress).toHaveBeenCalled();
   });
 
+  it("generateTalkingHead throws protocol-drift when the upload-apply response lacks file_id/upload_url", async () => {
+    const deps = makeDeps({
+      fetchImpl: makeMediakitRouter({
+        apply: () => new Response(JSON.stringify({ success: true, result: {} }), { status: 200 }),
+      }),
+    });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
+    ).rejects.toThrow(/协议漂移/);
+  });
+
+  it("generateTalkingHead throws when the media PUT to the upload URL fails", async () => {
+    const deps = makeDeps({
+      fetchImpl: makeMediakitRouter({ put: () => new Response("boom", { status: 500 }) }),
+    });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
+    ).rejects.toThrow(/媒体上传失败 HTTP 500/);
+  });
+
+  it("generateTalkingHead rejects zero-byte footage before requesting any upload URL", async () => {
+    const deps = makeDeps({ getObjectBytes: vi.fn(async () => new Uint8Array([])) });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
+    ).rejects.toThrow(/为空/);
+    const applies = (deps.fetchImpl as ReturnType<typeof vi.fn>).mock.calls.filter(([url]) =>
+      String(url).includes("request-media-upload-url"),
+    );
+    expect(applies).toHaveLength(0);
+  });
+
   it("generateTalkingHead falls back to the TTS duration when the task result has no duration", async () => {
     const deps = makeDeps({
-      fetchImpl: vi.fn(async (url: string) => {
-        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-        if (url.includes("/api/v1/tasks/")) {
-          return new Response(JSON.stringify({ status: "completed", result: { video_url: "https://mediakit.example/result.mp4" } }), { status: 200 });
-        }
-        return new Response(new Uint8Array([1]), { status: 200 });
+      fetchImpl: makeMediakitRouter({
+        task: () => new Response(
+          JSON.stringify({ status: "completed", result: { video_url: "https://mediakit.example/result.mp4" } }),
+          { status: 200 },
+        ),
       }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
@@ -135,15 +225,11 @@ describe("volcengine-lipsync provider", () => {
 
   it("generateTalkingHead falls back to the TTS duration when the task result duration is 0", async () => {
     const deps = makeDeps({
-      fetchImpl: vi.fn(async (url: string) => {
-        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-        if (url.includes("/api/v1/tasks/")) {
-          return new Response(
-            JSON.stringify({ status: "completed", result: { video_url: "https://mediakit.example/result.mp4", duration: 0 } }),
-            { status: 200 },
-          );
-        }
-        return new Response(new Uint8Array([1]), { status: 200 });
+      fetchImpl: makeMediakitRouter({
+        task: () => new Response(
+          JSON.stringify({ status: "completed", result: { video_url: "https://mediakit.example/result.mp4", duration: 0 } }),
+          { status: 200 },
+        ),
       }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
@@ -153,11 +239,7 @@ describe("volcengine-lipsync provider", () => {
 
   it("generateTalkingHead rejects a zero-byte artifact download", async () => {
     const deps = makeDeps({
-      fetchImpl: vi.fn(async (url: string) => {
-        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-        if (url.includes("/api/v1/tasks/")) return mediakitTaskCompleted();
-        return new Response(new Uint8Array([]), { status: 200 });
-      }),
+      fetchImpl: makeMediakitRouter({ download: () => new Response(new Uint8Array([]), { status: 200 }) }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
     await expect(
@@ -166,30 +248,39 @@ describe("volcengine-lipsync provider", () => {
     expect(deps.putObject).not.toHaveBeenCalled();
   });
 
-  it("generateTalkingHead surfaces the provider error message when the task fails", async () => {
+  it("generateTalkingHead surfaces the provider error message when the task fails (face issues get the re-shoot hint)", async () => {
     const deps = makeDeps({
-      fetchImpl: vi.fn(async (url: string) => {
-        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-        if (url.includes("/api/v1/tasks/")) return mediakitTaskFailed();
-        throw new Error("unexpected");
-      }),
+      fetchImpl: makeMediakitRouter({ task: () => mediakitTaskFailed() }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
     await expect(
       provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
-    ).rejects.toThrow(/对口型生成失败.*未检测到单人真人脸/);
+    ).rejects.toThrow(/对口型生成失败.*未检测到单人真人脸.*重录底板/);
+  });
+
+  it("generateTalkingHead does NOT append the re-shoot hint for non-face failures (e.g. storage gateway)", async () => {
+    const deps = makeDeps({
+      fetchImpl: makeMediakitRouter({
+        task: () => mediakitTaskFailed("run lip sync failed: prodia error: storageGW error: 500 Internal Server Error"),
+      }),
+    });
+    const provider = createVolcEngineLipSyncProvider(deps);
+    const err: unknown = await provider
+      .generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/对口型生成失败.*storageGW/);
+    expect((err as Error).message).not.toMatch(/重录底板/);
   });
 
   it("generateTalkingHead keeps polling through running states and reports progress", async () => {
     let taskCalls = 0;
     const deps = makeDeps({
-      fetchImpl: vi.fn(async (url: string) => {
-        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-        if (url.includes("/api/v1/tasks/")) {
+      fetchImpl: makeMediakitRouter({
+        task: () => {
           taskCalls++;
           return taskCalls < 3 ? mediakitTaskRunning() : mediakitTaskCompleted();
-        }
-        return new Response(new Uint8Array([1]), { status: 200 });
+        },
       }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
@@ -202,11 +293,7 @@ describe("volcengine-lipsync provider", () => {
 
   it("generateTalkingHead fails fast when the poll response lacks a status field (protocol drift)", async () => {
     const deps = makeDeps({
-      fetchImpl: vi.fn(async (url: string) => {
-        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-        if (url.includes("/api/v1/tasks/")) return new Response(JSON.stringify({}), { status: 200 });
-        throw new Error("unexpected");
-      }),
+      fetchImpl: makeMediakitRouter({ task: () => new Response(JSON.stringify({}), { status: 200 }) }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
     await expect(
@@ -217,11 +304,7 @@ describe("volcengine-lipsync provider", () => {
   it("generateTalkingHead times out with a descriptive error", async () => {
     const deps = makeDeps({
       pollTimeoutMs: 5,
-      fetchImpl: vi.fn(async (url: string) => {
-        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-        if (url.includes("/api/v1/tasks/")) return mediakitTaskRunning();
-        throw new Error("unexpected");
-      }),
+      fetchImpl: makeMediakitRouter({ task: () => mediakitTaskRunning() }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
     await expect(
@@ -231,12 +314,8 @@ describe("volcengine-lipsync provider", () => {
 
   it("generateTalkingHead throws when the completed task has no video_url", async () => {
     const deps = makeDeps({
-      fetchImpl: vi.fn(async (url: string) => {
-        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-        if (url.includes("/api/v1/tasks/")) {
-          return new Response(JSON.stringify({ status: "completed", result: {} }), { status: 200 });
-        }
-        throw new Error("unexpected");
+      fetchImpl: makeMediakitRouter({
+        task: () => new Response(JSON.stringify({ status: "completed", result: {} }), { status: 200 }),
       }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
@@ -247,8 +326,10 @@ describe("volcengine-lipsync provider", () => {
 
   it("generateTalkingHead throws on a submit-level API error envelope", async () => {
     const deps = makeDeps({
-      fetchImpl: vi.fn(async () =>
-        new Response(JSON.stringify({ success: false, error: { code: "InvalidParam", message: "video_url 无法下载", param: "video_url", type: "invalid" } }), { status: 200 })),
+      fetchImpl: makeMediakitRouter({
+        submit: () =>
+          new Response(JSON.stringify({ success: false, error: { code: "InvalidParam", message: "video_url 无法下载", param: "video_url", type: "invalid" } }), { status: 200 }),
+      }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
     await expect(
@@ -258,7 +339,7 @@ describe("volcengine-lipsync provider", () => {
 
   it("generateTalkingHead throws on a non-2xx submit response", async () => {
     const deps = makeDeps({
-      fetchImpl: vi.fn(async () => new Response("Unauthorized", { status: 401 })),
+      fetchImpl: makeMediakitRouter({ submit: () => new Response("Unauthorized", { status: 401 }) }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
     await expect(
@@ -268,7 +349,7 @@ describe("volcengine-lipsync provider", () => {
 
   it("generateTalkingHead throws on a non-JSON submit response", async () => {
     const deps = makeDeps({
-      fetchImpl: vi.fn(async () => new Response("<html>502</html>", { status: 200 })),
+      fetchImpl: makeMediakitRouter({ submit: () => new Response("<html>502</html>", { status: 200 }) }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
     await expect(
@@ -301,11 +382,7 @@ describe("volcengine-lipsync provider", () => {
     const deps = makeDeps({
       pollIntervalMs: 0,
       pollTimeoutMs: 5,
-      fetchImpl: vi.fn(async (url: string) => {
-        if (url.includes("/api/v1/tools/lip-sync")) return mediakitSubmitOk();
-        if (url.includes("/api/v1/tasks/")) return mediakitTaskRunning();
-        throw new Error("unexpected");
-      }),
+      fetchImpl: makeMediakitRouter({ task: () => mediakitTaskRunning() }),
     });
     const provider = createVolcEngineLipSyncProvider(deps);
     await expect(
