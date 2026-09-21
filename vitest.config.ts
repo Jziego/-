@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -18,24 +19,22 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": new URL(".", import.meta.url).pathname,
+      "@": fileURLToPath(new URL(".", import.meta.url)),
       // next-auth imports from "next/server" but next/package.json does not
       // declare an "exports" field for "./server". Vite/Vitest needs an
       // explicit alias to resolve the CJS module at next/server.js.
-      "next/server": new URL("node_modules/next/server.js", import.meta.url)
-        .pathname,
+      "next/server": fileURLToPath(new URL("node_modules/next/server.js", import.meta.url)),
       // nodemailer is imported by @auth/core but never called at runtime
       // (auth.ts overrides sendVerificationRequest with Resend).
       // Webpack config aliases it to false; Vitest uses an empty stub.
-      nodemailer: new URL("tests/__mocks__/nodemailer.ts", import.meta.url)
-        .pathname,
+      nodemailer: fileURLToPath(new URL("tests/__mocks__/nodemailer.ts", import.meta.url)),
       // @auth/core providers that require nodemailer — redirect to the same stub
       // because @auth/core is externalized (in node_modules) so the nodemailer
       // alias above is not applied to its imports.
-      "@auth/core/providers/nodemailer": new URL(
+      "@auth/core/providers/nodemailer": fileURLToPath(new URL(
         "tests/__mocks__/nodemailer.ts",
         import.meta.url,
-      ).pathname,
+      )),
     }
   }
 });
