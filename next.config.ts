@@ -18,7 +18,9 @@ function parseAllowedDevOrigins(): string[] {
 }
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg", "ioredis"],
+  // ffmpeg-static 在模块加载时用 __dirname 解析二进制路径，打包后 __dirname
+  // 会漂移到 .next/server/chunks/ 导致运行时 ENOENT——必须保持外部化。
+  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg", "ioredis", "ffmpeg-static"],
   env: {
     NEXT_PUBLIC_APP_MODE: process.env.APP_MODE ?? "demo"
   },
