@@ -161,3 +161,23 @@ export function getDoubaoTtsResourceId(): string {
 export function hasLipSyncProvider(): boolean {
   return Boolean(getMediakitApiKey() && getDoubaoTtsApiKey());
 }
+
+// ── 阿里百炼声音克隆（CosyVoice）────────────────────────────────────────────
+
+export function getDashscopeApiKey(): string | undefined {
+  return process.env.DASHSCOPE_API_KEY?.trim() || undefined;
+}
+
+/** 百炼端点：公共域名或业务空间专属域名（探针实测两者皆可），去尾斜杠。 */
+export function getDashscopeBaseUrl(): string {
+  return (process.env.DASHSCOPE_BASE_URL?.trim() || "https://dashscope.aliyuncs.com/api/v1").replace(/\/+$/, "");
+}
+
+/** CosyVoice 合成模型（克隆音色绑定 target_model，换模型必须重新克隆）。 */
+export function getCosyvoiceModel(): string {
+  return process.env.COSYVOICE_MODEL?.trim() || "cosyvoice-v3.5-plus";
+}
+
+export function hasCosyvoiceProvider(): boolean {
+  return Boolean(getDashscopeApiKey());
+}
