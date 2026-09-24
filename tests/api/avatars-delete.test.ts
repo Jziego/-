@@ -1,10 +1,13 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { resetRuntimeStateForTests } from "@/lib/runtime-store";
 import { getAvatarRepository } from "@/lib/repositories";
 import { nowIso } from "@/lib/ids";
 import type { AvatarProfile } from "@/lib/types";
+import { deleteCosyVoice } from "@/lib/services/cosyvoice-enrollment";
 
 import { DELETE } from "@/app/api/avatars/[id]/route";
+
+vi.mock("@/lib/services/cosyvoice-enrollment");
 
 const savedDbUrl = process.env.DATABASE_URL;
 
@@ -30,6 +33,8 @@ describe("DELETE /api/avatars/[id]", () => {
   beforeEach(() => {
     delete process.env.DATABASE_URL;
     resetRuntimeStateForTests();
+    vi.mocked(deleteCosyVoice).mockReset();
+    vi.mocked(deleteCosyVoice).mockResolvedValue(undefined);
   });
   afterEach(() => { if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl; });
 
@@ -51,5 +56,42 @@ describe("DELETE /api/avatars/[id]", () => {
     expect((await del("avatar_missing")).status).toBe(404);
     // 平台公共形象是合成的、从不落库，天然 404
     expect((await del("avatar_platform")).status).toBe(404);
+  });
+
+  it("删除对口型形象时同步释放百炼克隆音色", async () => {
+    await getAvatarRepository().create(
+      seedAvatar({ provider: "volcengine-lipsync", providerVoiceId: "cosyvoice-v3.5-plus-av1-x" }),
+    );
+    const res = await del("avatar_1");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deleted: true });
+    expect(deleteCosyVoice).toHaveBeenCalledWith("cosyvoice-v3.5-plus-av1-x");
+  });
+
+  it("音色删除失败不阻塞形象删除（log warn）", async () => {
+    vi.mocked(deleteCosyVoice).mockRejectedValueOnce(new Error("bailian down"));
+    await getAvatarRepository().create(
+      seedAvatar({ provider: "volcengine-lipsync", providerVoiceId: "cosyvoice-v3.5-plus-av1-x" }),
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await del("avatar_1");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deleted: true });
+    expect(warnSpy).toHaveBeenCalledOnce();
+    warnSpy.mockRestore();
+  });
+
+  it("HeyGen 形象 / 无克隆音色 → 不调 deleteCosyVoice", async () => {
+    await getAvatarRepository().create(
+      seedAvatar({ provider: "heygen", providerVoiceId: "heygen_voice_x" }),
+    );
+    expect((await del("avatar_1")).status).toBe(200);
+    expect(deleteCosyVoice).not.toHaveBeenCalled();
+
+    await getAvatarRepository().create(
+      seedAvatar({ id: "avatar_2", provider: "volcengine-lipsync" }),
+    );
+    expect((await del("avatar_2")).status).toBe(200);
+    expect(deleteCosyVoice).not.toHaveBeenCalled();
   });
 });
