@@ -74,11 +74,14 @@ describe("DELETE /api/avatars/[id]", () => {
       seedAvatar({ provider: "volcengine-lipsync", providerVoiceId: "cosyvoice-v3.5-plus-av1-x" }),
     );
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const res = await del("avatar_1");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deleted: true });
-    expect(warnSpy).toHaveBeenCalledOnce();
-    warnSpy.mockRestore();
+    try {
+      const res = await del("avatar_1");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ deleted: true });
+      expect(warnSpy).toHaveBeenCalledOnce();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("HeyGen 形象 / 无克隆音色 → 不调 deleteCosyVoice", async () => {
