@@ -4,7 +4,8 @@ import { estimateSegmentSeconds } from "@/lib/services/scene-derive";
 /** HeyGen 定价（spec §2）：数字人视频 $0.0667/s；克隆声音 TTS ≈ $0.000333/s。 */
 export const AVATAR_VIDEO_USD_PER_SEC = 0.0667;
 export const CLONED_TTS_USD_PER_SEC = 0.000333;
-/** 火山 MediaKit 对口型定价（2026-09 官网）：¥1/分钟按输出时长。豆包 TTS 字符费量级为几分钱/条，预估忽略。 */
+/** 火山 MediaKit 对口型定价（2026-09 官网）：¥1/分钟按输出时长。TTS 走 CosyVoice 克隆音色
+ * （克隆免费；合成 1.5 元/万字符，一条 300 字文案 ≈0.05 元），预估忽略字符费。 */
 export const LIPSYNC_VIDEO_CNY_PER_SEC = 1 / 60;
 
 export interface RenderCostEstimate {
