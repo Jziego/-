@@ -14,7 +14,7 @@ export const MIN_SAMPLE_SEC = 10;
 const SAMPLE_SEC = 20;
 /** 跳过开头 5s（开场常有杂音/BGM 淡入）；短视频自动回退从头取。 */
 const SKIP_HEAD_SEC = 5;
-/** 标准 wav 头 44 字节；ffmpeg 输出恒定此布局，时长按 (size-44)/字节每秒 估算。 */
+/** ffmpeg wav 输出可能带 LIST 等额外 chunk，头部长度不恒定；时长按 (size-44)/字节每秒 估算（毫秒级误差，对 10s 阈值无影响）。 */
 const WAV_HEADER_BYTES = 44;
 
 export interface VoiceSampleResult {
@@ -59,10 +59,20 @@ export async function extractVoiceSampleFromVideo(
     await d.writeFileFn(inputPath, input.footageBytes);
     for (const skipHead of [SKIP_HEAD_SEC, 0]) {
       const outPath = join(dir, "sample.wav");
-      await d.execFileAsync(d.ffmpegPath, [
-        "-y", "-ss", String(skipHead), "-t", String(SAMPLE_SEC), "-i", inputPath,
-        "-vn", "-ac", "1", "-ar", String(SAMPLE_RATE), "-sample_fmt", "s16", outPath,
-      ]);
+      try {
+        await d.execFileAsync(d.ffmpegPath, [
+          "-y", "-ss", String(skipHead), "-t", String(SAMPLE_SEC), "-i", inputPath,
+          "-vn", "-ac", "1", "-ar", String(SAMPLE_RATE), "-sample_fmt", "s16",
+          "-map_metadata", "-1", outPath,
+        ]);
+      } catch (err) {
+        // 原始错误含 ffmpeg/tmp 路径与 stderr——复刻失败原因会拼 message 对用户可见，
+        // 必须净化：细节截断进服务器日志，对外只抛干净文案。
+        const e = err as { stderr?: unknown; message?: unknown };
+        const detail = typeof e?.stderr === "string" ? e.stderr : String(e?.message ?? err);
+        console.warn(`[voice-sample] ffmpeg 提取失败：${detail.slice(0, 200)}`);
+        throw new Error("音频提取失败——视频可能无音轨或格式不支持，请重录包含清晰人声的口播视频");
+      }
       const wavBytes = await d.readFileFn(outPath);
       const durationSec = Math.max(0, (wavBytes.length - WAV_HEADER_BYTES) / SAMPLE_BYTES_PER_SEC);
       if (durationSec >= MIN_SAMPLE_SEC) {
