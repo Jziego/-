@@ -1,16 +1,22 @@
 import {
+  getCosyvoiceModel,
   getDoubaoTtsVoice,
   getMediakitApiKey,
   getMediakitBaseUrl,
   getMediakitPollIntervalMs,
   getMediakitPollTimeoutMs,
+  hasCosyvoiceProvider,
 } from "@/lib/env";
 import { getObjectToBuffer, putObjectFromBuffer } from "@/lib/storage";
 import { synthesizeDoubaoSpeech, type DoubaoTtsResult } from "@/lib/services/doubao-tts";
+import { createCosyVoice, queryCosyVoice, waitCosyVoiceReady } from "@/lib/services/cosyvoice-enrollment";
+import { synthesizeCosyVoiceSpeech } from "@/lib/services/cosyvoice-tts";
+import { extractVoiceSampleFromVideo, type VoiceSampleResult } from "@/lib/services/voice-sample";
 import type {
   AvatarProvider,
   DigitalTwinStatus,
 } from "@/lib/services/avatar-provider";
+import { randomBytes } from "node:crypto";
 
 /**
  * 火山引擎「实拍对口型」供应商（MediaKit 视频口型对齐 + 豆包 TTS 2.0 配音）。
@@ -49,6 +55,14 @@ export interface LipSyncProviderDeps {
   pollTimeoutMs: number;
   /** 测试注入；缺省读 env。 */
   apiKey?: string;
+  // ── 声音克隆（CosyVoice）注入点；缺省走真实实现 ──
+  cosySynthesizeFn: (input: { text: string; voice: string }) => Promise<DoubaoTtsResult>;
+  extractSampleFn: (input: { footageBytes: Uint8Array }) => Promise<VoiceSampleResult>;
+  createVoiceFn: (input: { sampleWavBytes: Uint8Array; prefix: string; targetModel?: string }) => Promise<string>;
+  queryVoiceFn: (voiceId: string) => Promise<{ status: string } | null>;
+  waitVoiceReadyFn: (voiceId: string) => Promise<void>;
+  /** 是否启用克隆（缺省=hasCosyvoiceProvider()）；demo/dev 无 Key 回退豆包。 */
+  hasCosyvoiceFn: () => boolean;
 }
 
 // ── MediaKit 响应形状（文档 6448/2278532 + 探针实证）─────────────────────────
@@ -89,6 +103,12 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
   const synthesize = deps?.synthesizeSpeechFn ?? synthesizeDoubaoSpeech;
   const getObjectBytes = deps?.getObjectBytes ?? getObjectToBuffer;
   const putObject = deps?.putObject ?? putObjectFromBuffer;
+  const cosySynthesize = deps?.cosySynthesizeFn ?? synthesizeCosyVoiceSpeech;
+  const extractSample = deps?.extractSampleFn ?? extractVoiceSampleFromVideo;
+  const createVoice = deps?.createVoiceFn ?? createCosyVoice;
+  const queryVoice = deps?.queryVoiceFn ?? queryCosyVoice;
+  const waitVoiceReady = deps?.waitVoiceReadyFn ?? waitCosyVoiceReady;
+  const hasCosyvoice = deps?.hasCosyvoiceFn ?? hasCosyvoiceProvider;
   // 钳位下限 1ms：deps 注入 0 会让 ceil(timeout/0)=Infinity 变成死循环 hammering 供应商。
   const pollIntervalMs = Math.max(1, deps?.pollIntervalMs ?? getMediakitPollIntervalMs());
   const pollTimeoutMs = deps?.pollTimeoutMs ?? getMediakitPollTimeoutMs();
@@ -172,6 +192,36 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
     return fileId;
   }
 
+  /** 克隆音色 ID 判定（实测格式：{target_model}-{prefix}-{uid}）。 */
+  function isCosyVoiceId(voice?: string): voice is string {
+    return Boolean(voice && voice.startsWith("cosyvoice-"));
+  }
+
+  /** 幂等复刻：footage → 样本 → 创建音色 → 轮询就绪。克隆免费，重复执行无副作用。 */
+  async function enrollVoice(footageStorageKey: string): Promise<string> {
+    const footageBytes = await getObjectBytes(footageStorageKey);
+    const sample = await extractSample({ footageBytes });
+    // prefix 仅数字+字母 ≤10 字符（enrollment 硬约束）
+    const prefix = `av${randomBytes(4).toString("hex")}`;
+    const voiceId = await createVoice({ sampleWavBytes: sample.wavBytes, prefix, targetModel: getCosyvoiceModel() });
+    await waitVoiceReady(voiceId);
+    return voiceId;
+  }
+
+  /**
+   * TTS 分派（spec §4.4）：克隆音色 → CosyVoice；无百炼 Key（demo/dev）→ 豆包兜底；
+   * 生产 + 非克隆音色 = 数据异常（用户拍板：复刻就绪才出片），fail-fast。
+   */
+  async function synthesizeFor(input: { text: string; voice?: string }): Promise<DoubaoTtsResult> {
+    if (isCosyVoiceId(input.voice)) {
+      return cosySynthesize({ text: input.text, voice: input.voice });
+    }
+    if (hasCosyvoice()) {
+      throw new Error("形象声音未就绪（缺少克隆音色）——请等待形象就绪后再生成");
+    }
+    return synthesize({ text: input.text, voice: input.voice });
+  }
+
   return {
     name: "volcengine-lipsync",
 
@@ -204,17 +254,51 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
         };
       }
       const storageKey = input.groupId.slice(LIPSYNC_GROUP_PREFIX.length);
-      return {
-        consentStatus: "approved",
-        trainingStatus: "ready",
-        providerAvatarId: storageKey,
-        providerVoiceId: getDoubaoTtsVoice(),
-      };
+      if (!hasCosyvoice()) {
+        // demo/dev：无百炼 Key → 维持旧行为（env 豆包音色），本地开发可用。
+        return {
+          consentStatus: "approved",
+          trainingStatus: "ready",
+          providerAvatarId: storageKey,
+          providerVoiceId: getDoubaoTtsVoice(),
+        };
+      }
+      // 生产：内联幂等复刻（创建免费；终态 ready 后路由层不再轮询，每形象只执行一次）。
+      // waitVoiceReady 通常即时返回（实测审核秒级），上限 40s 为防御。
+      try {
+        const voiceId = await enrollVoice(storageKey);
+        return {
+          consentStatus: "approved",
+          trainingStatus: "ready",
+          providerAvatarId: storageKey,
+          providerVoiceId: voiceId,
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return {
+          consentStatus: "approved",
+          trainingStatus: "failed",
+          reason: `声音复刻失败：${msg}。请按拍摄要求重录底板视频后重新创建形象`,
+        };
+      }
     },
 
     async generateTalkingHead(input, onProgress?) {
-      // Stage 1: 文案 → 配音（字级时间戳随音频一起回来）
-      const speech = await synthesize({ text: input.scriptText, voice: input.providerVoiceId });
+      // Stage 1: 文案 → 配音。克隆音色被阿里清理（1 年未合成）时：queryVoice 确认
+      // 不存在 → 用底板重建 → 重试一次（重建免费；音色仍在的失败不重建，直接抛）。
+      // 自愈重建的新 voice_id 不回写 DB（provider 层无 repo 访问权）——1 年未用才触发，
+      // 年频事件每次重建成本≈0；若未来频繁触发再考虑回写。
+      let providerVoiceId = input.providerVoiceId;
+      let speech: DoubaoTtsResult;
+      try {
+        speech = await synthesizeFor({ text: input.scriptText, voice: providerVoiceId });
+      } catch (firstError) {
+        if (!isCosyVoiceId(providerVoiceId)) throw firstError;
+        const existing = await queryVoice(providerVoiceId).catch(() => undefined);
+        if (existing !== null) throw firstError; // 音色仍在或查询异常 → 原始错误透出
+        providerVoiceId = await enrollVoice(input.providerAvatarId);
+        speech = await cosySynthesize({ text: input.scriptText, voice: providerVoiceId });
+      }
 
       // Stage 2: 底板 + 音频字节直传火山存储换 file_id，提交对口型任务。
       // 顺序上传（先视频后音频）：音频 ~1MB 跟在大文件后面不过 +1s，换确定性。
@@ -281,7 +365,7 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
     },
 
     async synthesizeSpeech(input) {
-      return synthesize({ text: input.text, voice: input.providerVoiceId });
+      return synthesizeFor({ text: input.text, voice: input.providerVoiceId });
     },
   };
 }

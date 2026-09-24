@@ -398,3 +398,97 @@ describe("volcengine-lipsync provider", () => {
     ).rejects.toThrow(/MEDIKIT_API_KEY/);
   });
 });
+
+/** CosyVoice 合成成功帧工厂（克隆音色分派/自愈用例用）。 */
+function fakeSpeech() {
+  return {
+    audioStorageKey: "voices/x.mp3",
+    audioBytes: new Uint8Array([1]),
+    durationSeconds: 1,
+    words: [] as { word: string; startSec: number; endSec: number }[],
+  };
+}
+
+describe("声音克隆（getDigitalTwinStatus）", () => {
+  it("生产模式：内联复刻（抽样本→创建→轮询OK）→ ready + providerVoiceId", async () => {
+    const calls: string[] = [];
+    const provider = createVolcEngineLipSyncProvider(makeDeps({
+      extractSampleFn: async () => { calls.push("extract"); return { wavBytes: new Uint8Array([1]), durationSec: 20 }; },
+      createVoiceFn: async () => { calls.push("create"); return "cosyvoice-v3.5-plus-av1-xyz"; },
+      waitVoiceReadyFn: async () => { calls.push("wait"); },
+      hasCosyvoiceFn: () => true,
+    }));
+    const status = await provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
+    expect(status.trainingStatus).toBe("ready");
+    expect(status.providerVoiceId).toBe("cosyvoice-v3.5-plus-av1-xyz");
+    expect(calls).toEqual(["extract", "create", "wait"]);
+  });
+
+  it("复刻失败 → failed + 原因透出（不重试）", async () => {
+    const provider = createVolcEngineLipSyncProvider(makeDeps({
+      extractSampleFn: async () => ({ wavBytes: new Uint8Array([1]), durationSec: 20 }),
+      createVoiceFn: async () => { throw new Error("百炼 create_voice 失败：AudioShortError"); },
+      hasCosyvoiceFn: () => true,
+    }));
+    const status = await provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
+    expect(status.trainingStatus).toBe("failed");
+    expect(status.reason).toContain("AudioShortError");
+  });
+
+  it("demo 模式（无百炼 Key）：保持现状——立即 ready + env 豆包音色", async () => {
+    const provider = createVolcEngineLipSyncProvider(makeDeps({ hasCosyvoiceFn: () => false }));
+    const status = await provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
+    expect(status.trainingStatus).toBe("ready");
+    expect(status.providerVoiceId).toMatch(/^zh_female/); // env 默认豆包女声
+  });
+});
+
+describe("声音克隆（TTS 分派与自愈）", () => {
+  it("cosyvoice- 前缀 voice → 走 CosyVoice 合成", async () => {
+    let cosyUsed = false;
+    const provider = createVolcEngineLipSyncProvider(makeDeps({
+      cosySynthesizeFn: async () => { cosyUsed = true; return fakeSpeech(); },
+      hasCosyvoiceFn: () => true,
+    }));
+    await provider.generateTalkingHead({ providerAvatarId: "footage/key.mp4", providerVoiceId: "cosyvoice-v3.5-plus-av1-x", scriptText: "大家好" });
+    expect(cosyUsed).toBe(true);
+  });
+
+  it("生产模式 + 非克隆音色 → fail-fast（形象声音未就绪）", async () => {
+    const provider = createVolcEngineLipSyncProvider(makeDeps({ hasCosyvoiceFn: () => true }));
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: "footage/key.mp4", providerVoiceId: "zh_female_x", scriptText: "大家好" }),
+    ).rejects.toThrow(/声音未就绪/);
+  });
+
+  it("音色被清理（合成失败且 queryVoice=null）→ 重建并重试一次", async () => {
+    let synthCalls = 0;
+    let rebuilt = false;
+    const provider = createVolcEngineLipSyncProvider(makeDeps({
+      cosySynthesizeFn: async ({ voice }: { text: string; voice: string }) => {
+        synthCalls++;
+        if (voice === "cosyvoice-v3.5-plus-old-x" && !rebuilt) throw new Error("Remote cancelled grpc stream");
+        return fakeSpeech();
+      },
+      queryVoiceFn: async () => null, // 已被清理
+      extractSampleFn: async () => ({ wavBytes: new Uint8Array([1]), durationSec: 20 }),
+      createVoiceFn: async () => { rebuilt = true; return "cosyvoice-v3.5-plus-new-y"; },
+      waitVoiceReadyFn: async () => {},
+      hasCosyvoiceFn: () => true,
+    }));
+    await provider.generateTalkingHead({ providerAvatarId: "footage/key.mp4", providerVoiceId: "cosyvoice-v3.5-plus-old-x", scriptText: "大家好" });
+    expect(rebuilt).toBe(true);
+    expect(synthCalls).toBe(2);
+  });
+
+  it("音色仍在（queryVoice 非 null）的合成失败 → 直接抛错不重建", async () => {
+    const provider = createVolcEngineLipSyncProvider(makeDeps({
+      cosySynthesizeFn: async () => { throw new Error("HTTP 500"); },
+      queryVoiceFn: async () => ({ status: "OK" }),
+      hasCosyvoiceFn: () => true,
+    }));
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: "footage/key.mp4", providerVoiceId: "cosyvoice-v3.5-plus-av1-x", scriptText: "大家好" }),
+    ).rejects.toThrow(/HTTP 500/);
+  });
+});
