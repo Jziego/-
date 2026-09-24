@@ -9,7 +9,7 @@ import {
 } from "@/lib/env";
 import { getObjectToBuffer, putObjectFromBuffer } from "@/lib/storage";
 import { synthesizeDoubaoSpeech, type DoubaoTtsResult } from "@/lib/services/doubao-tts";
-import { createCosyVoice, queryCosyVoice, waitCosyVoiceReady } from "@/lib/services/cosyvoice-enrollment";
+import { createCosyVoice, deleteCosyVoice, queryCosyVoice, waitCosyVoiceReady } from "@/lib/services/cosyvoice-enrollment";
 import { synthesizeCosyVoiceSpeech } from "@/lib/services/cosyvoice-tts";
 import { extractVoiceSampleFromVideo, type VoiceSampleResult } from "@/lib/services/voice-sample";
 import type {
@@ -25,7 +25,7 @@ import { randomBytes } from "node:crypto";
  * 口播视频就是"人脸底板"，每次渲染把新文案配音（豆包 TTS）+ 底板视频交给
  * MediaKit 改嘴部，其余像素 100% 保真。因此：
  *  - createDigitalTwin 不调远端，groupId 只是编码 footage storageKey 的本地句柄；
- *  - getDigitalTwinStatus 立即 ready（状态机复用现有轮询端点，~10s 收敛）；
+ *  - getDigitalTwinStatus：demo 即时 ready；生产内联复刻（审核通常秒级，上限 ~40s+下载/抽取）；
  *  - generateTalkingHead 内部串 TTS → 双 presigned URL → lip-sync 任务 → 转存 R2。
  *
  * 素材投递用字节直传火山存储（request-media-upload-url → PUT → file_id），
@@ -61,6 +61,8 @@ export interface LipSyncProviderDeps {
   createVoiceFn: (input: { sampleWavBytes: Uint8Array; prefix: string; targetModel?: string }) => Promise<string>;
   queryVoiceFn: (voiceId: string) => Promise<{ status: string } | null>;
   waitVoiceReadyFn: (voiceId: string) => Promise<void>;
+  /** wait 失败时回收已创建音色（配额 1000/账号）；缺省 deleteCosyVoice。 */
+  deleteVoiceFn: (voiceId: string) => Promise<void>;
   /** 是否启用克隆（缺省=hasCosyvoiceProvider()）；demo/dev 无 Key 回退豆包。 */
   hasCosyvoiceFn: () => boolean;
 }
@@ -108,6 +110,7 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
   const createVoice = deps?.createVoiceFn ?? createCosyVoice;
   const queryVoice = deps?.queryVoiceFn ?? queryCosyVoice;
   const waitVoiceReady = deps?.waitVoiceReadyFn ?? waitCosyVoiceReady;
+  const deleteVoice = deps?.deleteVoiceFn ?? deleteCosyVoice;
   const hasCosyvoice = deps?.hasCosyvoiceFn ?? hasCosyvoiceProvider;
   // 钳位下限 1ms：deps 注入 0 会让 ceil(timeout/0)=Infinity 变成死循环 hammering 供应商。
   const pollIntervalMs = Math.max(1, deps?.pollIntervalMs ?? getMediakitPollIntervalMs());
@@ -197,15 +200,51 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
     return Boolean(voice && voice.startsWith("cosyvoice-"));
   }
 
-  /** 幂等复刻：footage → 样本 → 创建音色 → 轮询就绪。克隆免费，重复执行无副作用。 */
+  /**
+   * 复刻：footage → 样本 → 创建音色 → 轮询就绪；wait 失败回收音色防配额泄漏。
+   * 并发去重由 enrollVoiceDeduped 保证（本函数自身不做并发防护）。
+   */
   async function enrollVoice(footageStorageKey: string): Promise<string> {
     const footageBytes = await getObjectBytes(footageStorageKey);
     const sample = await extractSample({ footageBytes });
     // prefix 仅数字+字母 ≤10 字符（enrollment 硬约束）
     const prefix = `av${randomBytes(4).toString("hex")}`;
     const voiceId = await createVoice({ sampleWavBytes: sample.wavBytes, prefix, targetModel: getCosyvoiceModel() });
-    await waitVoiceReady(voiceId);
+    try {
+      await waitVoiceReady(voiceId);
+    } catch (error) {
+      // 审核未通过/超时会在阿里侧留 DEPLOYING 孤儿音色——best-effort 回收后原样抛出。
+      await deleteVoice(voiceId).catch(() => {});
+      throw error;
+    }
     return voiceId;
+  }
+
+  // 并发去重：形象状态轮询期间 trainingStatus 仍是 pending，前端轮询 tick 可能重叠。
+  // 同一 footage 同时只执行一次复刻，并发调用共享同一 Promise；失败即清出，允许下次轮询重试。
+  const enrollInflight = new Map<string, Promise<string>>();
+
+  async function enrollVoiceDeduped(footageStorageKey: string): Promise<string> {
+    const pending = enrollInflight.get(footageStorageKey);
+    if (pending) return pending;
+    const task = enrollVoice(footageStorageKey);
+    enrollInflight.set(footageStorageKey, task);
+    try {
+      return await task;
+    } finally {
+      enrollInflight.delete(footageStorageKey);
+    }
+  }
+
+  /** 用户可见的失败分类——内部错误细节只进服务端日志（CLAUDE.md §8）。 */
+  function classifyEnrollError(error: unknown): string {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (/审核|UNDEPLOYED/.test(msg)) return "音色审核未通过（样本可能有杂音或非本人人声）";
+    if (/太短|不足|AudioShort|样本/.test(msg)) return "样本不符合要求（需 15 秒以上清晰口播）";
+    if (/配额|Quota/.test(msg)) return "音色配额不足";
+    if (/DASHSCOPE_API_KEY|未配置/.test(msg)) return "语音服务未配置";
+    if (/网络|ECONN|ETIMEDOUT|timeout|超时/i.test(msg)) return "网络超时";
+    return "服务暂时不可用";
   }
 
   /**
@@ -263,10 +302,10 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
           providerVoiceId: getDoubaoTtsVoice(),
         };
       }
-      // 生产：内联幂等复刻（创建免费；终态 ready 后路由层不再轮询，每形象只执行一次）。
-      // waitVoiceReady 通常即时返回（实测审核秒级），上限 40s 为防御。
+      // 生产：内联复刻（下载/抽取 + 审核，通常秒级、上限 ~40s）。轮询 tick 可能重叠，
+      // enrollVoiceDeduped 按 footage 去重——并发调用共享同一复刻任务，不重复建音色。
       try {
-        const voiceId = await enrollVoice(storageKey);
+        const voiceId = await enrollVoiceDeduped(storageKey);
         return {
           consentStatus: "approved",
           trainingStatus: "ready",
@@ -274,11 +313,11 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
           providerVoiceId: voiceId,
         };
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`[lipsync] 声音复刻失败 footage=${storageKey}:`, error);
         return {
           consentStatus: "approved",
           trainingStatus: "failed",
-          reason: `声音复刻失败：${msg}。请按拍摄要求重录底板视频后重新创建形象`,
+          reason: `声音复刻失败（${classifyEnrollError(error)}）——请按拍摄要求重录底板视频后重新创建形象`,
         };
       }
     },
@@ -296,7 +335,7 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
         if (!isCosyVoiceId(providerVoiceId)) throw firstError;
         const existing = await queryVoice(providerVoiceId).catch(() => undefined);
         if (existing !== null) throw firstError; // 音色仍在或查询异常 → 原始错误透出
-        providerVoiceId = await enrollVoice(input.providerAvatarId);
+        providerVoiceId = await enrollVoiceDeduped(input.providerAvatarId);
         speech = await cosySynthesize({ text: input.scriptText, voice: providerVoiceId });
       }
 

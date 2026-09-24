@@ -424,22 +424,86 @@ describe("声音克隆（getDigitalTwinStatus）", () => {
     expect(calls).toEqual(["extract", "create", "wait"]);
   });
 
-  it("复刻失败 → failed + 原因透出（不重试）", async () => {
+  it("复刻失败 → failed + 脱敏原因（内部错误不外泄，不重试）", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const provider = createVolcEngineLipSyncProvider(makeDeps({
+        extractSampleFn: async () => ({ wavBytes: new Uint8Array([1]), durationSec: 20 }),
+        createVoiceFn: async () => { throw new Error("百炼 create_voice 失败：AudioShortError"); },
+        hasCosyvoiceFn: () => true,
+      }));
+      const status = await provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
+      expect(status.trainingStatus).toBe("failed");
+      expect(status.reason).toContain("复刻失败");
+      expect(status.reason).not.toContain("AudioShortError");
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("并发轮询去重：同时发出的两次 getDigitalTwinStatus 共享同一复刻任务", async () => {
+    let resolveExtract!: (v: { wavBytes: Uint8Array; durationSec: number }) => void;
+    const extractGate = new Promise<{ wavBytes: Uint8Array; durationSec: number }>((resolve) => {
+      resolveExtract = resolve;
+    });
+    const createVoiceFn = vi.fn(async () => "cosyvoice-v3.5-plus-av-dedup");
+    const provider = createVolcEngineLipSyncProvider(makeDeps({
+      extractSampleFn: () => extractGate, // 手动 defer：第一次复刻未 resolve 时第二次轮询已发出
+      createVoiceFn,
+      waitVoiceReadyFn: async () => {},
+      hasCosyvoiceFn: () => true,
+    }));
+    const first = provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
+    const second = provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
+    resolveExtract({ wavBytes: new Uint8Array([1]), durationSec: 20 });
+    const [a, b] = await Promise.all([first, second]);
+    expect(createVoiceFn).toHaveBeenCalledTimes(1);
+    expect(a.providerVoiceId).toBe("cosyvoice-v3.5-plus-av-dedup");
+    expect(b.providerVoiceId).toBe("cosyvoice-v3.5-plus-av-dedup");
+  });
+
+  it("复刻失败后去重表清出：下次轮询正常重试（createVoice 再次被调用）", async () => {
+    let waitCalls = 0;
+    const createVoiceFn = vi.fn(async () => "cosyvoice-v3.5-plus-av-retry");
     const provider = createVolcEngineLipSyncProvider(makeDeps({
       extractSampleFn: async () => ({ wavBytes: new Uint8Array([1]), durationSec: 20 }),
-      createVoiceFn: async () => { throw new Error("百炼 create_voice 失败：AudioShortError"); },
+      createVoiceFn,
+      waitVoiceReadyFn: async () => {
+        waitCalls++;
+        if (waitCalls === 1) throw new Error("等待音色就绪超时（>40s 仍在 DEPLOYING）");
+      },
+      deleteVoiceFn: async () => {}, // 缺省实现会打真实百炼 API——测试不注入会泄漏副作用
+      hasCosyvoiceFn: () => true,
+    }));
+    const first = await provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
+    expect(first.trainingStatus).toBe("failed");
+    const second = await provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
+    expect(second.trainingStatus).toBe("ready");
+    expect(createVoiceFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("wait 失败时回收已创建音色（deleteVoice 以该 voiceId best-effort 调用）", async () => {
+    const deleteVoiceFn = vi.fn(async () => {});
+    const provider = createVolcEngineLipSyncProvider(makeDeps({
+      extractSampleFn: async () => ({ wavBytes: new Uint8Array([1]), durationSec: 20 }),
+      createVoiceFn: async () => "cosyvoice-v3.5-plus-av-orphan",
+      waitVoiceReadyFn: async () => { throw new Error("克隆音色审核未通过——样本可能含杂音"); },
+      deleteVoiceFn,
       hasCosyvoiceFn: () => true,
     }));
     const status = await provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
     expect(status.trainingStatus).toBe("failed");
-    expect(status.reason).toContain("AudioShortError");
+    expect(deleteVoiceFn).toHaveBeenCalledTimes(1);
+    expect(deleteVoiceFn).toHaveBeenCalledWith("cosyvoice-v3.5-plus-av-orphan");
   });
 
   it("demo 模式（无百炼 Key）：保持现状——立即 ready + env 豆包音色", async () => {
+    vi.stubEnv("DOUBAO_TTS_VOICE", "zh_female_vv_uranus_bigtts");
     const provider = createVolcEngineLipSyncProvider(makeDeps({ hasCosyvoiceFn: () => false }));
     const status = await provider.getDigitalTwinStatus({ groupId: "lipsync:footage/key.mp4" });
     expect(status.trainingStatus).toBe("ready");
-    expect(status.providerVoiceId).toMatch(/^zh_female/); // env 默认豆包女声
+    expect(status.providerVoiceId).toMatch(/^zh_female/);
   });
 });
 
@@ -479,6 +543,20 @@ describe("声音克隆（TTS 分派与自愈）", () => {
     await provider.generateTalkingHead({ providerAvatarId: "footage/key.mp4", providerVoiceId: "cosyvoice-v3.5-plus-old-x", scriptText: "大家好" });
     expect(rebuilt).toBe(true);
     expect(synthCalls).toBe(2);
+  });
+
+  it("queryVoice 抛异常（而非返回 null）→ 透出原始错误、不重建", async () => {
+    const createVoiceFn = vi.fn(async () => "cosyvoice-v3.5-plus-new-y");
+    const provider = createVolcEngineLipSyncProvider(makeDeps({
+      cosySynthesizeFn: async () => { throw new Error("HTTP 500"); },
+      queryVoiceFn: async () => { throw new Error("HTTP 500"); },
+      createVoiceFn,
+      hasCosyvoiceFn: () => true,
+    }));
+    await expect(
+      provider.generateTalkingHead({ providerAvatarId: "footage/key.mp4", providerVoiceId: "cosyvoice-v3.5-plus-old-x", scriptText: "大家好" }),
+    ).rejects.toThrow(/HTTP 500/);
+    expect(createVoiceFn).not.toHaveBeenCalled();
   });
 
   it("音色仍在（queryVoice 非 null）的合成失败 → 直接抛错不重建", async () => {
