@@ -10,6 +10,20 @@ import { getCosyvoiceModel, getDashscopeApiKey, getDashscopeBaseUrl } from "@/li
  *  - 音色不存在报 400-BadRequest.ResourceNotExist（自愈触发信号）
  */
 
+/** 百炼业务错误（含 HTTP 非 2xx / body 带业务 code 两种情况）。
+ * 结构化携带 httpStatus + bailianCode：自愈信号（ResourceNotExist）只看 bailianCode，
+ * 不依赖拼接后的消息文本——消息格式改动不得影响判定。 */
+export class BailianError extends Error {
+  readonly httpStatus: number;
+  readonly bailianCode?: string;
+  constructor(message: string, httpStatus: number, bailianCode?: string) {
+    super(message);
+    this.name = "BailianError";
+    this.httpStatus = httpStatus;
+    this.bailianCode = bailianCode;
+  }
+}
+
 const ENROLLMENT_PATH = "/services/audio/tts/customization";
 const REQUEST_TIMEOUT_MS = 120_000;
 
@@ -20,7 +34,7 @@ export interface BailianDeps {
   baseUrl?: string;
 }
 
-interface BailianErrorBody { code?: string; message?: string; request_id?: string }
+interface BailianResponseBody { code?: string; message?: string; request_id?: string }
 
 async function callBailian<T>(
   action: string,
@@ -40,23 +54,25 @@ async function callBailian<T>(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const raw = await res.text();
-  let json: BailianErrorBody & Record<string, unknown>;
+  let json: BailianResponseBody & Record<string, unknown>;
   try {
     json = JSON.parse(raw) as typeof json;
   } catch {
-    throw new Error(`百炼 ${action} HTTP ${res.status} 非 JSON 响应：${raw.slice(0, 200)}`);
+    throw new BailianError(`百炼 ${action} HTTP ${res.status} 非 JSON 响应：${raw.slice(0, 200)}`, res.status);
   }
   // 双通道防御：HTTP 非 2xx 或 body.code 非空都视为失败（第三方客户端实测 HTTP 200 也可能带业务 code）。
   if (!res.ok || json.code) {
-    throw new Error(
+    throw new BailianError(
       `百炼 ${action} 失败 HTTP ${res.status} code=${json.code ?? "-"}：${json.message ?? raw.slice(0, 200)}（request_id=${json.request_id ?? "-"}）`,
+      res.status,
+      json.code,
     );
   }
   return json as T;
 }
 
 function isResourceNotExist(error: unknown): boolean {
-  return error instanceof Error && /ResourceNotExist/.test(error.message);
+  return error instanceof BailianError && Boolean(error.bailianCode?.includes("ResourceNotExist"));
 }
 
 /** 创建克隆音色，返回 voice_id（可能仍处于 DEPLOYING，须 waitCosyVoiceReady 后使用）。 */

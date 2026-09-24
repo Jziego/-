@@ -1,6 +1,7 @@
 // tests/cosyvoice-enrollment.test.ts
 import { describe, expect, it } from "vitest";
 import {
+  BailianError,
   createCosyVoice,
   deleteCosyVoice,
   queryCosyVoice,
@@ -64,6 +65,23 @@ describe("queryCosyVoice", () => {
     const result = await queryCosyVoice("voice_gone", { fetchImpl: fetchImpl as typeof fetch, apiKey: "k", baseUrl: "https://x" });
     expect(result).toBeNull();
   });
+
+  it("ResourceNotExist 只看结构化 code：消息文本无关也返回 null（回归）", async () => {
+    // 判定必须基于 bailianCode 而非拼接后的消息文本——消息格式日后改动不得静默破坏自愈信号
+    const fetchImpl = mockFetch(400, { code: "BadRequest.ResourceNotExist", message: "音色已被清理", request_id: "r10" });
+    const result = await queryCosyVoice("voice_gone", { fetchImpl: fetchImpl as typeof fetch, apiKey: "k", baseUrl: "https://x" });
+    expect(result).toBeNull();
+  });
+
+  it("非 ResourceNotExist 业务错误（AllocationQuota）→ 重抛 BailianError，不吞成 null", async () => {
+    const fetchImpl = mockFetch(400, { code: "Throttling.AllocationQuota", message: "配额已满", request_id: "r11" });
+    const error: unknown = await queryCosyVoice("voice_x", {
+      fetchImpl: fetchImpl as typeof fetch, apiKey: "k", baseUrl: "https://x",
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BailianError);
+    expect((error as BailianError).bailianCode).toBe("Throttling.AllocationQuota");
+    expect((error as BailianError).httpStatus).toBe(400);
+  });
 });
 
 describe("waitCosyVoiceReady", () => {
@@ -101,6 +119,13 @@ describe("deleteCosyVoice", () => {
     const fetchImpl = mockFetch(200, { output: {}, usage: { count: 1 }, request_id: "r9" });
     await expect(
       deleteCosyVoice("voice_x", { fetchImpl: fetchImpl as typeof fetch, apiKey: "k", baseUrl: "https://x" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("音色不存在（BadRequest.ResourceNotExist）→ 幂等成功", async () => {
+    const fetchImpl = mockFetch(400, { code: "BadRequest.ResourceNotExist", message: "not exist", request_id: "r12" });
+    await expect(
+      deleteCosyVoice("voice_gone", { fetchImpl: fetchImpl as typeof fetch, apiKey: "k", baseUrl: "https://x" }),
     ).resolves.toBeUndefined();
   });
 });
