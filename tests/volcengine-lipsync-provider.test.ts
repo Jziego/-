@@ -410,6 +410,9 @@ function fakeSpeech() {
 }
 
 describe("声音克隆（getDigitalTwinStatus）", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
   it("生产模式：内联复刻（抽样本→创建→轮询OK）→ ready + providerVoiceId", async () => {
     const calls: string[] = [];
     const provider = createVolcEngineLipSyncProvider(makeDeps({
