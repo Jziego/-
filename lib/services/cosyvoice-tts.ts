@@ -140,6 +140,7 @@ export async function synthesizeCosyVoiceSpeech(
     throw new Error("CosyVoice TTS 返回无音频数据");
   }
   const audio = Buffer.concat(audioChunks);
+  // 非法 base64 会被 Node 静默解码成空 buffer——帧数检查兜不住，按零字节再拦一次。
   if (audio.length === 0) {
     throw new Error("CosyVoice TTS 返回无音频数据");
   }
