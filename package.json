@@ -2,10 +2,20 @@
   "name": "ai-video-assistant",
   "version": "1.0.0",
   "description": "Production-ready SaaS prototype for an AI short-video assistant for local shop owners.",
+  "allowScripts": {
+    "@prisma/engines": true,
+    "@sentry/cli": true,
+    "esbuild": true,
+    "ffmpeg-static": true,
+    "msgpackr-extract": true,
+    "prisma": true,
+    "sharp": true,
+    "unrs-resolver": true
+  },
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
-    "build": "prisma generate && next build --webpack",
+    "build": "prisma generate && node --max-old-space-size=4096 node_modules/next/dist/bin/next build --webpack",
     "start": "next start -H 0.0.0.0",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
