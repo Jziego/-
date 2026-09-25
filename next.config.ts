@@ -42,7 +42,14 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
       bodySizeLimit: "20mb"
-    }
+    },
+    // ── Zeabur 构建容器 OOM 治理 ──
+    // 多核构建机上 Next 按 CPU 核数派生 page-data/静态生成 worker，每个 worker
+    // 继承 --max-old-space-size 形成独立堆，并发导入 prisma 等模块会把容器总内存
+    // 撑爆（堆上限越大死得越快）。限制并发 + 官方内存优化，用构建时长换稳定。
+    webpackMemoryOptimizations: true,
+    cpus: 4,
+    staticGenerationMaxConcurrency: 4
   }
 };
 
