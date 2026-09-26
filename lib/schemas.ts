@@ -44,6 +44,17 @@ export const storeSuggestionInputSchema = z.object({
 
 export type StoreSuggestionInput = z.infer<typeof storeSuggestionInputSchema>;
 
+/** 候选池模式（批次二）：field 缺省 = 旧整组建议行为；传 field = 按字段出候选池。 */
+export const storeSuggestionV2InputSchema = storeSuggestionInputSchema.extend({
+  field: z.enum(["mainProducts", "sellingPoints"]).optional(),
+  exclude: z.array(z.string().trim().min(1).max(30)).max(40, "exclude 最多 40 条").optional(),
+  nickname: z.string().max(20).optional(),
+  ownerAge: z.number().int().min(10).max(120).optional(),
+  yearsInBusiness: z.number().int().min(0).max(100).optional(),
+});
+
+export type StoreSuggestionV2Input = z.infer<typeof storeSuggestionV2InputSchema>;
+
 export const confirmAssetUploadSchema = z.object({
   assetId: z.string().min(1),
   storeId: z.string().min(1),

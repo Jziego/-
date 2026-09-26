@@ -2,8 +2,8 @@ import { jsonError, jsonOk } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { getOwnerId } from "@/lib/auth-helpers";
 import { hasAI } from "@/lib/services/ai-client";
-import { suggestStoreProfile, StoreSuggestionError } from "@/lib/services/store-suggest";
-import { storeSuggestionInputSchema } from "@/lib/schemas";
+import { suggestStoreProfile, suggestFieldCandidates, StoreSuggestionError } from "@/lib/services/store-suggest";
+import { storeSuggestionV2InputSchema } from "@/lib/schemas";
 
 /**
  * AI-suggest hard-to-fill store-profile fields (mainProducts/sellingPoints/
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   const limited = await applyRateLimit(request, ownerId);
   if (limited) return limited;
 
-  const parsed = storeSuggestionInputSchema.safeParse(body);
+  const parsed = storeSuggestionV2InputSchema.safeParse(body);
   if (!parsed.success) {
     return jsonError(parsed.error.issues[0]?.message ?? "Invalid input");
   }
@@ -33,6 +33,19 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (parsed.data.field) {
+      const candidates = await suggestFieldCandidates({
+        name: parsed.data.name,
+        industry: parsed.data.industry,
+        location: parsed.data.location,
+        field: parsed.data.field,
+        exclude: parsed.data.exclude,
+        nickname: parsed.data.nickname,
+        ownerAge: parsed.data.ownerAge,
+        yearsInBusiness: parsed.data.yearsInBusiness,
+      });
+      return jsonOk({ candidates });
+    }
     const suggestion = await suggestStoreProfile(parsed.data);
     return jsonOk({ suggestion });
   } catch (error) {

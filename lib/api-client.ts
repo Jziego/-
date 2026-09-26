@@ -78,6 +78,24 @@ export async function suggestStoreProfileApi(input: StoreSuggestionInput): Promi
   return data.suggestion;
 }
 
+/** 候选池模式（批次二）：按字段拉 8 条 AI 候选。 */
+export async function suggestFieldCandidatesApi(input: {
+  name: string;
+  industry: string;
+  location?: string;
+  field: "mainProducts" | "sellingPoints";
+  exclude?: string[];
+  nickname?: string;
+  ownerAge?: number;
+  yearsInBusiness?: number;
+}): Promise<string[]> {
+  const data = await api<{ candidates: string[] }>("/api/store-profiles/suggest", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return data.candidates;
+}
+
 export interface UploadIntentResponse {
   assetId: string;
   storageKey: string;
