@@ -36,6 +36,10 @@ interface Props {
   librarySelectedAssetIds: string[];
   onConfirm: (selection: ScriptConfirmSelection) => Promise<void>;
   pending: boolean;
+  /** 换个表达方向（批次二）：仅 AI 生成稿传入；点击按角度序列重生成。 */
+  onChangeAngle?: () => void;
+  /** 换方向进行中（禁用按钮+spinner）。 */
+  changingAngle?: boolean;
 }
 
 /** 把口播稿按命中关键词切为 text/mark 片段（区间来自共享的 findHighlightRanges）。 */
@@ -57,7 +61,7 @@ function highlightParts(text: string, words: string[]): Array<{ text: string; hi
  * 口播确认卡片（Phase 2 去分镜）：标黄高亮预览 + 整稿编辑 + 形象多选（≤3，Phase 3）+
  * 字幕样式 + BGM（自旧分镜确认卡片挪入）→ 确认生成。
  */
-export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetIds, onConfirm, pending }: Props) {
+export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetIds, onConfirm, pending, onChangeAngle, changingAngle }: Props) {
   const [voiceover, setVoiceover] = useState(draft.voiceover);
   // 形象多选（Phase 3，spec §6.4）：≤3，默认勾选第一个 ready 形象；全不勾 = 纯素材成片。
   const [avatarIds, setAvatarIds] = useState<string[]>(
@@ -89,7 +93,7 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
     () => estimateRenderCost(deriveSegmentsFromVoiceover(voiceover, { prev: draft.segments }), avatarIds.length, pricing),
     [voiceover, draft.segments, avatarIds.length, pricing],
   );
-  const canConfirm = voiceover.trim().length > 0 && !pending;
+  const canConfirm = voiceover.trim().length > 0 && !pending && !changingAngle;
 
   async function handleConfirm() {
     await onConfirm({
@@ -113,6 +117,18 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
           p.hit ? <mark key={i}>{p.text}</mark> : <span key={i}>{p.text}</span>,
         )}
       </div>
+
+      {draft.analysis ? (
+        <details className="copyAnalysis" style={{ marginTop: 8 }}>
+          <summary style={{ cursor: "pointer", color: "var(--muted, #888)" }}>查看创作解析</summary>
+          <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.7 }}>
+            {/* 值外包 span：让测试与阅读都能按整段文本命中（JSX 相邻文本会并成一个文本节点） */}
+            <p><strong>概述</strong>：<span>{draft.analysis.overview}</span></p>
+            <p><strong>三大原则解析</strong>：<span>{draft.analysis.principles}</span></p>
+            <p><strong>四大结构解析</strong>：<span>{draft.analysis.structure}</span></p>
+          </div>
+        </details>
+      ) : null}
 
       <textarea
         aria-label="口播稿编辑"
@@ -178,16 +194,28 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
         </label>
       </div>
 
-      <button
-        type="button"
-        className="primaryButton"
-        disabled={!canConfirm}
-        onClick={handleConfirm}
-        style={{ marginTop: 16 }}
-      >
-        {pending ? <span className="spinner" aria-hidden="true" /> : null}
-        确认生成
-      </button>
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        {onChangeAngle ? (
+          <button
+            type="button"
+            className="secondaryButton"
+            disabled={pending || changingAngle}
+            onClick={onChangeAngle}
+          >
+            {changingAngle ? <span className="spinner" aria-hidden="true" /> : null}
+            换个表达方向{draft.angle ? `（当前：${draft.angle}）` : ""}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="primaryButton"
+          disabled={!canConfirm || changingAngle}
+          onClick={handleConfirm}
+        >
+          {pending ? <span className="spinner" aria-hidden="true" /> : null}
+          确认生成
+        </button>
+      </div>
     </div>
   );
 }

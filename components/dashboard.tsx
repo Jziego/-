@@ -32,6 +32,7 @@ import {
   uploadFileToStorage
 } from "@/lib/api-client";
 import { ScriptConfirm } from "@/components/script-confirm";
+import { nextAngle } from "@/lib/copywriting-rules";
 import { MAX_ASSETS_PER_STORE, clampUploadBatch } from "@/lib/asset-library";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
 import { validateLipSyncFootageDuration, validateLipSyncFootageSize } from "@/lib/avatar-footage";
@@ -289,6 +290,7 @@ export function Dashboard() {
   >([]);
   const [targetDuration, setTargetDuration] = useState<number>(45);
   const [generating, setGenerating] = useState(false);
+  const [changingAngle, setChangingAngle] = useState(false);
   const draftClearedRef = useRef(false);
   const savedStoreHydratedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1051,6 +1053,31 @@ export function Dashboard() {
     }
   }
 
+  /** 换个表达方向（批次二）：按角度序列取下一角度重新生成，替换确认卡片。 */
+  async function handleChangeAngle() {
+    if (!store || !confirmDraft || changingAngle || generating) return;
+    setChangingAngle(true);
+    try {
+      const draft = await createScriptDraftApi({
+        storeId: store.id,
+        assetAnalysisIds: selectedAnalyses.map((a) => a.id),
+        purpose: selectedPurpose,
+        platform: "douyin",
+        targetDurationSec: targetDuration,
+        angle: nextAngle(confirmDraft.angle),
+      });
+      setConfirmDraft(draft);
+      setLocalScript(draft);
+      await queryClient.invalidateQueries({ queryKey: ["script-drafts"] });
+      setMessage(`已换「${draft.angle ?? "新角度"}」重新生成，看看这版。`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "请稍后重试";
+      setMessage(`换方向生成失败：${detail}`);
+    } finally {
+      setChangingAngle(false);
+    }
+  }
+
   async function confirmScriptAndRender(selection: {
     voiceover: string;
     selectedAssetIds: string[];
@@ -1631,6 +1658,8 @@ export function Dashboard() {
               librarySelectedAssetIds={selectedAssets.map((a) => a.id)}
               onConfirm={confirmScriptAndRender}
               pending={pendingAction === "render"}
+              onChangeAngle={confirmDraft.generationMode === "ai" ? () => void handleChangeAngle() : undefined}
+              changingAngle={changingAngle}
             />
           ) : null}
 

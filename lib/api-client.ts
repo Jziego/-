@@ -266,6 +266,7 @@ export async function createScriptDraftApi(input: {
   purpose: MarketingPurpose;
   platform?: string;
   targetDurationSec?: number;
+  angle?: string;
 }): Promise<ScriptDraft> {
   const data = await api<{ script: ScriptDraft }>("/api/script-drafts", {
     method: "POST",

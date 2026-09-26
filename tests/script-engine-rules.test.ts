@@ -61,7 +61,7 @@ describe("规则注入与角度", () => {
     expect(draft.analysis).toBeUndefined();
   });
 
-  it("模板兜底路径无 angle/analysis", async () => {
+  it("forcedRawCopy 路径无 angle/analysis", async () => {
     const draft = await createScriptDraft({ store: makeStore(), assetAnalyses: [], purpose: "store_traffic", forcedRawCopy: "手动文案。" });
     expect(draft.angle).toBeUndefined();
     expect(draft.analysis).toBeUndefined();

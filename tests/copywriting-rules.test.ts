@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COPYWRITING_RULES, COPY_ANGLES, angleGuidance, nextAngle } from "@/lib/copywriting-rules";
+import { COPYWRITING_RULES, COPY_ANGLES, DEFAULT_ANGLE, angleGuidance, nextAngle } from "@/lib/copywriting-rules";
 
 describe("文案规则文件", () => {
   it("规则全文包含三大原则与四大结构", () => {
@@ -26,5 +26,10 @@ describe("文案规则文件", () => {
     expect(nextAngle("反差悬念")).toBe("痛点暴击");
     expect(nextAngle(undefined)).toBe("痛点暴击");
     expect(nextAngle("不存在的角度")).toBe("痛点暴击");
+  });
+
+  it("DEFAULT_ANGLE 为序列首项，且与 nextAngle(undefined) 缺省起点一致", () => {
+    expect(DEFAULT_ANGLE).toBe(COPY_ANGLES[0]);
+    expect(nextAngle(undefined)).toBe(DEFAULT_ANGLE);
   });
 });

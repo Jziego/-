@@ -1,4 +1,4 @@
-import { COPYWRITING_RULES, angleGuidance, type CopyAngle } from "@/lib/copywriting-rules";
+import { COPYWRITING_RULES, DEFAULT_ANGLE, angleGuidance, type CopyAngle } from "@/lib/copywriting-rules";
 import { createId, nowIso } from "@/lib/ids";
 import { SPEECH_CHARS_PER_SECOND } from "@/lib/speech-rate";
 import { hasAI, chatCompletionJSON, sanitizePromptField } from "@/lib/services/ai-client";
@@ -158,7 +158,7 @@ function buildUserPrompt(input: ScriptDraftInput): string {
     );
   }
 
-  lines.push(``, `【本版切入角度】${input.angle ?? "痛点暴击"}：${angleGuidance(input.angle ?? "痛点暴击")}`);
+  lines.push(``, `【本版切入角度】${input.angle ?? DEFAULT_ANGLE}：${angleGuidance(input.angle ?? DEFAULT_ANGLE)}`);
 
   return lines.join("\n");
 }
@@ -316,7 +316,7 @@ export async function createScriptDraftWithAI(
     warnings: voiceover.warnings,
     targetDurationSec: input.targetDurationSec,
     speakerAvatarIds: input.avatarPersonas?.map((p) => p.id),
-    angle: input.angle ?? "痛点暴击",
+    angle: input.angle ?? DEFAULT_ANGLE,
     analysis,
   });
 }

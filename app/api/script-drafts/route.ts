@@ -3,12 +3,16 @@ import { applyRateLimit } from "@/lib/rate-limit";
 import { getAssetAnalysisRepository, getAvatarRepository, getScriptRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
 import { createScriptDraft, createTemplateScriptDraft } from "@/lib/services/script-engine";
+import { COPY_ANGLES, type CopyAngle } from "@/lib/copywriting-rules";
 import type { MarketingPurpose, Platform } from "@/lib/types";
 
 // targetDurationSec drives worker render loops — only the UI duration slots are accepted.
 const DURATION_SLOTS = [30, 45, 60];
 const durationSlot = (v: unknown): number | undefined =>
   typeof v === "number" && DURATION_SLOTS.includes(v) ? v : undefined;
+// 切入角度（批次二）：运行时白名单——不信任客户端任意字符串直插 prompt（CLAUDE.md §3）。
+const angleParam = (v: unknown): CopyAngle | undefined =>
+  typeof v === "string" && (COPY_ANGLES as readonly string[]).includes(v) ? (v as CopyAngle) : undefined;
 
 export async function GET(request: Request) {
   const ownerId = await getOwnerId();
@@ -66,6 +70,7 @@ export async function POST(request: Request) {
         purpose,
         platform: (body.platform ?? "douyin") as Platform,
         targetDurationSec: durationSlot(body.targetDurationSec),
+        angle: angleParam(body.angle),
         avatarPersonas,
       });
 

@@ -11,6 +11,9 @@ export const COPY_ANGLES = ["痛点暴击", "场景代入", "利益直击", "口
 
 export type CopyAngle = (typeof COPY_ANGLES)[number];
 
+/** 默认切入角度（序列首项）：prompt 与 draft 落库的缺省值统一引用本常量。 */
+export const DEFAULT_ANGLE: CopyAngle = COPY_ANGLES[0];
+
 const ANGLE_GUIDANCE: Record<CopyAngle, string> = {
   痛点暴击: "开篇直戳目标客群当前最核心的痛点或焦虑，制造「不改变就晚了」的紧迫感",
   场景代入: "开篇描绘目标客群熟悉的日常场景，让人立刻产生「这说的就是我」的代入感",
