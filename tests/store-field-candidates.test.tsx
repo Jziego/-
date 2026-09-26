@@ -64,4 +64,30 @@ describe("StoreFieldCandidates", () => {
     fireEvent.click(screen.getByRole("button", { name: /重新生成一批/ }));
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
+
+  it("手动输入含逗号：切分后逐条回调", () => {
+    const onAdd = vi.fn();
+    render(<StoreFieldCandidates {...baseProps} onAdd={onAdd} />);
+    fireEvent.change(screen.getByPlaceholderText("手动输入后回车添加"), { target: { value: "包子，豆浆" } });
+    fireEvent.keyDown(screen.getByPlaceholderText("手动输入后回车添加"), { key: "Enter" });
+    expect(onAdd).toHaveBeenCalledTimes(2);
+    expect(onAdd).toHaveBeenNthCalledWith(1, "包子");
+    expect(onAdd).toHaveBeenNthCalledWith(2, "豆浆");
+  });
+
+  it("逗号切分后满员截断：只回调容量内的部分", () => {
+    const onAdd = vi.fn();
+    render(
+      <StoreFieldCandidates
+        {...baseProps}
+        items={["已有一条"]}
+        max={2}
+        onAdd={onAdd}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText("手动输入后回车添加"), { target: { value: "甲，乙，丙" } });
+    fireEvent.keyDown(screen.getByPlaceholderText("手动输入后回车添加"), { key: "Enter" });
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onAdd).toHaveBeenCalledWith("甲");
+  });
 });

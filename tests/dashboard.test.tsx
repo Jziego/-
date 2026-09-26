@@ -1438,6 +1438,21 @@ describe("AI video assistant dashboard", () => {
     expect(screen.getByText("2/3")).toBeInTheDocument();
   });
 
+  it("step2 主营候选池手动输入含逗号：切分后两条都保留（修 onAdd 过期快照丢 part）", async () => {
+    const user = userEvent.setup();
+    renderDashboard();
+
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+
+    // 主营区块是第一个「手动输入后回车添加」输入框。
+    const mainInput = screen.getAllByPlaceholderText("手动输入后回车添加")[0];
+    await user.type(mainInput, "现包现煮，皮薄馅大{Enter}");
+
+    expect(screen.getByText("现包现煮")).toBeInTheDocument();
+    expect(screen.getByText("皮薄馅大")).toBeInTheDocument();
+  });
+
   it("shows only the latest render batch in the progress panel", async () => {
     const oldBatch = [
       { id: "job_old_1", ownerId: "demo_user", projectId: "proj_old", type: "avatar_generation", status: "completed", progress: 100, payload: {}, dependsOnJobIds: [], createdAt: "2026-07-09T00:00:00.000Z", updatedAt: "2026-07-09T00:00:00.000Z" },

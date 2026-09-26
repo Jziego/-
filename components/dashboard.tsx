@@ -1255,7 +1255,7 @@ export function Dashboard() {
                     max={10}
                     candidates={fieldCandidates.mainProducts}
                     loading={candidatesLoading === "mainProducts"}
-                    onAdd={(v) => setValue("mainProducts", [...splitCsv(mainProductsValue), v].join("，"), { shouldDirty: true })}
+                    onAdd={(v) => setValue("mainProducts", [...splitCsv(getValues("mainProducts") ?? ""), v].join("，"), { shouldDirty: true })}
                     onRemove={(i) => setValue("mainProducts", splitCsv(mainProductsValue).filter((_, idx) => idx !== i).join("，"), { shouldDirty: true })}
                     onRefreshCandidates={() => void refreshFieldCandidates("mainProducts")}
                   />
@@ -1265,7 +1265,7 @@ export function Dashboard() {
                     max={12}
                     candidates={fieldCandidates.sellingPoints}
                     loading={candidatesLoading === "sellingPoints"}
-                    onAdd={(v) => setValue("sellingPoints", [...splitCsv(sellingPointsValue), v].join("，"), { shouldDirty: true })}
+                    onAdd={(v) => setValue("sellingPoints", [...splitCsv(getValues("sellingPoints") ?? ""), v].join("，"), { shouldDirty: true })}
                     onRemove={(i) => setValue("sellingPoints", splitCsv(sellingPointsValue).filter((_, idx) => idx !== i).join("，"), { shouldDirty: true })}
                     onRefreshCandidates={() => void refreshFieldCandidates("sellingPoints")}
                   />
