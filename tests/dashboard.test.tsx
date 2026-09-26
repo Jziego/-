@@ -1428,7 +1428,9 @@ describe("AI video assistant dashboard", () => {
     await user.click(screen.getByRole("button", { name: "保存并继续" }));
     expect(screen.getByText("2/3")).toBeInTheDocument();
 
-    await user.clear(screen.getByLabelText(/主营产品/));
+    // 批次二候选池交互：删除全部主营条目，触发主营必填校验。
+    await user.click(screen.getByRole("button", { name: "删除 牛肉面" }));
+    await user.click(screen.getByRole("button", { name: "删除 葱油拌面" }));
     await user.click(screen.getByRole("button", { name: "保存并继续" }));
 
     expect(screen.getByText("请填写主营产品")).toBeInTheDocument();
@@ -2214,8 +2216,8 @@ describe("AI video assistant dashboard", () => {
             ok: true,
             json: async () => ({
               suggestion: {
-                mainProducts: ["牛肉面", "葱油拌面"],
-                sellingPoints: ["现熬牛骨汤"],
+                mainProducts: ["AI建议主营"],
+                sellingPoints: ["AI建议卖点"],
                 targetCustomers: ["上班族"],
                 promotions: ["午餐半价"],
                 brandTone: "亲切接地气"
@@ -2247,23 +2249,32 @@ describe("AI video assistant dashboard", () => {
 
     renderDashboard();
 
-    // Step 1 already has defaults (name/industry/location), advance to step 2 (产品与人设).
+    // AI 建议已收窄到 step3（step2 由候选池接管主营/特色）。Step 1 defaults 直接连点到 step3。
     await user.click(screen.getByRole("button", { name: "保存并继续" }));
-    expect(screen.getByRole("heading", { name: "产品与人设" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保存并继续" }));
+    expect(screen.getByRole("heading", { name: "内容风格" })).toBeInTheDocument();
 
     const suggestButton = await screen.findByRole("button", { name: /AI 建议/ });
     await user.click(suggestButton);
 
     expect(suggestPosted).toBe(true);
-    const mainProductsInput = await screen.findByLabelText(/主营产品/);
-    expect((mainProductsInput as HTMLInputElement).value).toContain("牛肉面");
-    expect((mainProductsInput as HTMLInputElement).value).toContain("葱油拌面");
+    // 整组建议仍填 step2/3 的其余字段：目标顾客 + 促销。
+    expect(screen.getByLabelText(/促销活动/)).toHaveValue("午餐半价");
 
     // The suggestion prefills for review but does NOT auto-save the store.
     expect(storePosts).toBe(0);
     expect(
       await within(screen.getByRole("status")).findByText("AI 建议已填入，请审阅后保存。")
     ).toBeInTheDocument();
+
+    // 回到 step2：主营/特色保留用户候选池结果，不被整组建议覆盖。
+    await user.click(screen.getByRole("button", { name: "上一步" }));
+    expect(screen.getByRole("heading", { name: "产品与人设" })).toBeInTheDocument();
+    expect(screen.getByText("牛肉面")).toBeInTheDocument();
+    expect(screen.getByText("现熬牛骨汤")).toBeInTheDocument();
+    expect(screen.queryByText("AI建议主营")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI建议卖点")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/目标顾客/)).toHaveValue("上班族");
   });
 
   it("shows a reanalyze button for a failed analysis and calls the reanalyze endpoint on click", async () => {

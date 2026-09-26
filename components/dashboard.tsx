@@ -27,11 +27,13 @@ import {
   reanalyzeAssetApi,
   reissueAvatarConsentApi,
   saveStore,
+  suggestFieldCandidatesApi,
   suggestStoreProfileApi,
   updateScriptDraftApi,
   uploadFileToStorage
 } from "@/lib/api-client";
 import { ScriptConfirm } from "@/components/script-confirm";
+import { StoreFieldCandidates } from "@/components/store-field-candidates";
 import { nextAngle } from "@/lib/copywriting-rules";
 import { MAX_ASSETS_PER_STORE, clampUploadBatch } from "@/lib/asset-library";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
@@ -54,6 +56,9 @@ type StoreFormValues = {
   name: string;
   industry: string;
   location: string;
+  nickname: string;
+  ownerAge: string;
+  yearsInBusiness: string;
   mainProducts: string;
   targetCustomers: string;
   sellingPoints: string;
@@ -78,6 +83,9 @@ const defaultStoreForm: StoreFormValues = {
   name: "阿姨手作面馆",
   industry: "餐饮",
   location: "上海市徐汇区",
+  nickname: "",
+  ownerAge: "",
+  yearsInBusiness: "",
   mainProducts: "牛肉面, 葱油拌面",
   targetCustomers: "附近上班族, 社区居民",
   sellingPoints: "现熬牛骨汤, 午市出餐快",
@@ -106,7 +114,10 @@ const storeFormSteps: Array<{
         kind: "select",
         options: ["餐饮", "美业", "零售", "生活服务", "教育培训", "其他"]
       },
-      { name: "location", label: "位置", placeholder: "例：上海市徐汇区", required: true }
+      { name: "location", label: "位置", placeholder: "例：上海市徐汇区", required: true },
+      { name: "nickname", label: "朋友们对你的称呼", kind: "input", placeholder: "如：君姐（可选）" },
+      { name: "ownerAge", label: "您的年龄", kind: "input", placeholder: "如：48（可选）" },
+      { name: "yearsInBusiness", label: "店开了多少年了", kind: "input", placeholder: "如：15（可选，填数字）" }
     ]
   },
   {
@@ -185,6 +196,9 @@ function storeProfileToFormValues(profile: StoreProfile): StoreFormValues {
     name: profile.name,
     industry: profile.industry,
     location: profile.location ?? "",
+    nickname: profile.nickname ?? "",
+    ownerAge: profile.ownerAge != null ? String(profile.ownerAge) : "",
+    yearsInBusiness: profile.yearsInBusiness != null ? String(profile.yearsInBusiness) : "",
     mainProducts: joinCsv(profile.mainProducts),
     targetCustomers: joinCsv(profile.targetCustomers),
     sellingPoints: joinCsv(profile.sellingPoints),
@@ -298,6 +312,8 @@ export function Dashboard() {
   const [footageUploading, setFootageUploading] = useState(false);
   const [selectedFootageId, setSelectedFootageId] = useState("");
   const [avatarName, setAvatarName] = useState("");
+  const [fieldCandidates, setFieldCandidates] = useState<{ mainProducts: string[]; sellingPoints: string[] }>({ mainProducts: [], sellingPoints: [] });
+  const [candidatesLoading, setCandidatesLoading] = useState<"" | "mainProducts" | "sellingPoints">("");
 
   const { data: stores = [], isPending: storesPending } = useQuery({
     queryKey: ["stores"],
@@ -479,6 +495,9 @@ export function Dashboard() {
     shouldUnregister: false
   });
   const currentDraft = useWatch({ control });
+  // 候选池（批次二）：订阅主营/特色的逗号串值，驱动 StoreFieldCandidates 的条目列表。
+  const mainProductsValue = useWatch({ control, name: "mainProducts" }) ?? "";
+  const sellingPointsValue = useWatch({ control, name: "sellingPoints" }) ?? "";
 
   useEffect(() => {
     const draft = loadStoreDraft<StoreFormValues>();
@@ -627,6 +646,9 @@ export function Dashboard() {
         industry: values.industry,
         location: values.location,
         mainProducts: splitCsv(values.mainProducts),
+        nickname: values.nickname.trim() || undefined,
+        ownerAge: values.ownerAge.trim() ? Number(values.ownerAge.trim()) : undefined,
+        yearsInBusiness: values.yearsInBusiness.trim() ? Number(values.yearsInBusiness.trim()) : undefined,
         targetCustomers: splitCsv(values.targetCustomers),
         sellingPoints: splitCsv(values.sellingPoints),
         promotions: splitCsv(values.promotions),
@@ -657,6 +679,35 @@ export function Dashboard() {
     void submitCurrentStoreStep();
   }
 
+  /** 拉一批 AI 候选（批次二）：exclude 已填+池中现存，避免重复。 */
+  async function refreshFieldCandidates(field: "mainProducts" | "sellingPoints") {
+    const values = getValues();
+    if (!values.name.trim() || !values.industry.trim()) {
+      setMessage("请先填写门店名称与行业，AI 才能给候选。");
+      return;
+    }
+    setCandidatesLoading(field);
+    try {
+      const existing = splitCsv(values[field]);
+      const candidates = await suggestFieldCandidatesApi({
+        name: values.name.trim(),
+        industry: values.industry.trim(),
+        location: values.location.trim() || undefined,
+        field,
+        exclude: [...existing, ...fieldCandidates[field]],
+        nickname: values.nickname.trim() || undefined,
+        ownerAge: values.ownerAge.trim() ? Number(values.ownerAge.trim()) : undefined,
+        yearsInBusiness: values.yearsInBusiness.trim() ? Number(values.yearsInBusiness.trim()) : undefined,
+      });
+      setFieldCandidates((prev) => ({ ...prev, [field]: candidates }));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "请稍后重试";
+      setMessage(`候选生成失败：${detail}`);
+    } finally {
+      setCandidatesLoading("");
+    }
+  }
+
   async function handleSuggestStore() {
     if (pendingAction) return;
     const name = getValues("name");
@@ -672,11 +723,9 @@ export function Dashboard() {
         industry,
         location: getValues("location") || undefined
       });
-      setValue("mainProducts", joinCsv(suggestion.mainProducts), { shouldDirty: true });
       setValue("targetCustomers", joinCsv(suggestion.targetCustomers), { shouldDirty: true });
-      setValue("sellingPoints", joinCsv(suggestion.sellingPoints), { shouldDirty: true });
       setValue("promotions", joinCsv(suggestion.promotions), { shouldDirty: true });
-      setValue("brandTone", suggestion.brandTone, { shouldDirty: true });
+      if (suggestion.brandTone) setValue("brandTone", suggestion.brandTone, { shouldDirty: true });
       setMessage("AI 建议已填入，请审阅后保存。");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "请稍后重试";
@@ -1197,9 +1246,54 @@ export function Dashboard() {
             </div>
 
             <div className="formFields">
+              {storeFormStep === 1 ? (
+                <>
+                  <StoreFieldCandidates
+                    label="门店的主营业务"
+                    items={splitCsv(mainProductsValue)}
+                    max={10}
+                    candidates={fieldCandidates.mainProducts}
+                    loading={candidatesLoading === "mainProducts"}
+                    onAdd={(v) => setValue("mainProducts", [...splitCsv(mainProductsValue), v].join("，"), { shouldDirty: true })}
+                    onRemove={(i) => setValue("mainProducts", splitCsv(mainProductsValue).filter((_, idx) => idx !== i).join("，"), { shouldDirty: true })}
+                    onRefreshCandidates={() => void refreshFieldCandidates("mainProducts")}
+                  />
+                  <StoreFieldCandidates
+                    label="门店特色/优势"
+                    items={splitCsv(sellingPointsValue)}
+                    max={12}
+                    candidates={fieldCandidates.sellingPoints}
+                    loading={candidatesLoading === "sellingPoints"}
+                    onAdd={(v) => setValue("sellingPoints", [...splitCsv(sellingPointsValue), v].join("，"), { shouldDirty: true })}
+                    onRemove={(i) => setValue("sellingPoints", splitCsv(sellingPointsValue).filter((_, idx) => idx !== i).join("，"), { shouldDirty: true })}
+                    onRefreshCandidates={() => void refreshFieldCandidates("sellingPoints")}
+                  />
+                </>
+              ) : null}
               {selectedStoreStep.fields.map((field) => {
                 const fieldError = errors[field.name];
                 const errorId = `${field.name}-error`;
+
+                if (field.name === "mainProducts" || field.name === "sellingPoints") {
+                  // 批次二：这两个字段改由上方 StoreFieldCandidates 候选池渲染，
+                  // 这里只保留隐藏注册输入维持 react-hook-form 的 required 校验与错误提示。
+                  return (
+                    <div className="field" key={field.name}>
+                      <input
+                        aria-describedby={fieldError ? errorId : undefined}
+                        aria-invalid={Boolean(fieldError)}
+                        className="srOnly"
+                        type="text"
+                        {...register(field.name, { required: field.required })}
+                      />
+                      {fieldError ? (
+                        <span className="fieldError" id={errorId} role="alert">
+                          请填写{field.label}
+                        </span>
+                      ) : null}
+                    </div>
+                  );
+                }
 
                 if (field.name === "brandTone") {
                   return (
@@ -1277,7 +1371,7 @@ export function Dashboard() {
             </div>
 
             <div className="formActions">
-              {storeFormStep >= 1 ? (
+              {storeFormStep >= 2 ? (
                 <button
                   className="secondaryButton"
                   disabled={Boolean(pendingAction)}
