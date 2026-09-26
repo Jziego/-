@@ -214,7 +214,10 @@ export function toScriptDraft(row: PrismaScriptDraft): ScriptDraft {
     segments: (row.segments as unknown as ScriptSegment[] | null) ?? [],
     speakerAvatarIds: row.speakerAvatarIds ?? [],
     angle: row.angle ?? undefined,
-    analysis: (row.analysis as CopyAnalysis | null) ?? undefined,
+    analysis:
+      row.analysis != null && row.analysis !== (Prisma.JsonNull as unknown)
+        ? (row.analysis as CopyAnalysis)
+        : undefined,
     createdAt: row.createdAt.toISOString()
   };
 }
@@ -239,7 +242,7 @@ export function toScriptDraftInput(script: ScriptDraft) {
     segments: (script.segments ?? []) as object,
     speakerAvatarIds: script.speakerAvatarIds ?? [],
     angle: script.angle ?? null,
-    analysis: script.analysis ?? Prisma.JsonNull,
+    analysis: script.analysis ?? Prisma.DbNull,
     createdAt: new Date(script.createdAt)
   };
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Prisma } from "@prisma/client";
 import {
   toRenderProject,
   toRenderProjectInput,
@@ -87,5 +88,35 @@ describe("mappers: highlights/segments persistence (Phase 2)", () => {
     const dbInput = toScriptDraftInput({ ...draft, highlights: undefined, segments: undefined });
     expect(dbInput.highlights).toEqual([]);
     expect(dbInput.segments).toEqual([]);
+  });
+});
+
+describe("mappers: analysis persistence (批次二)", () => {
+  const analysis = { overview: "概述", principles: "原则解析", structure: "结构解析" };
+
+  it("maps a valid analysis object through unchanged", () => {
+    const dbInput = toScriptDraftInput({ ...draft, analysis });
+    const row = { ...dbInput, createdAt: new Date("2026-08-16T00:00:00.000Z") };
+    const back = toScriptDraft(row as never);
+    expect(back.analysis).toEqual(analysis);
+  });
+
+  it("writes undefined analysis as DbNull and maps SQL NULL back to undefined", () => {
+    const dbInput = toScriptDraftInput({ ...draft, analysis: undefined });
+    expect(dbInput.analysis).toBe(Prisma.DbNull);
+    const row = { ...dbInput, analysis: null, createdAt: new Date("2026-08-16T00:00:00.000Z") };
+    const back = toScriptDraft(row as never);
+    expect(back.analysis).toBeUndefined();
+  });
+
+  it("maps legacy JSON null rows (Prisma.JsonNull) to undefined", () => {
+    const dbInput = toScriptDraftInput({ ...draft, analysis });
+    const row = {
+      ...dbInput,
+      analysis: Prisma.JsonNull,
+      createdAt: new Date("2026-08-16T00:00:00.000Z"),
+    };
+    const back = toScriptDraft(row as never);
+    expect(back.analysis).toBeUndefined();
   });
 });

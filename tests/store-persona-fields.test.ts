@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { getStoreRepository, getScriptRepository } from "@/lib/repositories";
+import { beforeEach, describe, expect, it } from "vitest";
+import { MemoryScriptRepository, MemoryStoreRepository } from "@/lib/repositories/memory";
+import { resetRuntimeStateForTests } from "@/lib/runtime-store";
 import { createId, nowIso } from "@/lib/ids";
 import type { ScriptDraft, StoreProfile } from "@/lib/types";
 
@@ -25,8 +26,12 @@ function makeStore(): StoreProfile {
 }
 
 describe("门店人设字段与文案 angle/analysis 持久化", () => {
+  beforeEach(() => {
+    resetRuntimeStateForTests();
+  });
+
   it("store upsert + findById 回读 nickname/ownerAge/yearsInBusiness", async () => {
-    const repo = getStoreRepository();
+    const repo = new MemoryStoreRepository();
     const saved = await repo.upsert(makeStore());
     const loaded = await repo.findById(saved.id);
     expect(loaded?.nickname).toBe("君姐");
@@ -34,8 +39,8 @@ describe("门店人设字段与文案 angle/analysis 持久化", () => {
     expect(loaded?.yearsInBusiness).toBe(15);
   });
 
-  it("store upsert 更新路径也写入新字段（prisma 白名单回归）", async () => {
-    const repo = getStoreRepository();
+  it("store upsert 更新路径也写入新字段", async () => {
+    const repo = new MemoryStoreRepository();
     const store = makeStore();
     await repo.upsert(store);
     await repo.upsert({ ...store, nickname: "华姐", updatedAt: nowIso() });
@@ -44,7 +49,7 @@ describe("门店人设字段与文案 angle/analysis 持久化", () => {
   });
 
   it("script create 落库 angle 与 analysis", async () => {
-    const store = await getStoreRepository().upsert(makeStore());
+    const store = await new MemoryStoreRepository().upsert(makeStore());
     const draft: ScriptDraft = {
       id: createId("script"),
       ownerId: "demo",
@@ -63,8 +68,8 @@ describe("门店人设字段与文案 angle/analysis 持久化", () => {
       analysis: { overview: "概述", principles: "原则解析", structure: "结构解析" },
       createdAt: nowIso(),
     };
-    const saved = await getScriptRepository().create(draft);
-    const loaded = await getScriptRepository().findById(saved.id);
+    const saved = await new MemoryScriptRepository().create(draft);
+    const loaded = await new MemoryScriptRepository().findById(saved.id);
     expect(loaded?.angle).toBe("痛点暴击");
     expect(loaded?.analysis?.overview).toBe("概述");
   });
