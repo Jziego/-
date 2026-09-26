@@ -1,3 +1,4 @@
+import { COPYWRITING_RULES, angleGuidance, type CopyAngle } from "@/lib/copywriting-rules";
 import { createId, nowIso } from "@/lib/ids";
 import { SPEECH_CHARS_PER_SECOND } from "@/lib/speech-rate";
 import { hasAI, chatCompletionJSON, sanitizePromptField } from "@/lib/services/ai-client";
@@ -6,7 +7,7 @@ import {
   deriveSegmentsFromVoiceover,
   filterActiveHighlights,
 } from "@/lib/services/scene-derive";
-import type { AssetAnalysis, MarketingPurpose, Platform, ScriptDraft, ScriptSegment, StoreProfile } from "@/lib/types";
+import type { AssetAnalysis, CopyAnalysis, MarketingPurpose, Platform, ScriptDraft, ScriptSegment, StoreProfile } from "@/lib/types";
 
 // ── Public input types ─────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ interface ScriptDraftInput {
   targetDurationSec?: number;
   /** 可用形象人设（index 对齐 speakerAvatarIds）；≥2 时 AI 分配每句说话人。 */
   avatarPersonas?: { index: number; id: string; name: string }[];
+  /** 切入角度（批次二）：缺省默认序列首项「痛点暴击」。 */
+  angle?: CopyAngle;
 }
 
 interface TemplateDraftInput {
@@ -45,6 +48,12 @@ interface AIScriptResponse {
   /** 多形象时每句的说话人分配；sentences 必须逐字摘自 voiceover。 */
   speakerAssignments?: { speakerIndex: number; sentences: string[] }[];
   cta: string;
+  /** 创作解析报告（批次二）；字段缺失容忍，见 createScriptDraftWithAI 解析逻辑。 */
+  analysis?: {
+    overview?: unknown;
+    principles?: unknown;
+    structure?: unknown;
+  };
 }
 
 // ── Purpose labels ─────────────────────────────────────────────────────────
@@ -77,17 +86,17 @@ const platformNames: Record<Platform, string> = {
 // ── System prompt ──────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `你是为本地实体店创作短视频口播稿的营销文案专家。
-你的文案必须口语化、有网感、适合短视频配音。口播稿长度严格按用户给的【目标时长】要求的句数执行：逐句写满规定句数，不得少写（中文配音约每秒4.5字）。
 
-要求：
-- 开头3秒内抓住注意力（hook）
-- 突出产品卖点和门店特色
-- 语言自然不僵硬，像真人说话
-- 结尾有明确的行动号召（CTA）
+${COPYWRITING_RULES}
+
+输出硬性要求：
+- 口播稿长度严格按用户给的【目标时长】要求的句数执行：逐句写满规定句数，不得少写（中文配音约每秒4.5字）
 - 每句控制在8-15个字，方便朗读，句与句之间用中文句号分隔
+- 严格按用户给的【本版切入角度】要求组织开头与叙事主线
 - highlights：从口播稿中挑出需要字幕标黄的关键词（产品名/价格/活动/CTA），必须逐字摘自你写好的口播稿
 - onCameraSentences：从口播稿中挑出适合真人出镜的句子（开场与结尾 CTA 优先），必须逐字摘自你写好的口播稿
 - speakerAssignments：仅在给了【出镜形象】名单时必填；每句逐字摘自口播稿，speakerIndex 不得超过形象数量-1
+- analysis：创作解析报告，放输出最后——overview 一句话概述本稿创作逻辑与目标人群；principles 逐条说明本稿如何体现三大原则；structure 逐段说明四大结构如何落地。各段 2-4 句，措辞面向商家读者
 
 你会收到门店信息、素材分析结果、营销目的和发布平台，请根据这些信息创作口播稿。`;
 
@@ -98,7 +107,8 @@ const SCHEMA_DESCRIPTION = `{
   "highlights": ["口播稿中需标黄的关键词原文"],
   "onCameraSentences": ["适合真人出镜的口播句原文"],
   "speakerAssignments": [{"speakerIndex": 0, "sentences": ["逐字口播句"]}],
-  "cta": "行动号召文案"
+  "cta": "行动号召文案",
+  "analysis": {"overview": "创作逻辑概述", "principles": "三大原则对照解析", "structure": "四大结构对照解析"}
 }`;
 
 // ── Prompt builders ────────────────────────────────────────────────────────
@@ -119,6 +129,13 @@ function buildUserPrompt(input: ScriptDraftInput): string {
     `店名：${sanitizePromptField(store.name, 100)}`,
     `行业：${sanitizePromptField(store.industry, 50)}`,
     `位置：${sanitizePromptField(store.location ?? "未填写", 100)}`,
+    store.nickname || store.ownerAge || store.yearsInBusiness
+      ? `店主人设：${[
+          store.nickname ? sanitizePromptField(store.nickname, 20) : null,
+          store.ownerAge ? `${store.ownerAge}岁` : null,
+          store.yearsInBusiness ? `开店${store.yearsInBusiness}年` : null,
+        ].filter(Boolean).join("，")}（可用于开头身份呼唤与地域背书，如「龙岗君姐15年」）`
+      : null,
     `主推产品：${store.mainProducts.map((p) => sanitizePromptField(p, 60)).join("、") || "未填写"}`,
     `卖点：${store.sellingPoints.map((p) => sanitizePromptField(p, 80)).join("、") || "未填写"}`,
     `目标客群：${store.targetCustomers.map((c) => sanitizePromptField(c, 40)).join("、") || "未填写"}`,
@@ -140,6 +157,8 @@ function buildUserPrompt(input: ScriptDraftInput): string {
       `请在 speakerAssignments 中把口播稿的【每一句】分配给一位形象（speakerIndex 从 0 起：0=1 号、1=2 号……），句子必须逐字摘自口播稿、覆盖全部句子且不重复；开场句与结尾 CTA 固定分配给 1 号形象。`,
     );
   }
+
+  lines.push(``, `【本版切入角度】${input.angle ?? "痛点暴击"}：${angleGuidance(input.angle ?? "痛点暴击")}`);
 
   return lines.join("\n");
 }
@@ -224,7 +243,7 @@ export async function createScriptDraftWithAI(
     aiResponse = await chatCompletionJSON<AIScriptResponse>(
       SYSTEM_PROMPT,
       userPrompt,
-      { schemaDescription: SCHEMA_DESCRIPTION, temperature: 0.8, maxTokens: 3000 },
+      { schemaDescription: SCHEMA_DESCRIPTION, temperature: 0.8, maxTokens: 4096 }, // +约 1k 容纳 analysis 三段文本
     );
   }
 
@@ -269,6 +288,20 @@ export async function createScriptDraftWithAI(
     speakerByText,
   });
 
+  // 解析缺失容忍（批次二 spec §4.2）：三字段均为非空字符串才采纳，否则整体落 undefined。
+  const rawAnalysis = aiResponse.analysis;
+  const analysis =
+    rawAnalysis &&
+    typeof rawAnalysis.overview === "string" && rawAnalysis.overview.trim() &&
+    typeof rawAnalysis.principles === "string" && rawAnalysis.principles.trim() &&
+    typeof rawAnalysis.structure === "string" && rawAnalysis.structure.trim()
+      ? {
+          overview: rawAnalysis.overview.trim(),
+          principles: rawAnalysis.principles.trim(),
+          structure: rawAnalysis.structure.trim(),
+        }
+      : undefined;
+
   return buildDraft({
     store: input.store,
     purpose: input.purpose,
@@ -283,6 +316,8 @@ export async function createScriptDraftWithAI(
     warnings: voiceover.warnings,
     targetDurationSec: input.targetDurationSec,
     speakerAvatarIds: input.avatarPersonas?.map((p) => p.id),
+    angle: input.angle ?? "痛点暴击",
+    analysis,
   });
 }
 
@@ -351,6 +386,10 @@ function buildDraft(input: {
   warnings: string[];
   targetDurationSec?: number;
   speakerAvatarIds?: string[];
+  /** 切入角度（仅 AI 路径有）。 */
+  angle?: string;
+  /** 创作解析（仅 AI 路径且未截断时有）。 */
+  analysis?: CopyAnalysis;
 }): ScriptDraft {
   return {
     id: createId("script"),
@@ -370,6 +409,8 @@ function buildDraft(input: {
     generationMode: input.generationMode,
     complianceWarnings: input.warnings,
     ...(input.targetDurationSec ? { targetDurationSec: input.targetDurationSec } : {}),
+    ...(input.angle ? { angle: input.angle } : {}),
+    ...(input.analysis ? { analysis: input.analysis } : {}),
     createdAt: nowIso(),
   };
 }
@@ -413,7 +454,12 @@ function sanitizeCopy(
   forbiddenWords: string[],
 ): { copy: string; warnings: string[] } {
   const removed = forbiddenWords.filter((word) => copy.includes(word));
-  let cleaned = copy;
+  // 第二道防线（批次二，借鉴 MPT format_response / svf cleanGeneratedText）：
+  // 剥 code fence、markdown 符号、emoji——LLM 违反输出约束时兜底。
+  let cleaned = copy
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[*#`]/g, "")
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "");
 
   for (const word of removed) {
     cleaned = cleaned.replaceAll(word, "");

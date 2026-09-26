@@ -240,7 +240,7 @@ describe("script engine (voiceover-centric)", () => {
       // Second call: default (low) effort, moderate budget — no high-effort overrides.
       const secondCallOptions = aiSpy.mock.calls[1]?.[2] as Record<string, unknown>;
       expect(secondCallOptions.reasoningEffort).toBeUndefined();
-      expect(secondCallOptions.maxTokens).toBe(3000);
+      expect(secondCallOptions.maxTokens).toBe(4096);
     } finally {
       hasAISpy.mockRestore();
       aiSpy.mockRestore();
