@@ -49,6 +49,7 @@ describe("StoreFieldCandidates", () => {
     );
     expect(screen.getByText(/已达上限/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "填入 同城引流" })).toHaveProperty("disabled", true);
+    expect(screen.getByPlaceholderText("手动输入后回车添加")).toHaveProperty("disabled", true);
   });
 
   it("已在列表中的候选不重复展示填入", () => {

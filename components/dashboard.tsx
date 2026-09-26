@@ -686,6 +686,7 @@ export function Dashboard() {
       setMessage("请先填写门店名称与行业，AI 才能给候选。");
       return;
     }
+    if (candidatesLoading) return;
     setCandidatesLoading(field);
     try {
       const existing = splitCsv(values[field]);

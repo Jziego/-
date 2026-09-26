@@ -28,10 +28,20 @@ export function StoreFieldCandidates({ label, items, max, candidates, loading, o
   const full = items.length >= max;
   const pool = candidates.filter((c) => !items.includes(c));
 
+  /** 统一添加入口：按中英文逗号切分、逐条去重防空、满即止。 */
+  function addValue(raw: string) {
+    const parts = raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+    let next = [...items];
+    for (const part of parts) {
+      if (next.length >= max || next.includes(part)) continue;
+      next = [...next, part];
+      onAdd(part);
+    }
+  }
+
   function submitManual() {
-    const value = manual.trim();
-    if (!value || full || items.includes(value)) return;
-    onAdd(value);
+    if (!manual.trim() || full) return;
+    addValue(manual);
     setManual("");
   }
 
@@ -58,6 +68,7 @@ export function StoreFieldCandidates({ label, items, max, candidates, loading, o
         placeholder="手动输入后回车添加"
         value={manual}
         disabled={full}
+        maxLength={30}
         onChange={(e) => setManual(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitManual(); } }}
       />
@@ -75,7 +86,7 @@ export function StoreFieldCandidates({ label, items, max, candidates, loading, o
             {pool.map((candidate) => (
               <li key={candidate} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <span>{candidate}</span>
-                <button type="button" className="secondaryButton" disabled={full} aria-label={`填入 ${candidate}`} onClick={() => onAdd(candidate)}>填入</button>
+                <button type="button" className="secondaryButton" disabled={full} aria-label={`填入 ${candidate}`} onClick={() => addValue(candidate)}>填入</button>
               </li>
             ))}
           </ul>
