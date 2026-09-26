@@ -3,6 +3,7 @@ import type {
   AssetAnalysis,
   AvatarProfile,
   BgmTrack,
+  CopyAnalysis,
   Job,
   MarketingPurpose,
   RenderProject,
@@ -12,6 +13,7 @@ import type {
   StoreProfile,
   VideoOutput
 } from "@/lib/types";
+import { Prisma } from "@prisma/client";
 import type {
   Asset as PrismaAsset,
   AssetAnalysis as PrismaAssetAnalysis,
@@ -41,6 +43,9 @@ export function toStoreProfile(row: PrismaStoreProfile): StoreProfile {
     contactPhone: row.contactPhone ?? undefined,
     logoAssetId: row.logoAssetId ?? undefined,
     storefrontAssetId: row.storefrontAssetId ?? undefined,
+    nickname: row.nickname ?? undefined,
+    ownerAge: row.ownerAge ?? undefined,
+    yearsInBusiness: row.yearsInBusiness ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
@@ -63,6 +68,9 @@ export function toStoreProfileInput(profile: StoreProfile) {
     contactPhone: profile.contactPhone ?? null,
     logoAssetId: profile.logoAssetId ?? null,
     storefrontAssetId: profile.storefrontAssetId ?? null,
+    nickname: profile.nickname ?? null,
+    ownerAge: profile.ownerAge ?? null,
+    yearsInBusiness: profile.yearsInBusiness ?? null,
     createdAt: new Date(profile.createdAt),
     updatedAt: new Date(profile.updatedAt)
   };
@@ -205,6 +213,8 @@ export function toScriptDraft(row: PrismaScriptDraft): ScriptDraft {
     highlights: row.highlights ?? [],
     segments: (row.segments as unknown as ScriptSegment[] | null) ?? [],
     speakerAvatarIds: row.speakerAvatarIds ?? [],
+    angle: row.angle ?? undefined,
+    analysis: (row.analysis as CopyAnalysis | null) ?? undefined,
     createdAt: row.createdAt.toISOString()
   };
 }
@@ -228,6 +238,8 @@ export function toScriptDraftInput(script: ScriptDraft) {
     highlights: script.highlights ?? [],
     segments: (script.segments ?? []) as object,
     speakerAvatarIds: script.speakerAvatarIds ?? [],
+    angle: script.angle ?? null,
+    analysis: script.analysis ?? Prisma.JsonNull,
     createdAt: new Date(script.createdAt)
   };
 }

@@ -29,6 +29,9 @@ export const storeProfileSchema = z.object({
   contactPhone: z.string().optional(),
   logoAssetId: z.string().optional(),
   storefrontAssetId: z.string().optional(),
+  nickname: z.string().max(20).optional(),
+  ownerAge: z.number().int().min(10).max(120).optional(),
+  yearsInBusiness: z.number().int().min(0).max(100).optional(),
   createdAt: isoDateString,
   updatedAt: isoDateString
 });

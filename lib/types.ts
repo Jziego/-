@@ -52,6 +52,12 @@ export interface StoreProfile {
   contactPhone?: string;
   logoAssetId?: string;
   storefrontAssetId?: string;
+  /** 朋友们对你的称呼（人设句原料，如「君姐」）。 */
+  nickname?: string;
+  /** 店主年龄。 */
+  ownerAge?: number;
+  /** 店龄（年）。 */
+  yearsInBusiness?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -142,6 +148,14 @@ export interface ScriptSegment {
   onCamera: boolean;
 }
 
+/** 文案解析报告（AI 产出，三段式；缺失容忍——截断/模板兜底/旧数据为 undefined）。
+ * 注意：用 type 而非 interface——interface 无隐式索引签名，无法赋给 Prisma 的 InputJsonValue。 */
+export type CopyAnalysis = {
+  overview: string;
+  principles: string;
+  structure: string;
+};
+
 export interface ScriptDraft {
   id: string;
   ownerId: string;
@@ -164,6 +178,10 @@ export interface ScriptDraft {
   segments?: ScriptSegment[];
   /** speakerIndex → AvatarProfile.id 的对齐表（生成时刻的 personas 顺序）；渲染端按此解析说话人。 */
   speakerAvatarIds?: string[];
+  /** 切入角度（COPY_ANGLES 之一；模板兜底/旧数据为 undefined）。 */
+  angle?: string;
+  /** 创作解析（折叠展示用）。 */
+  analysis?: CopyAnalysis;
   createdAt: string;
 }
 

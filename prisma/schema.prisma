@@ -66,6 +66,9 @@ model StoreProfile {
   contactPhone       String?
   logoAssetId        String?
   storefrontAssetId  String?
+  nickname           String?
+  ownerAge           Int?
+  yearsInBusiness    Int?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
   owner              User            @relation(fields: [ownerId], references: [id])
@@ -153,6 +156,8 @@ model ScriptDraft {
   highlights         String[]  @default([])
   segments           Json      @default("[]")
   speakerAvatarIds   String[]  @default([])
+  angle              String?
+  analysis           Json?
   createdAt          DateTime        @default(now())
   owner              User            @relation(fields: [ownerId], references: [id])
   store              StoreProfile    @relation(fields: [storeId], references: [id])

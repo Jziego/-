@@ -70,6 +70,9 @@ export class PrismaStoreRepository implements StoreRepository {
         contactPhone: data.contactPhone,
         logoAssetId: data.logoAssetId,
         storefrontAssetId: data.storefrontAssetId,
+        nickname: data.nickname,
+        ownerAge: data.ownerAge,
+        yearsInBusiness: data.yearsInBusiness,
         updatedAt: data.updatedAt
       }
     });
