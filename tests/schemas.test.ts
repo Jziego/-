@@ -47,6 +47,46 @@ describe("core SaaS schemas", () => {
     ).toThrow();
   });
 
+  it("rejects more than 10 main products to match the client-side limit", () => {
+    const baseProfile = {
+      id: "store_1",
+      ownerId: "user_1",
+      name: "阿姨手作面馆",
+      industry: "餐饮",
+      targetCustomers: ["附近上班族"],
+      createdAt: "2026-06-03T10:00:00.000Z",
+      updatedAt: "2026-06-03T10:00:00.000Z"
+    };
+
+    const parsed = storeProfileSchema.safeParse({
+      ...baseProfile,
+      mainProducts: Array.from({ length: 11 }, (_, i) => `产品${i + 1}`),
+      sellingPoints: ["现熬牛骨汤"]
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects more than 12 selling points to match the client-side limit", () => {
+    const baseProfile = {
+      id: "store_1",
+      ownerId: "user_1",
+      name: "阿姨手作面馆",
+      industry: "餐饮",
+      targetCustomers: ["附近上班族"],
+      createdAt: "2026-06-03T10:00:00.000Z",
+      updatedAt: "2026-06-03T10:00:00.000Z"
+    };
+
+    const parsed = storeProfileSchema.safeParse({
+      ...baseProfile,
+      mainProducts: ["牛肉面"],
+      sellingPoints: Array.from({ length: 13 }, (_, i) => `卖点${i + 1}`)
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
   it("models uploaded assets with object storage keys and processing state", () => {
     const asset = assetSchema.parse({
       id: "asset_1",
