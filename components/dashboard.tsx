@@ -1020,7 +1020,7 @@ export function Dashboard() {
   }
 
   async function generateScript() {
-    if (pendingAction || generating) return;
+    if (pendingAction || generating || changingAngle) return;
     if (!store) {
       setMessage("请先完成门店档案。");
       return;
@@ -1637,7 +1637,7 @@ export function Dashboard() {
 
           <button
             className="primaryButton"
-            disabled={renderLocked || Boolean(renderMissingAssets) || generating || Boolean(pendingAction)}
+            disabled={renderLocked || Boolean(renderMissingAssets) || generating || changingAngle || Boolean(pendingAction)}
             onClick={generateScript}
             type="button"
           >
@@ -1659,7 +1659,7 @@ export function Dashboard() {
               onConfirm={confirmScriptAndRender}
               pending={pendingAction === "render"}
               onChangeAngle={confirmDraft.generationMode === "ai" ? () => void handleChangeAngle() : undefined}
-              changingAngle={changingAngle}
+              changingAngle={changingAngle || generating}
             />
           ) : null}
 
