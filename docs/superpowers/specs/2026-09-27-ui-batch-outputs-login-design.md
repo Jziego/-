@@ -28,14 +28,14 @@ DELETE /api/render-projects/outputs/[id]
   → jsonOk({ deleted: true })
 ```
 
-- R2 删除失败不阻塞 DB 删除？——**否，fail-fast**：先删 R2 再删 DB，R2 失败则 500 且 DB 保留，用户可重试；孤儿 R2 文件比孤儿 DB 记录危害小（记录没了文件还在 = 永久泄漏存储）
+- R2 清理 **best-effort**（与素材删除 `assets-delete` 现有模式一致）：先删 DB 记录再清 R2，R2 失败仅 `console.warn` 不阻塞——「删除按钮点了没反应」比孤儿 R2 文件更伤体验；孤儿文件后续可用清理任务兜底
 - 产物删除不级联 RenderProject（渲染任务历史保留）
 
 ### 2.2 网格卡片 UI（重构 `components/dashboard.tsx` 的 `VideoOutputCard` + `#render-outputs` 区块）
 
 - 布局：`.timeline` 纵向列表 → CSS Grid，桌面 3 列 / 平板 2 列 / 移动 1 列
 - 卡片内容：
-  - 封面：`coverStorageKey` 存在 → 预签名 URL `<img>`；不存在 → 回退 `<video preload="metadata">` 首帧（现状模式）
+  - 封面视觉：统一 `<video preload="metadata">` 显示首帧（与素材缩略图的视频处理一致），**不新增封面 URL 端点**（YAGNI；coverStorageKey 多数产物可能没有，但删除时仍一并清理）
   - 类型徽标：`kind` 映射中文（talking_head→口播成片、segmented_voice→分段口播、final_composite→素材成片、slideshow→幻灯片）
   - 元信息：创建日期（`createdAt` 格式化 MM-DD HH:mm）+ 时长
   - 操作：hover/常驻「下载」「删除」按钮
