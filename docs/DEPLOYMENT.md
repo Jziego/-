@@ -9,7 +9,7 @@
 | 服务 | 镜像/构建 | 启动命令 | 端口 | 作用 |
 |------|----------|---------|------|------|
 | **web** | Zeabur Next.js 服务（`zbpack.json`） | `npm run start:prod` → `prisma migrate deploy && next start -H 0.0.0.0`（堆上限 768MB） | 3000（Zeabur 自动暴露） | App Router 页面 + API 路由 + middleware（auth/限流/黑名单） |
-| **worker** | `worker/Dockerfile`（独立 Zeabur 服务，**含 ffmpeg + CJK 字体**） | `npx tsx worker/index.ts`（堆上限 1024MB，`video_render` 并发 1） | 3001（仅 healthcheck，不对外） | BullMQ 消费者：素材分析 / 脚本 / 数字人 / 成片 / 配额重置 cron |
+| **worker** | `worker/Dockerfile`（独立 Zeabur 服务，**含 ffmpeg + CJK 字体**） | `npx tsx worker/index.ts`（堆上限 1024MB，**经 Zeabur 服务变量 NODE_OPTIONS 注入**——Dockerfile ENV 不会生效；`video_render` 并发 1） | 3001（仅 healthcheck，不对外） | BullMQ 消费者：素材分析 / 脚本 / 数字人 / 成片 / 配额重置 cron |
 | **PostgreSQL** | Zeabur Postgres 插件 | — | — | 主数据库（Prisma） |
 | **Redis** | Zeabur Redis 插件 | — | — | BullMQ 队列 + 限流计数器 + JWT 黑名单 |
 

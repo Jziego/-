@@ -1,7 +1,7 @@
 import { Worker, Queue } from "bullmq";
 import { getRedisUrl, getWorkerConcurrency } from "@/lib/env";
 import { getJobRepository, getRenderRepository } from "@/lib/repositories";
-import { queueNames } from "@/lib/queue";
+import { queueNames, applyRedisGuardrails } from "@/lib/queue";
 import { registerProcessor, getProcessor } from "@/worker/processors/index";
 import { finalizeProjectStatus } from "@/worker/finalize-project";
 import { assetAnalysisProcessor } from "@/worker/processors/asset-analysis";
@@ -177,6 +177,9 @@ scheduleQuotaReset().then((q) => { cronQueue = q; }).catch((err) => {
 // 启动清扫：OOM 被杀的渲染泄漏 render-*/tts-*（finally 在 SIGKILL 下不执行）
 const swept = sweepStaleTmpDirs({ maxAgeMs: 6 * 60 * 60 * 1000 });
 if (swept.count > 0) console.log(`[worker] 清扫残留临时目录 ${swept.count} 个（${swept.bytes} 字节）`);
+
+// Redis 护栏自愈：托管 Redis 配置文件只读，容器重启后 maxmemory/noeviction 会丢
+void applyRedisGuardrails();
 
 const workers = jobTypes.map(createWorker);
 

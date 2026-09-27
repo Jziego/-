@@ -1,4 +1,5 @@
 import { Queue, FlowProducer } from "bullmq";
+import { Redis } from "ioredis";
 import type { Job, JobType } from "@/lib/types";
 
 export const queueNames: Record<JobType, string> = {
@@ -22,6 +23,29 @@ export function createBullQueue(type: JobType): Queue {
 
 export function createFlowProducer(): FlowProducer {
   return new FlowProducer({ connection: getConnection() });
+}
+
+/**
+ * Zeabur 托管 Redis 的 /etc/redis-stack.conf 是只读挂载，CONFIG REWRITE 无法持久化，
+ * maxmemory/noeviction 在容器重启后丢失。worker 每次启动自愈重设（幂等，瞬时连接，
+ * 失败仅告警不阻塞启动）。可用 REDIS_MAXMEMORY_BYTES 覆盖默认 512MB。
+ */
+export async function applyRedisGuardrails(): Promise<void> {
+  const redisUrl = process.env.REDIS_URL;
+  const client = redisUrl
+    ? new Redis(redisUrl, { lazyConnect: true })
+    : new Redis({ host: "127.0.0.1", port: 6379, lazyConnect: true });
+  try {
+    await client.connect();
+    const maxmemory = process.env.REDIS_MAXMEMORY_BYTES ?? "536870912";
+    await client.config("SET", "maxmemory", maxmemory);
+    await client.config("SET", "maxmemory-policy", "noeviction");
+    console.log(`[redis] 护栏已应用：maxmemory=${maxmemory} noeviction`);
+  } catch (err) {
+    console.warn(`[redis] 护栏应用失败（不影响启动）：${(err as Error).message}`);
+  } finally {
+    client.disconnect();
+  }
 }
 
 export function toQueuePayload(job: Job) {

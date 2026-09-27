@@ -28,14 +28,23 @@
 
 ## 3. 云端手工配置项（代码管不到，照此检查）
 
-### 3.1 Zeabur 服务内存限制（防单个进程拖垮整机）
-- web 服务：Resources → Memory limit **1536 MiB**
-- worker 服务：Resources → Memory limit **1796 MiB**
-- 目的：cgroup 先杀肇事 Node 进程，而不是随机杀到 PG/Redis。
+> **2026-09-27 事故后勘误（实测）**：
+> 1. **容器内存无硬限制**——web/worker 容器 `/sys/fs/cgroup/memory.max` 均为 `max`；面板显示的 1024 只是占位，付费的「资源限制」功能是**加**上限，不是已有上限。**不必为此买套餐**；真正的堆上限由代码侧 NODE_OPTIONS 控制。
+> 2. **worker 的 NODE_OPTIONS 必须走 Zeabur 服务环境变量**——Dockerfile `ENV` 在 Zeabur 构建管线中不会进入容器运行时（实测为空，ffmpeg/字体等其它 Dockerfile 指令正常）。web 侧无此问题（堆上限写在 `start:prod` 命令行里）。
+> 3. **服务重启/重建 CLI**：`npx zeabur@latest service list --project-id 6a2388632fe98e0879e0d166` → `service restart --id <ID> -y`。机器重启后应用 pod 不会自动回来，按 PG → Redis → worker → web 顺序逐个点亮。
+> 4. **构建失败先查时机**——整机内存打满时 docker build 会静默失败（deployment list 显示 FAILED，重试即可）；build log 需更高权限的 API key。
+> 5. **09-27 复发根因**：当天 push 触发的 worker 构建在 OOM 中失败，**运行中的 worker 一直是旧镜像**——Task A/B/C 的保护一项都没生效。教训：部署后必须验证运行中的进程/变量与预期一致（本手册 §6 观察清单）。
 
-### 3.2 Redis 容量护栏
-- Zeabur Redis 插件：`maxmemory 512mb`，淘汰策略必须 **`noeviction`**（BullMQ 队列流被 LRU 淘汰会丢任务）。
-- rate-limit / JWT 黑名单 key 都带 TTL 且极小，512MB 绰绰有余。
+
+### 3.1 Zeabur 服务内存限制（2026-09-27 实测：无需配置）
+- 实测 web/worker 容器 `/sys/fs/cgroup/memory.max = max`（无硬限制）；面板上的 1024 是占位显示，付费「资源限制」功能是**可选地加**上限。
+- 堆上限已由代码控制（web 768MB / worker 1024MB，见 §2），**不必为此升级套餐**。
+- 若未来想加保险，付费后在服务 Settings → Resources 设上限即可，但注意：上限必须**大于**堆上限 + 原生开销 + ffmpeg 子进程（渲染期约 1.2-1.6GB），worker 低于此值会导致每次渲染必炸容器。
+
+### 3.2 Redis 容量护栏（已由 worker 启动自愈接管）
+- Zeabur 托管 Redis 的 `/etc/redis-stack.conf` 是**只读挂载**（实测 CONFIG REWRITE 报 "Device or resource busy"），手工 CONFIG SET 在容器重启后丢失。
+- **现由 worker 每次启动时自愈重设**：`maxmemory 512mb` + `noeviction`（`lib/queue.ts` `applyRedisGuardrails()`，可用 `REDIS_MAXMEMORY_BYTES` 覆盖）。必须 `noeviction`——BullMQ 队列流被 LRU 淘汰会丢任务。
+- 若需立即生效而不等 worker 重启：`zeabur service exec --id <redis> -- sh -c 'redis-cli -a "$REDIS_PASSWORD" CONFIG SET maxmemory 536870912'`（noeviction 同理）。
 
 ### 3.3 Swap（9/22 救援时已加，重启机器后需确认仍在）
 ```bash
