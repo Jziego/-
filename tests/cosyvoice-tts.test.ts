@@ -113,6 +113,76 @@ describe("synthesizeCosyVoiceSpeech", () => {
     await expect(synthesizeCosyVoiceSpeech({ text: "大家", voice: "v" }, deps)).rejects.toThrow(/无音频/);
   });
 
+  it("多行 data 事件（限流时网关 200 返回 pretty-print JSON）→ 解析出 code 抛真实错误", async () => {
+    // 2026-09-27 实测：突发并发超限时网关返回 HTTP 200 + 一个事件的 data 被拆成多行
+    // （首行仅 "data:{"），单行假设下 JSON.parse 失败并报出误导性的「协议漂移」。
+    const pretty = [
+      "data:{",
+      'data:  "code": "Throttling",',
+      'data:  "message": "Request was denied due to user flow control",',
+      'data:  "request_id": "r-throttle"',
+      "data:}",
+    ].join("\n");
+    const { deps } = makeDeps(`id:1
+event:result
+:HTTP_STATUS/200
+${pretty}
+
+`);
+    await expect(
+      synthesizeCosyVoiceSpeech({ text: "大家好", voice: "cosyvoice-v3.5-plus-av1-x" }, deps),
+    ).rejects.toThrow(/CosyVoice TTS 合成失败 code=Throttling/);
+  });
+
+  it("带 id:/event:/comment 框架行的 SSE（新协议常态）→ 正常解析", async () => {
+    const framed = `id:1
+event:result
+:HTTP_STATUS/200
+data:${JSON.stringify(AUDIO_FRAME)}
+
+id:2
+event:result
+:HTTP_STATUS/200
+data:${JSON.stringify(STOP_FRAME)}
+
+`;
+    const { deps, stored } = makeDeps(framed);
+    const result = await synthesizeCosyVoiceSpeech({ text: "大家", voice: "cosyvoice-v3.5-plus-av1-x" }, deps);
+    expect(stored.key).toMatch(/^voices\//);
+    expect(result.audioBytes.length).toBeGreaterThan(0);
+  });
+
+  it("仅 URL 音频帧（无 base64）→ 下载 URL 作为音频", async () => {
+    const urlFrame = {
+      request_id: "r1",
+      output: {
+        finish_reason: "null",
+        type: "sentence-synthesis",
+        sentence: { index: 0, words: [] },
+        audio: { data: "", url: "https://oss.test/audio.mp3?sig=1" },
+      },
+    };
+    const body = sseBody([urlFrame, STOP_FRAME]);
+    const calls: string[] = [];
+    const deps: CosyvoiceTtsDeps = {
+      fetchImpl: (async (url: RequestInfo | URL) => {
+        calls.push(String(url));
+        if (String(url).includes("oss.test")) return new Response("mp3-bytes-from-url", { status: 200 });
+        return new Response(body, { status: 200 });
+      }) as unknown as typeof fetch,
+      probeDuration: async () => 0.5,
+      putObject: async () => {},
+      makeTmpDir: () => "/tmp/tts-test",
+      removeDir: () => {},
+      writeFileFn: async () => {},
+      apiKey: "sk-test",
+      baseUrl: "https://api.test/api/v1",
+    };
+    const result = await synthesizeCosyVoiceSpeech({ text: "大家好", voice: "cosyvoice-v3.5-plus-av1-x" }, deps);
+    expect(calls.some((u) => u.includes("oss.test"))).toBe(true);
+    expect(Buffer.from(result.audioBytes).toString()).toBe("mp3-bytes-from-url");
+  });
+
   it("HTTP 非 200 → 抛错带截断原文", async () => {
     const { deps } = makeDeps(JSON.stringify({ code: "InvalidApiKey", message: "bad" }), 401);
     await expect(synthesizeCosyVoiceSpeech({ text: "大家", voice: "v" }, deps)).rejects.toThrow(/401/);

@@ -216,7 +216,13 @@ async function synthesizeOffCameraSegment(
     });
     return { ...base, videoStorageKey: result.videoAssetId, durationSec: result.durationSeconds, fellBackToVideo: true };
   }
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // 3 次尝试 + 指数退避：上游（DashScope）对突发并发限流（QPS/并发连接数超限返回
+  // Throttling），退避让窗口滑过。延迟可用 TTS_RETRY_BACKOFF_MS（如 "2000,5000"）覆盖。
+  const backoffMs = (process.env.TTS_RETRY_BACKOFF_MS ?? "2000,5000")
+    .split(",")
+    .map((s) => Number(s.trim()) || 0);
+  const TTS_MAX_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < TTS_MAX_ATTEMPTS; attempt++) {
     try {
       const speech = await provider.synthesizeSpeech({
         providerVoiceId: speaker.providerVoiceId,
@@ -232,6 +238,10 @@ async function synthesizeOffCameraSegment(
       console.warn(
         `[talking_head] TTS attempt ${attempt + 1} failed for segment ${segment.index}: ${error instanceof Error ? error.message : String(error)}`,
       );
+      const delay = backoffMs[attempt] ?? 0;
+      if (delay > 0 && attempt < TTS_MAX_ATTEMPTS - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
   }
   const result = await provider.generateTalkingHead({

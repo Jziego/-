@@ -391,7 +391,8 @@ describe("talking_head processor", () => {
       expect(seenVoices).toEqual(["pv_a", "pv_b"]);
     });
 
-    it("TTS failure retries once then falls back to a talking-head video for that segment", async () => {
+    it("TTS failure retries with backoff then falls back to a talking-head video for that segment", async () => {
+      vi.stubEnv("TTS_RETRY_BACKOFF_MS", "1,1"); // 退避压缩到毫秒级，避免拖慢测试
       await seedAvatarAndDraft("provider_av_1");
       const offCameraOnly: ScriptSegment[] = [
         { index: 0, text: "画外音。", speakerIndex: 0, onCamera: false },
@@ -408,7 +409,7 @@ describe("talking_head processor", () => {
       expect(retryManifest.segments[0]?.audioStorageKey).toMatch(/^voice_audio_/);
       expect(retryManifest.segments[0]?.fellBackToVideo).toBeUndefined();
 
-      // TTS 持续失败（重试 1 次仍失败）→ 降级为该段数字人视频
+      // TTS 持续失败（3 次尝试仍失败）→ 降级为该段数字人视频
       const failDraft = await seedSegmentedDraft({ id: "draft_fail", segments: offCameraOnly });
       const uploadFail = manifestSpy();
       await processTalkingHead(
