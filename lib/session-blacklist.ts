@@ -7,8 +7,9 @@ let _redis: Redis | null = null;
  * 共享 Redis 连接 getter：session-blacklist（JWT 黑名单）与 rate-limit（限流）
  * 共用同一条连接，避免双进程各开一条常驻连接（4GB 小内存机）。
  * 保留 maxRetriesPerRequest:1 + connectTimeout:3000 的 fail-fast 配置；
- * rate-limit 热路径沿用它，Redis 宕机时快速抛错，与改造前各自为政的
- * 行为等价（middleware 侧均已 try/catch fail-open）。
+ * rate-limit 热路径沿用它，Redis 宕机时快速抛错，与改造前默认重试 20 次后
+ * 抛错的行为等价（只是更快）。注意 middleware 未包 try/catch：Redis 持续宕机
+ * 时 API 请求 500——这是改造前后一致的行为，并非 fail-open。
  */
 export function getSharedRedis(): Redis | null {
   if (_redis) return _redis;

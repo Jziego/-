@@ -53,9 +53,11 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 /**
  * 底板 file_id 进程内缓存（资源治理 Task B）：同一底板多 onCamera 段只下载+上传一次。
  * 必须放模块级：talking-head 分段路径每段都 createProviderByName 新建 provider，
- * 工厂级 Map 永远命不中。MediaKit file_id 30 天有效；失败即时清除缓存允许下次重试。
+ * 工厂级 Map 永远命不中。MediaKit file_id 30 天有效——缓存 entry 7 天主动过期重传，
+ * 防 worker 常驻 >30 天后复用同一底板时提交引用过期 file_id；失败即时清除允许重试。
  */
-const footageFileIdCache = new Map<string, Promise<string>>();
+const FOOTAGE_FILE_ID_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const footageFileIdCache = new Map<string, { promise: Promise<string>; cachedAt: number }>();
 
 /** 测试隔离：清空底板 file_id 缓存（进程级，跨 provider 实例共享，用例间必须复位）。 */
 export function resetFootageFileIdCacheForTests(): void {
@@ -241,21 +243,27 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
    * 同一底板只下载+上传一次；失败即时清缓存，下次重试。临时文件 finally 清理。
    */
   async function getFootageFileId(storageKey: string): Promise<string> {
-    let pending = footageFileIdCache.get(storageKey);
-    if (!pending) {
-      pending = (async () => {
-        const tmpFile = join(tmpdir(), `footage-${randomBytes(8).toString("hex")}.mp4`);
-        try {
-          await getObjectToFileFn(storageKey, tmpFile);
-          return await uploadToMediaKitFile(tmpFile, "video/mp4");
-        } finally {
-          await rm(tmpFile, { force: true }).catch(() => undefined);
-        }
-      })();
-      footageFileIdCache.set(storageKey, pending);
-      pending.catch(() => footageFileIdCache.delete(storageKey));
+    const entry = footageFileIdCache.get(storageKey);
+    if (entry && Date.now() - entry.cachedAt < FOOTAGE_FILE_ID_MAX_AGE_MS) {
+      return entry.promise;
     }
-    return pending;
+    const promise = (async () => {
+      const tmpFile = join(tmpdir(), `footage-${randomBytes(8).toString("hex")}.mp4`);
+      try {
+        await getObjectToFileFn(storageKey, tmpFile);
+        return await uploadToMediaKitFile(tmpFile, "video/mp4");
+      } finally {
+        await rm(tmpFile, { force: true }).catch(() => undefined);
+      }
+    })();
+    footageFileIdCache.set(storageKey, { promise, cachedAt: Date.now() });
+    promise.catch(() => {
+      // 仅当失败 promise 仍是当前 entry 时才清除（防过期替换后旧 promise 迟到失败误删新 entry）
+      if (footageFileIdCache.get(storageKey)?.promise === promise) {
+        footageFileIdCache.delete(storageKey);
+      }
+    });
+    return promise;
   }
 
   /** 克隆音色 ID 判定（实测格式：{target_model}-{prefix}-{uid}）。 */

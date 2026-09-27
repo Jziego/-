@@ -3,7 +3,10 @@ import { getSharedRedis } from "@/lib/session-blacklist";
 import { Redis } from "ioredis";
 
 // 说明：Redis 连接由 session-blacklist 的 getSharedRedis 统一供给（middleware
-// 黑名单校验与限流共用一条连接）；本模块不再自建连接。
+// 黑名单校验与限流共用一条连接）；本模块不再自建连接。共享连接沿用 blacklist 的
+// maxRetriesPerRequest:1 fail-fast 配置——Redis 宕机时限流命令快速抛错，与改造前
+// 默认重试 20 次后抛错的行为等价（只是更快）；middleware 未包 try/catch，Redis
+// 持续宕机时 API 请求会 500，改造前后一致。
 
 // ── Configuration ──────────────────────────────────────────────────────────
 

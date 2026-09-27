@@ -162,6 +162,24 @@ describe("底板 file_id 进程内缓存（资源治理 Task B）", () => {
     expect(result.videoAssetId).toMatch(/^avatars\/lipsync\//);
   });
 
+  it("缓存 entry 超过 7 天强制重传（MediaKit file_id 30 天过期的保险）", async () => {
+    const deps = makeDeps();
+    const provider = createVolcEngineLipSyncProvider(deps);
+    await provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "第一次" });
+    expect(deps.getObjectToFileFn).toHaveBeenCalledTimes(1);
+
+    // 只 fake Date（不影响 setTimeout 轮询）：快进 8 天
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 8 * 24 * 3600 * 1000);
+    try {
+      await provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "八天后" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(deps.getObjectToFileFn).toHaveBeenCalledTimes(2);
+    expect(putCountsByType(deps.fetchImpl).video).toBe(2);
+  });
+
   it("resetFootageFileIdCacheForTests 清空缓存：再次调用重新下载", async () => {
     const deps = makeDeps();
     const provider = createVolcEngineLipSyncProvider(deps);

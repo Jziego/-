@@ -8,8 +8,8 @@
 
 | 服务 | 镜像/构建 | 启动命令 | 端口 | 作用 |
 |------|----------|---------|------|------|
-| **web** | Zeabur Next.js 服务（`zbpack.json`） | `npm run start:prod` → `prisma migrate deploy && prisma db seed && next start -H 0.0.0.0` | 3000（Zeabur 自动暴露） | App Router 页面 + API 路由 + middleware（auth/限流/黑名单） |
-| **worker** | `worker/Dockerfile`（独立 Zeabur 服务，**含 ffmpeg + CJK 字体**） | `npx tsx worker/index.ts` | 3001（仅 healthcheck，不对外） | BullMQ 消费者：素材分析 / 脚本 / 数字人 / 成片 / 配额重置 cron |
+| **web** | Zeabur Next.js 服务（`zbpack.json`） | `npm run start:prod` → `prisma migrate deploy && next start -H 0.0.0.0`（堆上限 768MB） | 3000（Zeabur 自动暴露） | App Router 页面 + API 路由 + middleware（auth/限流/黑名单） |
+| **worker** | `worker/Dockerfile`（独立 Zeabur 服务，**含 ffmpeg + CJK 字体**） | `npx tsx worker/index.ts`（堆上限 1024MB，`video_render` 并发 1） | 3001（仅 healthcheck，不对外） | BullMQ 消费者：素材分析 / 脚本 / 数字人 / 成片 / 配额重置 cron |
 | **PostgreSQL** | Zeabur Postgres 插件 | — | — | 主数据库（Prisma） |
 | **Redis** | Zeabur Redis 插件 | — | — | BullMQ 队列 + 限流计数器 + JWT 黑名单 |
 
@@ -17,7 +17,8 @@
 
 ### 构建产物说明
 - `zbpack.json`：`build_command = "npm run build"`（= `prisma generate && next build --webpack`，**生产构建走 webpack 非 turbopack**），`start_command = "npm run start:prod"`。
-- `start:prod` 每次启动都执行 `prisma migrate deploy`（应用待迁移）+ `prisma db seed`（幂等：仅 `upsert demo_user`，`update: {}`，已存在则无操作）+ `next start`。
+- `start:prod` 每次启动都执行 `prisma migrate deploy`（应用待迁移）+ `next start`。**seed 已改为一次性**：新库首部署手动跑 `npm run db:seed:on-start`（幂等：`upsert demo_user` + 3 条 BGM 曲目），详见 `docs/OPS-RUNBOOK.md` §3.4。
+- OOM 治理（堆上限/并发/流式化/索引/连接池）与应急手册见 **`docs/OPS-RUNBOOK.md`**。
 
 ---
 
