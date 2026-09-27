@@ -1,0 +1,342 @@
+
+ 非实时语音合成Qwen-Audio-TTS/CosyVoice HTTP API参考_大模型服务平台百炼(Model Studio)-大模型服务平台百炼(Model Studio)-阿里云帮助中心
+ 大模型 产品 解决方案 权益 定价 AI 应用市场 伙伴 服务 了解阿里云 
+ 查看 "" 全部搜索结果 
+ AI 助理
+ 文档 备案 控制台 
+ 官方文档 
+ 用户指南（模型） 
+ 用户指南（Agent） 
+ API参考（模型） 
+ API参考（Agent） 
+ CLI 
+ 首页 
+ 大模型服务平台百炼 
+ API参考（模型） 
+ 音频 
+ 语音合成 
+ 非实时语音合成 
+ Qwen-Audio-TTS/CosyVoice 
+ HTTP API参考 
+ 非实时语音合成Qwen-Audio-TTS/CosyVoice HTTP API参考
+ 更新时间： 
+ 复制 MD 格式 产品详情 
+ 我的收藏 
+ 本文介绍非实时语音合成 Qwen-Audio-TTS/CosyVoice 的 HTTP 调用方法，支持非流式和流式两种调用模式。
+ 用户指南 ：参见 非实时语音合成 。
+ 重要 本文描述的功能仅在华北 2（北京）地域可用。
+ 重要 阿里云百炼为华北 2（北京）地域推出了业务空间专属域名，能够为推理请求提供卓越的性能和更高的稳定性，建议从 dashscope.aliyuncs.com 迁移至 {WorkspaceId}.cn-beijing.maas.aliyuncs.com 。
+ {WorkspaceId} 需要替换为真实的 Workspace ID 。现有域名仍可正常使用。
+ 接口地址 
+ POST https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer 
+ 调用时请将 {WorkspaceId} 替换为真实的 Workspace ID 。
+ 请求头 
+ 参数 
+ | 类型 
+ | 是否必选 
+ | 说明 
+ | 
+ Authorization
+ | string
+ | 是
+ | 鉴权令牌，格式为 Bearer <your_api_key> ，使用时，将“ <your_api_key> ”替换为实际的 API Key。
+ | 
+ Content-Type
+ | string
+ | 是
+ | 请求体的媒体类型，固定为 application/json 。
+ | 
+ X-DashScope-SSE
+ | string
+ | 否
+ | 用于控制是否以流式方式返回输出结果。仅在流式合成时使用该参数，参数值固定为 enable 。
+ | 
+ 请求体 
+ model string （必选） 
+ 语音合成模型。
+ 取值范围：
+ qwen-audio-3.0-tts-plus
+ qwen-audio-3.1-tts-flash
+ qwen-audio-3.0-tts-flash
+ cosyvoice-v3.5-plus
+ cosyvoice-v3.5-flash
+ cosyvoice-v3-plus
+ cosyvoice-v3-flash
+ cosyvoice-v2
+ input object （必选） 
+ 输入参数对象 。 
+ 属性
+ text string （必选） 
+ 待合成文本。
+ 支持 SSML 和 LaTeX 格式输入。将待合成文本替换为对应格式即可。
+ 使用 SSML 时，需同时将 enable_ssml 设置为 true 。支持的 SSML 标签及用法，请参见 SSML 与 LaTeX 。
+ 使用 LaTeX 时，将待合成文本替换为 LaTeX 格式即可，无需额外配置。支持的 LaTeX 语法及用法，请参见 LaTeX 公式转语音 。
+ voice string （必选） 
+ 音色。
+ 取值范围：
+ 系统音色：参见 Qwen-Audio-TTS 音色列表 、 CosyVoice 音色列表 
+ 声音复刻音色：如何创建音色请参见 CosyVoice 声音复刻/设计 API 
+ 声音设计音色：如何创建音色请参见 CosyVoice 声音复刻/设计 API 
+ format string （可选）
+ 音频编码格式。
+ 默认值：mp3。
+ 取值范围：
+ mp3
+ pcm
+ wav
+ opus
+ sample_rate integer （可选）
+ 音频采样率（Hz）。
+ 取值范围：8000、12000、16000、22050（默认）、24000、44100、48000。
+ 说明 当 format 为 opus 时， sample_rate 仅支持 8000、12000、16000、24000、48000。
+ volume integer （可选）
+ 音量。
+ 默认值：50。
+ 取值范围：[0, 100]。
+ rate float （可选）
+ 语速。
+ 默认值：1.0。
+ 取值范围：[0.5, 2.0]。
+ bit_rate integer （可选）
+ 音频码率（单位：kbps）。
+ 默认值：32。
+ 取值范围：[6, 510]。
+ 重要 仅在 format 为 opus 时支持使用该参数。
+ pitch float （可选）
+ 音调。
+ 默认值：1.0。
+ 取值范围：[0.5, 2.0]。
+ enable_ssml boolean （可选）
+ 是否开启 SSML 功能。SSML 的使用限制（支持的模型、音色和接口），请参见 使用限制 。
+ word_timestamp_enabled boolean （可选）
+ 是否开启字级别时间戳。
+ 默认值：false。
+ 仅在流式输出模式下可用。支持的音色范围：qwen-audio-3.0-tts-plus、qwen-audio-3.1-tts-flash、qwen-audio-3.0-tts-flash、cosyvoice-v3.5-plus、cosyvoice-v3.5-flash、cosyvoice-v3-flash、cosyvoice-v3-plus 和 cosyvoice-v2 模型的复刻音色，以及 Qwen-Audio-TTS 音色列表 、 CosyVoice 音色列表 中标记为支持的系统音色。其他模型的复刻音色不支持此功能。
+ seed integer （可选）
+ 生成时使用的随机数种子，使合成的效果产生变化。在模型版本、文本、音色及其他参数均相同的前提下，使用相同的 seed 可复现相同的合成结果。
+ 默认值 0。
+ 取值范围：[0, 65535]。
+ language_hints array[string] （可选）
+ 重要 
+ 此参数为数组，但当前版本仅处理第一个元素，因此建议只传入一个值。
+ 此参数用于指定语音合成的目标语言，该设置与声音复刻时的样本音频的语种无关。如需设置复刻任务的源语言，请参见声音复刻 API 参考。
+ 指定语音合成的目标语言，提升合成效果。
+ 当数字、缩写、符号等朗读方式或者小语种合成效果不符合预期时使用，例如：
+ 数字朗读方式不符合预期，“hello, this is 110”读成“hello, this is one one zero”而非“hello, this is 幺幺零”
+ 符号朗读不准确，“@”读成“艾特”而非“at”
+ 小语种合成效果差，合成不自然
+ 取值范围：
+ zh：中文
+ en：英语
+ fr：法语
+ de：德语
+ ja：日语
+ ko：韩语
+ ru：俄语
+ pt：葡萄牙语
+ th：泰语
+ id：印尼语
+ vi：越南语
+ es：西班牙语
+ it：意大利语
+ ms：马来西亚语
+ fil：菲律宾语
+ ar：阿拉伯语
+ instruction string （可选）
+ 设置指令，用于控制方言、情感或角色等合成效果。
+ 具体用法请参见 非实时语音合成 。
+ enable_aigc_tag boolean （可选）
+ 是否在生成的音频中添加 AIGC 隐性标识。设置为 true 时，会将隐性标识嵌入到支持格式（wav/mp3/opus）的音频中。
+ 默认值：false。
+ 仅 qwen-audio-3.0-tts-plus、qwen-audio-3.1-tts-flash、qwen-audio-3.0-tts-flash、cosyvoice-v3-flash、cosyvoice-v3-plus、cosyvoice-v2 支持该功能。
+ aigc_propagator string （可选）
+ 设置 AIGC 隐性标识中的 ContentPropagator 字段，用于标识内容的传播者。仅在 enable_aigc_tag 为 true 时生效。
+ 默认值：阿里云 UID。
+ 仅 qwen-audio-3.0-tts-plus、qwen-audio-3.1-tts-flash、qwen-audio-3.0-tts-flash、cosyvoice-v3-flash、cosyvoice-v3-plus、cosyvoice-v2 支持该功能。
+ aigc_propagate_id string （可选）
+ 设置 AIGC 隐性标识中的 PropagateID 字段，用于唯一标识一次具体的传播行为。仅在 enable_aigc_tag 为 true 时生效。
+ 默认值：本次语音合成请求 Request ID。
+ 仅 qwen-audio-3.0-tts-plus、qwen-audio-3.1-tts-flash、qwen-audio-3.0-tts-flash、cosyvoice-v3-flash、cosyvoice-v3-plus、cosyvoice-v2 支持该功能。
+ hot_fix object （可选）
+ 文本热修复配置，用于自定义指定词语的发音或对待合成文本进行替换。
+ cosyvoice-v2 不支持该功能。
+ 参数介绍：
+ pronunciation：自定义发音。指定词语的拼音标注，用于纠正默认发音不准确的情况。
+ replace：文本替换。在语音合成前将指定词语替换为目标文本，替换后的文本将作为实际合成内容。
+ 示例：
+ "hot_fix": {
+ "pronunciation": [
+ {"天气": "tian1 qi4"}
+ ],
+ "replace": [
+ {"今天": "金天"}
+ ]
+}
+ enable_markdown_filter boolean （可选）
+ 重要 仅 cosyvoice-v3-flash 复刻音色支持该功能。
+ 是否启用 Markdown 过滤。启用该功能后，系统在合成语音前自动过滤输入文本中的 Markdown 标记符号，避免将其朗读为文字内容。
+ 默认值：false。
+ 取值范围：
+ true：启用 Markdown 过滤
+ false：禁用 Markdown 过滤
+ | 
+ 非流式 curl -X POST https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer \
+-H "Authorization: Bearer $DASHSCOPE_API_KEY" \
+-H "Content-Type: application/json" \
+-d '{
+ "model": "qwen-audio-3.0-tts-flash",
+ "input": {
+ "text": "我家的后面有一个很大的花园。",
+ "voice": "longanhuan_v3.6",
+ "format": "wav",
+ "sample_rate": 24000
+ }
+}'
+ 流式 curl -X POST https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer \
+-H "Authorization: Bearer $DASHSCOPE_API_KEY" \
+-H "Content-Type: application/json" \
+-H "X-DashScope-SSE: enable" \
+-d '{
+ "model": "qwen-audio-3.0-tts-flash",
+ "input": {
+ "text": "我家的后面有一个很大的花园。",
+ "voice": "longanhuan_v3.6",
+ "format": "wav",
+ "sample_rate": 24000
+ }
+}'
+ | 
+ 返回体 
+ request_id string 
+ 本次调用的唯一标识符。
+ output object 
+ 模型返回的数据。
+ 属性
+ finish_reason string 
+ 任务停止原因，自然停止时为 stop 。
+ 取值范围：
+ null：语音合成中
+ stop：语音合成结束
+ type string 
+ 子事件类型。仅流式合成时返回该值。
+ 取值范围：
+ sentence-begin：标识句子开始，返回待合成的句子文本内容
+ sentence-synthesis：标识音频数据块
+ 一个句子的合成过程中会产生多个 sentence-synthesis 事件，每个对应一个音频数据块
+ 客户端需要按顺序接收这些音频数据块并以追加模式写入同一文件
+ sentence-synthesis 事件与其后的音频数据帧是一一对应的关系，不会出现错位
+ sentence-end：标识句子结束，返回句子文本内容和累计的计费字符数
+ original_text string 
+ 对用户输入文本进行分句后的句内容。最后一个句子可能没有此字段。
+ sentence object 
+ 句子信息。
+ 属性
+ index integer 
+ 句子的编号，从 0 开始。
+ words array 
+ 每句话对应的字的信息。
+ 属性
+ text string 
+ 字。
+ begin_index integer 
+ 字在句子中的开始位置索引，从 0 开始。
+ end_index integer 
+ 字在句子中的结束位置索引，从 1 开始。
+ begin_time integer 
+ 字对应音频的开始时间戳，单位为毫秒。
+ end_time integer 
+ 字对应音频的结束时间戳，单位为毫秒。
+ audio object 
+ 合成的音频数据。
+ 属性
+ data string 
+ 流式合成时输出 Base64 格式音频数据。非流式合成时为空。
+ url string 
+ 模型输出的完整音频文件的 URL，有效期 24 小时。
+ id string 
+ 模型输出的音频信息对应的 ID。
+ expires_at integer 
+ url 过期时间戳。
+ usage object 
+ 本次请求的字符用量。
+ 属性
+ characters integer 
+ 本次请求中计费的有效字符数。
+ | 非流式
+ {
+ "request_id": "ee88b03d-0457-9286-8c67-xxxxxxxxxxxx",
+ "output": {
+ "finish_reason": "stop",
+ "audio": {
+ "data": "",
+ "url": "http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/pre/cosyvoice-v3-flash/20260304/xxxxxxxx/ee88b03d-0457-9286-8c67-xxxxxxxxxxxx.wav?xxxxxxx",
+ "id": "audio_ee88b03d-0457-9286-8c67-xxxxxxxxxxxx",
+ "expires_at": 1772697707
+ }
+ },
+ "usage": {
+ "characters": 15
+ }
+}
+ 流式
+ 中间结果：
+ {
+ "request_id": "8ac1cd04-06af-9a63-b031-xxxxxxxxxxxx",
+ "output": {
+ "finish_reason": "null",
+ "type": "sentence-begin",
+ "original_text": "我家的后面有一个很大的花园。",
+ "sentence": {
+ "index": 0,
+ "words": []
+ },
+ "audio": {
+ "data": "",
+ "id": "audio_ee88b03d-0457-9286-8c67-xxxxxxxxxxxx",
+ "expires_at": 1772697707
+ }
+ },
+ "usage": {
+ "characters": 15
+ }
+}
+ 最终结果：
+ {
+ "request_id": "8ac1cd04-06af-9a63-b031-xxxxxxxxxxxx",
+ "output": {
+ "finish_reason": "stop",
+ "audio": {
+ "data": "",
+ "url": "http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/pre/cosyvoice-v3-flash/20260304/xxxxxxxx/8ac1cd04-06af-9a63-b031-xxxxxxxxxxxx.wav?xxxxxxx",
+ "id": "audio_8ac1cd04-06af-9a63-b031-xxxxxxxxxxxx",
+ "expires_at": 1772698611,
+ }
+ },
+ "usage": {
+ "characters": 15
+ }
+}
+ | 
+ 上一篇：Qwen-Audio-TTS/CosyVoice 下一篇：Java SDK参考 
+ 该文章对您有帮助吗？
+ 反馈 
+ 为什么选择阿里云
+ 什么是云计算 全球基础设施 技术领先 稳定可靠 安全合规 分析师报告 
+ 大模型
+ 大模型服务平台 千问大模型 模型市场 
+ 产品和定价
+ 全部产品 免费试用 产品动态 产品定价 配置报价器 云上成本管理 
+ 技术内容
+ 技术解决方案 帮助文档 开发者社区 天池大赛 阿里云认证 
+ 权益
+ 免费试用 解决方案免费试用 高校计划 推荐返现计划 
+ 服务
+ 基础服务 企业增值服务 迁云服务 官网公告 健康看板 信任中心 
+ 关注阿里云
+ 关注阿里云公众号或下载阿里云APP，关注云资讯，随时随地运维管控云服务
+ 联系我们：4008013260
+ 法律声明 Cookies 政策 廉正举报 安全举报 联系我们 加入我们 
+ 友情链接
+ 阿里巴巴集团 淘宝网 千问AI平台 千问办公 天猫 全球速卖通 阿里巴巴国际交易市场 1688 阿里妈妈 飞猪 阿里云计算 万网 高德 UC 友盟 优酷 钉钉 支付宝 达摩院 淘宝海外 阿里云盘 
+ © 2009-现在 Aliyun.com 版权所有 增值电信业务经营许可证： 浙B2-20080101 域名注册服务机构许可： 浙D3-20210002 
+ 浙公网安备 33010602009975号 浙B2-20080101-4 

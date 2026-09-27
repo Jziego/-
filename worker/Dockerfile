@@ -28,9 +28,11 @@ COPY . .
 # The worker runs on a different port or no port (it's a worker, not a server)
 EXPOSE 3001
 
-# 4GB 小内存机：V8 默认堆上限≈物理内存 75%（无视 cgroup），双 Node 进程理论上限~6GB——
-# 限 1GB 让 V8 提前 GC 而不是被 OOM-kill（功能不变，压力下延迟换存活）。
-ENV NODE_OPTIONS=--max-old-space-size=1024
+# 8GB 机（2026-09-28 从 4GB 升级）：V8 默认堆上限随物理内存膨胀到 ~4GB，
+# 仍要显式限 1.5GB 让 V8 提前 GC 而不是被 OOM-kill；原 4GB 时代限 1GB，
+# 升级后放宽换吞吐。注意：Zeabur 构建管线会丢弃本 ENV——运行时的实际值以
+# Zeabur 服务变量 NODE_OPTIONS 为准（两者应保持一致）。
+ENV NODE_OPTIONS=--max-old-space-size=1536
 
 # Health check — worker doesn't serve HTTP, so we check the process
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

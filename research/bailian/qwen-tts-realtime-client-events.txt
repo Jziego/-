@@ -1,0 +1,193 @@
+
+ 实时语音合成客户端事件参考-大模型服务平台百炼-阿里云_大模型服务平台百炼(Model Studio)-大模型服务平台百炼(Model Studio)-阿里云帮助中心
+ 大模型 产品 解决方案 权益 定价 AI 应用市场 伙伴 服务 了解阿里云 
+ 查看 "" 全部搜索结果 
+ AI 助理
+ 文档 备案 控制台 
+ 官方文档 
+ 用户指南（模型） 
+ 用户指南（Agent） 
+ API参考（模型） 
+ API参考（Agent） 
+ CLI 
+ 首页 
+ 大模型服务平台百炼 
+ API参考（模型） 
+ 音频 
+ 语音合成 
+ 实时语音合成 
+ Qwen-TTS-Realtime 
+ 客户端事件 
+ 客户端事件
+ 更新时间： 
+ 复制 MD 格式 产品详情 
+ 我的收藏 
+ 本文介绍 Qwen-TTS Realtime API 的客户端事件。
+ 相关文档： 实时语音合成 。
+ session.update 
+ 用于更新会话配置。在 WebSocket 连接建立成功后，可立即发送此事件作为交互的第一步。如果未发送，系统将使用默认配置。服务端成功处理此事件后，会返回 session.updated 事件作为确认。
+ event_id string （必选） 
+ 客户端生成的唯一事件 ID。在单次 WebSocket 连接会话中必须保持唯一。强烈建议使用 UUID（通用唯一标识符）。
+ type string （必选） 
+ 事件类型，固定为 session.update 。
+ session object （可选）
+ 会话配置。
+ 属性
+ voice string （必选） 
+ 语音合成所使用的音色。参见 支持的音色 。
+ 支持系统音色和专属音色：
+ 系统音色 ：仅限千问 3-TTS-Instruct-Flash-Realtime、千问 3-TTS-Flash-Realtime 和千问-TTS-Realtime 系列模型。音色效果请参见： 支持的音色 。
+ 专属音色 
+ 声音复刻（Qwen） 功能定制的音色：仅限千问 3-TTS-VC-Realtime 系列模型
+ 声音设计（Qwen） 功能定制的音色：仅限千问 3-TTS-VD-Realtime 系列模型
+ mode string （可选）
+ 交互模式，可选值：
+ server_commit （默认）：服务端自动判断合成时机，平衡延迟与质量，推荐大多数场景使用
+ commit ：客户端手动触发合成，延迟最低，但需自行管理句子完整性
+ language_type string （可选）
+ 指定合成音频的语种，默认为 Auto 。
+ Auto ：适用无法确定文本的语种或文本包含多种语言的场景，模型会自动为文本中的不同语言片段匹配各自的发音，但无法保证发音完全精准。
+ 指定语种：适用于文本为单一语种的场景，此时指定为具体语种，能显著提升合成质量，效果通常优于 Auto 。可选值包括：
+ Chinese 
+ English 
+ German 
+ Italian 
+ Portuguese 
+ Spanish 
+ Japanese 
+ Korean 
+ French 
+ Russian 
+ response_format string （可选）
+ 模型输出音频的格式。
+ 支持的格式：
+ pcm （默认）
+ wav 
+ mp3 
+ opus 
+ 千问-TTS-Realtime（参见 支持的模型 ）仅支持 pcm 。
+ sample_rate integer （可选）
+ 模型输出音频的采样率（Hz）。
+ 支持的采样率：
+ 8000
+ 16000
+ 24000（默认）
+ 48000
+ 千问-TTS-Realtime（参见 支持的模型 ）仅支持 24000。
+ speech_rate float （可选）
+ 音频的语速。1.0 为正常语速，小于 1.0 为慢速，大于 1.0 为快速。
+ 默认值：1.0。
+ 取值范围：[0.5, 2.0]。
+ 千问-TTS-Realtime（参见 支持的模型 ）不支持该参数。
+ volume integer （可选）
+ 音频的音量。
+ 默认值：50。
+ 取值范围：[0, 100]。
+ 千问-TTS-Realtime（参见 支持的模型 ）不支持该参数。
+ pitch_rate float （可选）
+ 合成音频的语调。
+ 默认值：1.0。
+ 取值范围：[0.5, 2.0]。
+ 千问-TTS-Realtime（参见 支持的模型 ）不支持该参数。
+ bit_rate integer （可选）
+ 指定音频的 码率 （kbps）。码率越大，音质越好，音频文件体积越大。仅在音频格式（ response_format ）为 opus 时可用。
+ 默认值：128。
+ 取值范围：[6, 510]。
+ 千问-TTS-Realtime（参见 支持的模型 ）不支持该参数。
+ instructions string （可选）
+ 设置指令，参见 指令控制 。
+ 默认值：无默认值，不设置不生效。
+ 长度限制：长度不得超过 1600 Token。
+ 支持语言：仅支持中文和英文。
+ 适用范围：该功能仅适用于千问 3-TTS-Instruct-Flash-Realtime 系列模型。
+ optimize_instructions boolean （可选）
+ 是否对 instructions 进行优化，以提升语音合成的自然度和表现力。
+ 默认值：false。
+ 行为说明：当设置为 true 时，系统将对 instructions 的内容进行语义增强与重写，生成更适合语音合成的内部指令。
+ 适用场景：推荐在追求高品质、精细化语音表达的场景下开启。
+ 依赖关系：此参数依赖于 instructions 参数被设置。如果 instructions 为空，此参数不生效。
+ 适用范围：该功能仅适用于千问 3-TTS-Instruct-Flash-Realtime 系列模型。
+ | {
+ "event_id": "event_123",
+ "type": "session.update",
+ "session": {
+ "voice": "Cherry",
+ "mode": "server_commit",
+ "language_type": "Chinese",
+ "response_format": "pcm",
+ "sample_rate": 24000,
+ "instructions": "",
+ "optimize_instructions": false
+ }
+}
+ | 
+ input_text_buffer.append 
+ 用于将待合成文本追加到文本缓冲区。在 server_commit 模式中，文本将追加到服务端的文本缓冲区；在 commit 模式中，文本将追加到客户端的文本缓冲区。
+ event_id string （必选） 
+ 客户端生成的唯一事件 ID。在单次 WebSocket 连接会话中必须保持唯一。强烈建议使用 UUID（通用唯一标识符）。
+ type string （必选） 
+ 事件类型，固定为 input_text_buffer.append 。
+ text string （必选） 
+ 待合成文本。
+ | {
+ "event_id": "event_B4o9RHSTWobB5OQdEHLTo",
+ "type": "input_text_buffer.append",
+ "text": "您好，我是千问。"
+}
+ | 
+ input_text_buffer.commit 
+ 用于提交用户输入文本缓冲区，从而在对话中创建新的用户消息项。 如果输入的文本缓冲区为空，此事件将产生错误。处于“server_commit”模式时，用户提交此事件，表示立即合成之前的所有文本，服务器不再缓存文本。处于“commit”模式时，客户端必须提交文本缓冲区才能创建用户消息项。提交输入文本缓冲区不会从模型创建响应，服务器将返回 input_text_buffer.committed 事件进行响应。
+ event_id string （必选） 
+ 客户端生成的唯一事件 ID。在单次 WebSocket 连接会话中必须保持唯一。强烈建议使用 UUID（通用唯一标识符）。
+ type string （必选） 
+ 事件类型，固定为 input_text_buffer.commit 。
+ | {
+ "event_id": "event_B4o9RHSTWobB5OQdEHLTo",
+ "type": "input_text_buffer.commit"
+}
+ | 
+ input_text_buffer.clear 
+ 用于清除缓冲区中的文本。服务端返回 input_text_buffer.cleared 事件进行响应。
+ event_id string （必选） 
+ 客户端生成的唯一事件 ID。在单次 WebSocket 连接会话中必须保持唯一。强烈建议使用 UUID（通用唯一标识符）。
+ type string （必选） 
+ 事件类型，固定为 input_text_buffer.clear 。
+ | {
+ "event_id": "event_2728",
+ "type": "input_text_buffer.clear"
+}
+ | 
+ session.finish 
+ 客户端发送 session.finish 事件通知服务端不再有文本输入，服务端将剩余音频返回，随后关闭连接。
+ event_id string （必选） 
+ 客户端生成的唯一事件 ID。在单次 WebSocket 连接会话中必须保持唯一。强烈建议使用 UUID（通用唯一标识符）。
+ type string （必选） 
+ 事件类型，固定为 session.finish 。
+ | {
+ "event_id": "event_2239",
+ "type": "session.finish"
+}
+ | 
+ 上一篇：模型接入方式 下一篇：服务端事件 
+ 该文章对您有帮助吗？
+ 反馈 
+ 为什么选择阿里云
+ 什么是云计算 全球基础设施 技术领先 稳定可靠 安全合规 分析师报告 
+ 大模型
+ 大模型服务平台 千问大模型 模型市场 
+ 产品和定价
+ 全部产品 免费试用 产品动态 产品定价 配置报价器 云上成本管理 
+ 技术内容
+ 技术解决方案 帮助文档 开发者社区 天池大赛 阿里云认证 
+ 权益
+ 免费试用 解决方案免费试用 高校计划 推荐返现计划 
+ 服务
+ 基础服务 企业增值服务 迁云服务 官网公告 健康看板 信任中心 
+ 关注阿里云
+ 关注阿里云公众号或下载阿里云APP，关注云资讯，随时随地运维管控云服务
+ 联系我们：4008013260
+ 法律声明 Cookies 政策 廉正举报 安全举报 联系我们 加入我们 
+ 友情链接
+ 阿里巴巴集团 淘宝网 千问AI平台 千问办公 天猫 全球速卖通 阿里巴巴国际交易市场 1688 阿里妈妈 飞猪 阿里云计算 万网 高德 UC 友盟 优酷 钉钉 支付宝 达摩院 淘宝海外 阿里云盘 
+ © 2009-现在 Aliyun.com 版权所有 增值电信业务经营许可证： 浙B2-20080101 域名注册服务机构许可： 浙D3-20210002 
+ 浙公网安备 33010602009975号 浙B2-20080101-4 

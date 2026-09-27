@@ -1,0 +1,530 @@
+
+ 实时语音合成服务端事件参考-大模型服务平台百炼-阿里云_大模型服务平台百炼(Model Studio)-大模型服务平台百炼(Model Studio)-阿里云帮助中心
+ 大模型 产品 解决方案 权益 定价 AI 应用市场 伙伴 服务 了解阿里云 
+ 查看 "" 全部搜索结果 
+ AI 助理
+ 文档 备案 控制台 
+ 官方文档 
+ 用户指南（模型） 
+ 用户指南（Agent） 
+ API参考（模型） 
+ API参考（Agent） 
+ CLI 
+ 首页 
+ 大模型服务平台百炼 
+ API参考（模型） 
+ 音频 
+ 语音合成 
+ 实时语音合成 
+ Qwen-TTS-Realtime 
+ 服务端事件 
+ 服务端事件
+ 更新时间： 
+ 复制 MD 格式 产品详情 
+ 我的收藏 
+ 本文介绍 Qwen-TTS-Realtime API 的服务端事件。
+ 相关文档： 实时语音合成 。
+ error 
+ 不论是遇到客户端错误还是服务端错误，服务端都会响应该事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 error 。
+ error object 
+ 错误详情。
+ 属性
+ code string 
+ 错误码。
+ message string 
+ 错误信息。
+ | {
+ "event_id": "event_QzAVZRVa9hKqM5VOaHunh",
+ "type": "error",
+ "error": {
+ "code": "invalid_value",
+ "message": "Session update error: session already started or finished or failed."
+ }
+}
+ | 
+ session.created 
+ 客户端连接到服务端后，响应的第一个事件，该事件返回时会携带服务端对此次连接的默认配置信息。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 session.created 。
+ session object 
+ 会话配置。
+ 属性
+ id string 
+ 会话 ID。
+ object string 
+ 会话服务名。
+ mode string 
+ 交互模式， server_commit 或 commit 。
+ model string 
+ 使用的模型。
+ voice string 
+ 使用的音色。
+ response_format string 
+ 音频格式。
+ sample_rate integer 
+ 音频采样率。
+ | {
+ "event_id": "event_xxx",
+ "type": "session.created",
+ "session": {
+ "object": "realtime.session",
+ "mode": "server_commit",
+ "model": "qwen-tts-realtime",
+ "voice": "Cherry",
+ "response_format": "pcm",
+ "sample_rate": 24000,
+ "id": "sess_xxx"
+ }
+}
+ | 
+ session.updated 
+ 接收到客户端的 session.update 请求并正确处理后返回。如果出现错误，则直接返回 error 事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 session.updated 。
+ session object 
+ 会话配置。
+ 属性
+ id string 
+ 会话 ID。
+ object string 
+ 会话服务名。
+ mode string 
+ 交互模式， server_commit 或 commit 。
+ model string 
+ 使用的模型。
+ voice string 
+ 使用的音色。
+ response_format string 
+ 音频格式。
+ sample_rate integer 
+ 音频采样率。
+ language_type string 
+ 音频语种。
+ | {
+ "event_id": "event_xxx",
+ "type": "session.updated",
+ "session": {
+ "id": "sess_xxx",
+ "object": "realtime.session",
+ "model": "qwen-tts-realtime",
+ "voice": "Cherry",
+ "language_type": "Chinese",
+ "mode": "commit",
+ "response_format": "pcm",
+ "sample_rate": 24000
+ }
+}
+ | 
+ input_text_buffer.committed 
+ 客户端发送 input_text_buffer.commit 事件后，服务端的响应事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 input_text_buffer.committed 。
+ item_id string 
+ 将创建的用户消息项的 ID。
+ | {
+ "event_id": "event_FC6MA88wS2oEeXkPvWsxX",
+ "type": "input_text_buffer.committed",
+ "item_id": ""
+}
+ | 
+ input_text_buffer.cleared 
+ 客户端发送 input_audio_buffer.clear 事件后，服务端的响应事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 input_text_buffer.cleared 。
+ | {
+ "event_id": "event_1122",
+ "type": "input_text_buffer.cleared"
+}
+ | 
+ response.created 
+ 客户端发送 input_text_buffer.commit 事件后，服务端的响应事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 response.created 。
+ response object 
+ 响应详情。
+ 属性
+ id string 
+ 响应 ID。
+ object string 
+ 对象类型，在此事件下固定为 realtime.response 。
+ status string 
+ 响应的最终状态，取值范围：
+ completed
+ failed
+ in_progress
+ incomplete
+ voice string 
+ 使用的音色。
+ output array 
+ 在此事件下为空。
+ | {
+ "event_id": "event_IMnLqDvG6Ahhk7sWV2uOs",
+ "type": "response.created",
+ "response": {
+ "id": "resp_USvBwHktHcz76r6GaIJUV",
+ "object": "realtime.response",
+ "conversation_id": "",
+ "status": "in_progress",
+ "voice": "Cherry",
+ "output": []
+ }
+}
+ | 
+ response.output_item.added 
+ 当新的 item 项需要输出时，服务端返回此事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 response.output_item.added 。
+ response_id string 
+ 响应的 ID。
+ output_index integer 
+ 响应输出项的索引，目前固定为 0。
+ item object 
+ 输出项信息。
+ 属性
+ id string 
+ 输出项 ID。
+ object string 
+ 始终为 realtime.item 。
+ status string 
+ 输出项的状态。
+ content array 
+ 消息的内容。
+ | {
+ "event_id": "event_INDGnGNulaXCrStd9ZM5X",
+ "type": "response.output_item.added",
+ "response_id": "resp_USvBwHktHcz76r6GaIJUV",
+ "output_index": 0,
+ "item": {
+ "id": "item_FIrYGaNVK3rbIZqeY4QjM",
+ "object": "realtime.item",
+ "type": "message",
+ "status": "in_progress",
+ "role": "assistant",
+ "content": []
+ }
+}
+ | 
+ response.content_part.added 
+ 当新的内容项需要输出时，服务端返回此事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 response.content_part.added 。
+ response_id string 
+ 响应的 ID。
+ item_id string 
+ 消息项 ID。
+ output_index integer 
+ 响应输出项的索引，目前固定为 0。
+ content_index integer 
+ 响应输出项中内部部分的索引，目前固定为 0。
+ part object 
+ 已完成的内容部分。
+ 属性
+ type string 
+ 内容部分的类型。
+ text string 
+ 内容部分的文本。
+ | {
+ "event_id": "event_DigZ95MWN36YYyyjcENoq",
+ "type": "response.content_part.added",
+ "response_id": "resp_USvBwHktHcz76r6GaIJUV",
+ "item_id": "item_FIrYGaNVK3rbIZqeY4QjM",
+ "output_index": 0,
+ "content_index": 0,
+ "part": {
+ "type": "audio",
+ "text": ""
+ }
+}
+ | 
+ response.audio.delta 
+ 当模型增量生成新的 audio 数据时，系统会返回服务器 response.audio.delta 事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 response.audio.delta 。
+ response_id string 
+ 响应的 ID。
+ item_id string 
+ 消息项 ID。
+ output_index integer 
+ 响应输出项的索引，目前固定为 0。
+ content_index integer 
+ 响应输出项中内部部分的索引，目前固定为 0。
+ delta string 
+ 模型增量输出的 audio 数据，使用 Base64 编码。
+ | {
+ "event_id": "event_B1osWMZBtrEQbiIwW0qHQ",
+ "type": "response.audio.delta",
+ "response_id": "resp_B1osWTzBb8hO0WsELHgVP",
+ "item_id": "item_B1osWH81fXDoyim1T5fsF",
+ "output_index": 0,
+ "content_index": 0,
+ "delta": "base64 audio"
+}
+ | 
+ response.content_part.done 
+ 当新的内容项输出完成时，服务端返回此事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 response.content_part.done 。
+ response_id string 
+ 响应的 ID。
+ item_id string 
+ 消息项 ID。
+ output_index integer 
+ 响应输出项的索引，目前固定为 0。
+ content_index integer 
+ 响应输出项中内部部分的索引，目前固定为 0。
+ part object 
+ 已完成的内容部分。
+ 属性
+ type string 
+ 内容部分的类型。
+ text string 
+ 内容部分的文本。
+ | {
+ "event_id": "event_Vo2YUjlYQJ4colH8nVzkU",
+ "type": "response.content_part.done",
+ "response_id": "resp_USvBwHktHcz76r6GaIJUV",
+ "item_id": "item_FIrYGaNVK3rbIZqeY4QjM",
+ "output_index": 0,
+ "content_index": 0,
+ "part": {
+ "type": "audio",
+ "text": ""
+ }
+}
+ | 
+ response.output_item.done 
+ 当新的 item 输出完成时，服务端返回此事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 response.output_item.done 。
+ response_id string 
+ 响应的 ID。
+ output_index integer 
+ 响应输出项的索引，目前固定为 0。
+ item object 
+ 输出项信息。
+ 属性
+ id string 
+ 输出项 ID。
+ object string 
+ 始终为 realtime.item 。
+ status string 
+ 输出项的状态。
+ content array 
+ 消息的内容。
+ | {
+ "event_id": "event_LO6SJRKIQ9NBayyYB8a1A",
+ "type": "response.output_item.done",
+ "response_id": "resp_USvBwHktHcz76r6GaIJUV",
+ "output_index": 0,
+ "item": {
+ "id": "item_FIrYGaNVK3rbIZqeY4QjM",
+ "object": "realtime.item",
+ "type": "message",
+ "status": "completed",
+ "role": "assistant",
+ "content": [
+ {
+ "type": "audio",
+ "text": ""
+ }
+ ]
+ }
+}
+ | 
+ response.audio.done 
+ 当模型生成 audio 数据完成时，系统会返回服务器 response.audio.done 事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 response.audio.done 。
+ response_id string 
+ 响应的 ID。
+ item_id string 
+ 消息项 ID。
+ output_index integer 
+ 响应输出项的索引，目前固定为 0。
+ content_index integer 
+ 响应输出项中内部部分的索引，目前固定为 0。
+ | {
+ "event_id": "event_LZaOHPzXYMUXGBcVkBmKX",
+ "type": "response.audio.done",
+ "response_id": "resp_USvBwHktHcz76r6GaIJUV",
+ "item_id": "item_FIrYGaNVK3rbIZqeY4QjM",
+ "output_index": 0,
+ "content_index": 0
+}
+ | 
+ response.done 
+ 当响应生成完成时，服务端会返回此事件。该事件中包含的 Response 对象将包含 Response 中的所有输出项，但不包括已返回的原始音频数据。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 response.done 。
+ response_id string 
+ 响应的 ID。
+ response object 
+ 响应详情。
+ 属性
+ id string 
+ 响应 ID。
+ object string 
+ 对象类型，在此事件下固定为 realtime.response 。
+ output array 
+ 响应的输出。
+ usage object 
+ 本次语音合成计费信息。
+ 属性
+ characters integer 
+ Qwen3-TTS Realtime 计费字符数。
+ total_tokens integer 
+ Qwen-TTS Realtime 输入和输出（合成的音频）内容总长度（Token）。
+ input_tokens integer 
+ Qwen-TTS Realtime 输入内容总长度（Token）。
+ output_tokens integer 
+ Qwen-TTS Realtime 输出内容总长度（Token）。
+ input_tokens_details integer 
+ Qwen-TTS Realtime 输入内容长度（Token）详情。
+ input_tokens_details.text_tokens integer 
+ Qwen-TTS Realtime 输入文本内容总长度（Token）。
+ output_tokens_details integer 
+ Qwen-TTS Realtime 输出内容长度（Token）详情。
+ output_tokens_details.text_tokens integer 
+ Qwen-TTS Realtime 输出文本内容总长度（Token）。
+ output_tokens_details.audio_tokens integer 
+ Qwen-TTS Realtime 输出音频内容总长度（Token）。
+ 音频转换为 Token 的规则：每 1 秒的音频对应 50 个 Token 。若音频时长不足 1 秒，则按 50 个 Token 计算。
+ | 
+ Qwen3-TTS Realtime {
+ "event_id": "event_Aemy83XqHFFDDSeJIDn6N",
+ "type": "response.done",
+ "response": {
+ "id": "resp_LFeR42yXZ9SxUAeXjmyTz",
+ "object": "realtime.response",
+ "conversation_id": "",
+ "status": "completed",
+ "modalities": [
+ "text",
+ "audio"
+ ],
+ "voice": "Cherry",
+ "output": [
+ {
+ "id": "item_Ae1lv2XmRljRSG96L8Zm1",
+ "object": "realtime.item",
+ "type": "message",
+ "status": "completed",
+ "role": "assistant",
+ "content": [
+ {
+ "type": "audio",
+ "transcript": ""
+ }
+ ]
+ }
+ ],
+ "usage": {
+ "characters": 25
+ }
+ }
+}
+ Qwen-TTS Realtime {
+ "event_id": "event_xxx",
+ "type": "response.done",
+ "response": {
+ "id": "resp_xxx",
+ "object": "realtime.response",
+ "conversation_id": "",
+ "status": "completed",
+ "modalities": [
+ "text",
+ "audio"
+ ],
+ "voice": "Cherry",
+ "output": [
+ {
+ "id": "item_FIrYGaNVK3rbIZqeY4QjM",
+ "object": "realtime.item",
+ "type": "message",
+ "status": "completed",
+ "role": "assistant",
+ "content": [
+ {
+ "type": "audio",
+ "transcript": ""
+ }
+ ]
+ }
+ ],
+ "usage": {
+ "total_tokens": 67,
+ "input_tokens": 3,
+ "output_tokens": 64,
+ "input_tokens_details": {
+ "text_tokens": 3
+ },
+ "output_tokens_details": {
+ "text_tokens": 0,
+ "audio_tokens": 64
+ }
+ }
+ }
+}
+ | 
+ session.finished 
+ 当所有响应生成完成时，服务端会返回此事件。
+ event_id string 
+ 服务端事件 ID。
+ type string 
+ 事件类型，固定为 session.finished 。
+ | {
+ "event_id": "event_2239",
+ "type": "session.finished"
+}
+ | 
+ 上一篇：客户端事件 下一篇：Sambert 
+ 该文章对您有帮助吗？
+ 反馈 
+ 为什么选择阿里云
+ 什么是云计算 全球基础设施 技术领先 稳定可靠 安全合规 分析师报告 
+ 大模型
+ 大模型服务平台 千问大模型 模型市场 
+ 产品和定价
+ 全部产品 免费试用 产品动态 产品定价 配置报价器 云上成本管理 
+ 技术内容
+ 技术解决方案 帮助文档 开发者社区 天池大赛 阿里云认证 
+ 权益
+ 免费试用 解决方案免费试用 高校计划 推荐返现计划 
+ 服务
+ 基础服务 企业增值服务 迁云服务 官网公告 健康看板 信任中心 
+ 关注阿里云
+ 关注阿里云公众号或下载阿里云APP，关注云资讯，随时随地运维管控云服务
+ 联系我们：4008013260
+ 法律声明 Cookies 政策 廉正举报 安全举报 联系我们 加入我们 
+ 友情链接
+ 阿里巴巴集团 淘宝网 千问AI平台 千问办公 天猫 全球速卖通 阿里巴巴国际交易市场 1688 阿里妈妈 飞猪 阿里云计算 万网 高德 UC 友盟 优酷 钉钉 支付宝 达摩院 淘宝海外 阿里云盘 
+ © 2009-现在 Aliyun.com 版权所有 增值电信业务经营许可证： 浙B2-20080101 域名注册服务机构许可： 浙D3-20210002 
+ 浙公网安备 33010602009975号 浙B2-20080101-4 
