@@ -1,5 +1,9 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { GET, POST } from "@/app/api/render-projects/route";
+import {
+  MemoryJobRepository,
+  MemoryRenderRepository
+} from "@/lib/repositories/memory";
 import {
   getJobRepository,
   getRenderRepository,
@@ -469,6 +473,51 @@ describe("GET /api/render-projects", () => {
     const body = await res.json();
     expect(body.renderProjects.length).toBe(1);
     expect(body.jobs.length).toBeGreaterThan(0);
+  });
+
+  it("caps jobs and renderProjects lists at 50 (dashboard only shows the latest batch)", async () => {
+    const renderRepo = getRenderRepository();
+    const jobRepo = getJobRepository();
+    const projectsSpy = vi.spyOn(MemoryRenderRepository.prototype, "listProjectsByOwner");
+    const jobsSpy = vi.spyOn(MemoryJobRepository.prototype, "listByOwner");
+
+    for (let i = 0; i < 60; i++) {
+      await renderRepo.createProject({
+        id: createId("proj"),
+        ownerId: "demo_user",
+        storeId: createId("store"),
+        scriptDraftId: createId("script"),
+        selectedAssetIds: [],
+        purpose: "promotion",
+        aspectRatio: "9:16",
+        subtitleStyle: "bold_bottom",
+        status: "processing",
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      });
+    }
+    await jobRepo.createMany(
+      Array.from({ length: 60 }, () => ({
+        id: createId("job"),
+        ownerId: "demo_user",
+        type: "video_render" as const,
+        status: "queued" as const,
+        progress: 0,
+        payload: {},
+        dependsOnJobIds: [],
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      }))
+    );
+
+    const res = await GET(new Request("http://localhost/api/render-projects"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.renderProjects.length).toBe(50);
+    expect(body.jobs.length).toBe(50);
+    // 仓库层必须收到 limit=50（前端 dashboard 只展示最近批次，50 绰绰有余）
+    expect(projectsSpy).toHaveBeenCalledWith("demo_user", 50);
+    expect(jobsSpy).toHaveBeenCalledWith("demo_user", 50);
   });
 
   it("caps outputs count so completed videos don't pile up in the preview", async () => {

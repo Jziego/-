@@ -3,7 +3,14 @@ import { getRedisUrl, hasRedis } from "@/lib/env";
 
 let _redis: Redis | null = null;
 
-function getRedis(): Redis | null {
+/**
+ * 共享 Redis 连接 getter：session-blacklist（JWT 黑名单）与 rate-limit（限流）
+ * 共用同一条连接，避免双进程各开一条常驻连接（4GB 小内存机）。
+ * 保留 maxRetriesPerRequest:1 + connectTimeout:3000 的 fail-fast 配置；
+ * rate-limit 热路径沿用它，Redis 宕机时快速抛错，与改造前各自为政的
+ * 行为等价（middleware 侧均已 try/catch fail-open）。
+ */
+export function getSharedRedis(): Redis | null {
   if (_redis) return _redis;
   if (hasRedis()) {
     // Auto-connect (lazyConnect defaults to false) and allow the offline queue
@@ -12,8 +19,6 @@ function getRedis(): Redis | null {
     // enableOfflineQueue:false combo rejected the very first command (the one
     // that triggers the connection), fail-opening the JWT blacklist check on
     // the first authenticated request after every process restart.
-    // maxRetriesPerRequest + connectTimeout keep the middleware hot path
-    // fail-fast when Redis is actually down.
     _redis = new Redis(getRedisUrl()!, {
       maxRetriesPerRequest: 1,
       connectTimeout: 3000,
@@ -29,7 +34,7 @@ const REVOKED_PREFIX = "revoked:";
  * Sets a Redis key with TTL equal to the remaining JWT lifetime.
  */
 export async function revokeSession(jti: string, ttlSeconds: number): Promise<void> {
-  const r = getRedis();
+  const r = getSharedRedis();
   if (!r) return;
   await r.set(`${REVOKED_PREFIX}${jti}`, "1", "EX", ttlSeconds);
 }
@@ -39,7 +44,7 @@ export async function revokeSession(jti: string, ttlSeconds: number): Promise<vo
  * Returns false when Redis is unavailable (fail-open).
  */
 export async function isSessionRevoked(jti: string): Promise<boolean> {
-  const r = getRedis();
+  const r = getSharedRedis();
   if (!r) return false;
   const exists = await r.exists(`${REVOKED_PREFIX}${jti}`);
   return exists === 1;
@@ -49,7 +54,7 @@ export async function isSessionRevoked(jti: string): Promise<boolean> {
  * Revoke multiple sessions at once (e.g., "logout all devices").
  */
 export async function revokeAllSessions(jtis: string[], ttlSeconds: number): Promise<void> {
-  const r = getRedis();
+  const r = getSharedRedis();
   if (!r) return;
   if (jtis.length === 0) return;
   const pipeline = r.pipeline();
@@ -59,7 +64,7 @@ export async function revokeAllSessions(jtis: string[], ttlSeconds: number): Pro
   await pipeline.exec();
 }
 
-/** Reset the Redis connection (for testing) */
+/** 复位共享 Redis 连接（测试用）：两模块的连接缓存都在此处，复位对双方生效。 */
 export function _resetRedis(): void {
   _redis = null;
 }

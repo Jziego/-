@@ -226,8 +226,12 @@ export class PrismaScriptRepository implements ScriptRepository {
 export class PrismaRenderRepository implements RenderRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async listProjectsByOwner(ownerId: string): Promise<RenderProject[]> {
-    const rows = await this.prisma.renderProject.findMany({ where: { ownerId } });
+  async listProjectsByOwner(ownerId: string, limit?: number): Promise<RenderProject[]> {
+    const rows = await this.prisma.renderProject.findMany({
+      where: { ownerId },
+      orderBy: { createdAt: "desc" },
+      ...(limit ? { take: limit } : {})
+    });
     return rows.map(toRenderProject);
   }
 
@@ -302,6 +306,21 @@ export class PrismaJobRepository implements JobRepository {
   async findById(id: string): Promise<Job | null> {
     const row = await this.prisma.job.findUnique({ where: { id } });
     return row ? toJob(row) : null;
+  }
+
+  async findProgressById(id: string): Promise<{ id: string; status: Job["status"]; progress: number; error?: string } | null> {
+    // 进度轮询专用：select 只取 4 个小列，避免每秒拉全行（含 payload JSON 列）。
+    const row = await this.prisma.job.findUnique({
+      where: { id },
+      select: { id: true, status: true, progress: true, error: true }
+    });
+    if (!row) return null;
+    return {
+      id: row.id,
+      status: row.status as Job["status"],
+      progress: row.progress,
+      error: row.error ?? undefined
+    };
   }
 
   async update(id: string, data: Partial<Job>): Promise<Job> {

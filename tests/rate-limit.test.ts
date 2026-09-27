@@ -1,4 +1,41 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+
+// ioredis mock：记录命令序列，用于断言 needReset=false 时 middleware 免 ttl。
+const redisCommandLog: string[] = [];
+const incrCounts = new Map<string, number>();
+
+const mockPipeline = {
+  set: vi.fn().mockReturnThis(),
+  exec: vi.fn().mockResolvedValue([]),
+};
+
+const mockRedis = {
+  incr: vi.fn((key: string) => {
+    redisCommandLog.push("incr");
+    const next = (incrCounts.get(key) ?? 0) + 1;
+    incrCounts.set(key, next);
+    return Promise.resolve(next);
+  }),
+  expire: vi.fn((_key: string, _seconds: number) => {
+    redisCommandLog.push("expire");
+    return Promise.resolve(1);
+  }),
+  ttl: vi.fn((_key: string) => {
+    redisCommandLog.push("ttl");
+    return Promise.resolve(55);
+  }),
+  exists: vi.fn((_key: string) => Promise.resolve(0)),
+  set: vi.fn(() => Promise.resolve("OK")),
+  pipeline: vi.fn(() => mockPipeline),
+};
+
+vi.mock("ioredis", () => ({
+  Redis: vi.fn().mockImplementation(function () {
+    return mockRedis;
+  }),
+}));
+
+import { Redis } from "ioredis";
 
 describe("getClientIp", () => {
   it("extracts the first IP from x-forwarded-for", async () => {
@@ -131,6 +168,68 @@ describe("rateLimitByIp", () => {
       const r = await rateLimitByIp(ip);
       expect(r.allowed).toBe(true);
     }
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("redis fixed-window command sequence", () => {
+  beforeEach(async () => {
+    vi.stubEnv("APP_MODE", "production");
+    vi.stubEnv("REDIS_URL", "redis://localhost:6379");
+    redisCommandLog.length = 0;
+    incrCounts.clear();
+    vi.clearAllMocks();
+    // 共享连接复位：清空 session-blacklist 模块级缓存，保证用例隔离
+    const { _resetRedis } = await import("@/lib/session-blacklist");
+    _resetRedis();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("middleware IP limit (needReset=false) skips the ttl command", async () => {
+    const { rateLimitByIp } = await import("@/lib/rate-limit");
+
+    const first = await rateLimitByIp("198.51.100.9");
+    expect(redisCommandLog).toEqual(["incr", "expire"]);
+    expect(first.allowed).toBe(true);
+
+    const second = await rateLimitByIp("198.51.100.9");
+    expect(redisCommandLog).toEqual(["incr", "expire", "incr"]);
+    // reset 头退化为 now+windowSeconds 近似（只影响头精度，不影响 allowed 判定）
+    const now = Math.floor(Date.now() / 1000);
+    expect(second.reset).toBeGreaterThanOrEqual(now + 55);
+    expect(second.reset).toBeLessThanOrEqual(now + 61);
+    expect(mockRedis.ttl).not.toHaveBeenCalled();
+  });
+
+  it("API limit (needReset=true) still issues ttl for the X-RateLimit-Reset header", async () => {
+    const { rateLimitApi } = await import("@/lib/rate-limit");
+
+    const result = await rateLimitApi("owner_rl_seq", "GET");
+    expect(redisCommandLog).toEqual(["incr", "expire", "ttl"]);
+    const now = Math.floor(Date.now() / 1000);
+    // ttlRemaining mock 为 55s ⇒ reset ≈ now+55
+    expect(result.reset).toBeGreaterThanOrEqual(now + 54);
+    expect(result.reset).toBeLessThanOrEqual(now + 56);
+  });
+});
+
+describe("shared Redis connection (rate-limit <-> session-blacklist)", () => {
+  it("rate-limit reconnects through the shared getter after a shared reset", async () => {
+    vi.stubEnv("APP_MODE", "production");
+    vi.stubEnv("REDIS_URL", "redis://localhost:6379");
+    const { _resetRedis, isSessionRevoked } = await import("@/lib/session-blacklist");
+    const { rateLimitByIp } = await import("@/lib/rate-limit");
+
+    await isSessionRevoked("warm-jti"); // 建立连接
+    _resetRedis(); // 共享连接复位：两模块都必须经共享 getter 重建
+    const callsBefore = vi.mocked(Redis).mock.calls.length;
+
+    await rateLimitByIp("198.51.100.11");
+
+    // rate-limit 走共享 getter ⇒ 复位后会重建连接（若私有自己的模块级缓存则不会）
+    expect(vi.mocked(Redis).mock.calls.length - callsBefore).toBe(1);
     vi.unstubAllEnvs();
   });
 });

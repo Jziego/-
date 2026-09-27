@@ -20,9 +20,11 @@ export async function GET(request: Request) {
   const ownerId = await getOwnerId();
   const limited = await applyRateLimit(request, ownerId);
   if (limited) return limited;
+  // 列表上限 50：dashboard 只展示最近批次（selectLatestBatchJobs 取最新 projectId 组），
+  // 历史数据无限增长时全量返回只会拖慢 5s 轮询。
   const [renderProjects, jobs, outputs] = await Promise.all([
-    renderRepo.listProjectsByOwner(ownerId),
-    getJobRepository().listByOwner(ownerId),
+    renderRepo.listProjectsByOwner(ownerId, 50),
+    getJobRepository().listByOwner(ownerId, 50),
     renderRepo.listOutputsByOwner(ownerId, 20)
   ]);
   return jsonOk({ renderProjects, jobs, outputs });

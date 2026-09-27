@@ -7,7 +7,8 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is required for seeding");
 }
 
-const pool = new Pool({ connectionString });
+// seed 只有 4 个 upsert，默认 10 连接纯浪费——限制 2 条（4GB 小内存机）。
+const pool = new Pool({ connectionString, max: 2 });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 

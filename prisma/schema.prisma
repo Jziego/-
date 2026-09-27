@@ -76,6 +76,8 @@ model StoreProfile {
   avatars            AvatarProfile[]
   scripts            ScriptDraft[]
   renderProjects     RenderProject[]
+
+  @@index([ownerId])
 }
 
 model Asset {
@@ -100,6 +102,8 @@ model Asset {
   owner               User            @relation(fields: [ownerId], references: [id])
   store               StoreProfile    @relation(fields: [storeId], references: [id])
   analysis            AssetAnalysis?
+
+  @@index([ownerId, createdAt])
 }
 
 model AssetAnalysis {
@@ -136,6 +140,8 @@ model AvatarProfile {
   owner            User         @relation(fields: [ownerId], references: [id])
   store            StoreProfile @relation(fields: [storeId], references: [id])
   renderProjects   RenderProject[]
+
+  @@index([ownerId, createdAt])
 }
 
 model ScriptDraft {
@@ -162,6 +168,8 @@ model ScriptDraft {
   owner              User            @relation(fields: [ownerId], references: [id])
   store              StoreProfile    @relation(fields: [storeId], references: [id])
   renderProjects     RenderProject[]
+
+  @@index([ownerId, createdAt])
 }
 
 model RenderProject {
@@ -186,6 +194,8 @@ model RenderProject {
   avatarProfile    AvatarProfile?   @relation(fields: [avatarProfileId], references: [id])
   jobs             Job[]
   outputs          VideoOutput[]
+
+  @@index([ownerId, createdAt])
 }
 
 model Job {
@@ -202,6 +212,8 @@ model Job {
   updatedAt       DateTime       @updatedAt
   owner           User           @relation(fields: [ownerId], references: [id])
   project         RenderProject? @relation(fields: [projectId], references: [id])
+
+  @@index([ownerId, createdAt])
 }
 
 model VideoOutput {
@@ -216,6 +228,8 @@ model VideoOutput {
   status          String
   createdAt       DateTime      @default(now())
   project         RenderProject? @relation(fields: [renderProjectId], references: [id])
+
+  @@index([ownerId, createdAt])
 }
 
 model BgmTrack {

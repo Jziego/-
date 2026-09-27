@@ -23,9 +23,10 @@
     "test:watch": "vitest",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed:on-start": "prisma migrate deploy && prisma db seed",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "start:prod": "prisma migrate deploy && prisma db seed && npm run start",
+    "start:prod": "prisma migrate deploy && npm run start",
     "worker:dev": "tsx worker/index.ts",
     "worker:typecheck": "tsc --noEmit -p worker/tsconfig.json"
   },

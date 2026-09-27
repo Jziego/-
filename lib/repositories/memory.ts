@@ -162,8 +162,11 @@ export class MemoryScriptRepository implements ScriptRepository {
 }
 
 export class MemoryRenderRepository implements RenderRepository {
-  async listProjectsByOwner(ownerId: string): Promise<RenderProject[]> {
-    return getRuntimeState().renderProjects.filter((project) => project.ownerId === ownerId);
+  async listProjectsByOwner(ownerId: string, limit?: number): Promise<RenderProject[]> {
+    const projects = getRuntimeState()
+      .renderProjects.filter((project) => project.ownerId === ownerId)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return limit ? projects.slice(0, limit) : projects;
   }
 
   async createProject(project: RenderProject): Promise<RenderProject> {
@@ -226,6 +229,13 @@ export class MemoryJobRepository implements JobRepository {
 
   async findById(id: string): Promise<Job | null> {
     return getRuntimeState().jobs.find((job) => job.id === id) ?? null;
+  }
+
+  async findProgressById(id: string): Promise<{ id: string; status: Job["status"]; progress: number; error?: string } | null> {
+    const job = getRuntimeState().jobs.find((j) => j.id === id);
+    if (!job) return null;
+    // 只挑 4 个进度小列，与 Prisma 端 select 对齐（不携带 payload JSON）。
+    return { id: job.id, status: job.status, progress: job.progress, error: job.error };
   }
 
   async update(id: string, data: Partial<Job>): Promise<Job> {

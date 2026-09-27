@@ -4,6 +4,7 @@ import type {
   AvatarProfile,
   BgmTrack,
   Job,
+  JobStatus,
   RenderProject,
   ScriptDraft,
   StoreProfile,
@@ -49,7 +50,7 @@ export interface ScriptRepository {
 }
 
 export interface RenderRepository {
-  listProjectsByOwner(ownerId: string): Promise<RenderProject[]>;
+  listProjectsByOwner(ownerId: string, limit?: number): Promise<RenderProject[]>;
   createProject(project: RenderProject): Promise<RenderProject>;
   findProjectById(id: string): Promise<RenderProject | null>;
   createOutput(output: VideoOutput): Promise<VideoOutput>;
@@ -66,6 +67,8 @@ export interface JobRepository {
   findById(id: string): Promise<Job | null>;
   update(id: string, data: Partial<Job>): Promise<Job>;
   listByStatus(status: Job["status"]): Promise<Job[]>;
+  /** 进度轮询专用：只取 4 个小列，避免每秒拉全行（含 payload JSON）。 */
+  findProgressById(id: string): Promise<{ id: string; status: JobStatus; progress: number; error?: string } | null>;
   /** Delete this owner's terminal (completed/failed) jobs. Returns count deleted. */
   deleteTerminalByOwner(ownerId: string): Promise<number>;
 }

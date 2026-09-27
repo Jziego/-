@@ -66,7 +66,9 @@ export async function GET(
       const interval = setInterval(async () => {
         pollCount++;
         try {
-          const current = await getJobRepository().findById(id);
+          // 瘦身查询：每秒轮询只取 id/status/progress/error 四列，
+          // 避免拉全行（payload JSON 列可能很大）。属主校验在开流前已完成。
+          const current = await getJobRepository().findProgressById(id);
 
           if (!current) {
             controller.enqueue(

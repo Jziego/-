@@ -1,5 +1,9 @@
-import { hasRedis, getRedisUrl, getAppMode } from "@/lib/env";
+import { getAppMode } from "@/lib/env";
+import { getSharedRedis } from "@/lib/session-blacklist";
 import { Redis } from "ioredis";
+
+// 说明：Redis 连接由 session-blacklist 的 getSharedRedis 统一供给（middleware
+// 黑名单校验与限流共用一条连接）；本模块不再自建连接。
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
@@ -14,14 +18,10 @@ const LOGIN_EMAIL_PER_MINUTE: RateLimitConfig = { windowSeconds: 60, maxRequests
 const API_READ: RateLimitConfig = { windowSeconds: 60, maxRequests: 60 };
 const API_WRITE: RateLimitConfig = { windowSeconds: 60, maxRequests: 20 };
 
-// ── Redis lazy connection ──────────────────────────────────────────────────
-
-let _redis: Redis | null = null;
+// ── Redis backend (shared connection) ──────────────────────────────────────
 
 function getRedis(): Redis | null {
-  if (_redis) return _redis;
-  if (hasRedis()) _redis = new Redis(getRedisUrl()!);
-  return _redis;
+  return getSharedRedis();
 }
 
 // ── IP extraction ──────────────────────────────────────────────────────────
@@ -57,17 +57,26 @@ export interface RateLimitResult {
 async function redisFixedWindow(
   key: string,
   config: RateLimitConfig,
+  needReset: boolean,
 ): Promise<RateLimitResult> {
   const r = getRedis()!;
   const count = await r.incr(key);
   if (count === 1) await r.expire(key, config.windowSeconds);
-  const ttlRemaining = await r.ttl(key);
+  // needReset=false（middleware L0 只看 .allowed）时跳过 ttl 命令，reset 用
+  // now+windowSeconds 近似——只影响 reset 头精度，allowed 判定不变。
+  let reset: number;
+  if (needReset) {
+    const ttlRemaining = await r.ttl(key);
+    reset =
+      Math.floor(Date.now() / 1000) +
+      (ttlRemaining > 0 ? ttlRemaining : config.windowSeconds);
+  } else {
+    reset = Math.floor(Date.now() / 1000) + config.windowSeconds;
+  }
   return {
     allowed: count <= config.maxRequests,
     remaining: Math.max(0, config.maxRequests - count),
-    reset:
-      Math.floor(Date.now() / 1000) +
-      (ttlRemaining > 0 ? ttlRemaining : config.windowSeconds),
+    reset,
   };
 }
 
@@ -124,10 +133,11 @@ function resolveBackend(): "redis" | "memory" | "none" {
 async function checkLimit(
   key: string,
   config: RateLimitConfig,
+  needReset: boolean,
 ): Promise<RateLimitResult> {
   const backend = resolveBackend();
   if (backend === "none") return { allowed: true, remaining: 999, reset: 0 };
-  if (backend === "redis") return redisFixedWindow(key, config);
+  if (backend === "redis") return redisFixedWindow(key, config, needReset);
   return memoryFixedWindow(key, config);
 }
 
@@ -146,10 +156,11 @@ export async function rateLimitLogin(
   email: string,
 ): Promise<boolean> {
   const normalized = normalizeEmail(email);
+  // 登录限流只消费 .allowed（返回 boolean），needReset=false 省 3 次 ttl 命令。
   const [ipMin, ipHour, emailMin] = await Promise.all([
-    checkLimit(`login:ip:min:${ip}`, LOGIN_IP_PER_MINUTE),
-    checkLimit(`login:ip:hour:${ip}`, LOGIN_IP_PER_HOUR),
-    checkLimit(`login:email:${normalized}`, LOGIN_EMAIL_PER_MINUTE),
+    checkLimit(`login:ip:min:${ip}`, LOGIN_IP_PER_MINUTE, false),
+    checkLimit(`login:ip:hour:${ip}`, LOGIN_IP_PER_HOUR, false),
+    checkLimit(`login:email:${normalized}`, LOGIN_EMAIL_PER_MINUTE, false),
   ]);
   return ipMin.allowed && ipHour.allowed && emailMin.allowed;
 }
@@ -191,7 +202,7 @@ export async function rateLimitApi(
     return { allowed: true, remaining: 999, reset: 0 };
   }
   const bucket = resolveApiBucket(key, method);
-  return checkLimit(bucket.key, bucket.config);
+  return checkLimit(bucket.key, bucket.config, true);
 }
 
 // ── IP-based middleware rate limit (L0) ─────────────────────────────────────
@@ -205,7 +216,8 @@ const IP_LIMIT_CONFIG: RateLimitConfig = { windowSeconds: 60, maxRequests: 60 };
  * in demo mode before reaching this).
  */
 export async function rateLimitByIp(ip: string): Promise<RateLimitResult> {
-  return checkLimit(`ip:${ip}`, IP_LIMIT_CONFIG);
+  // middleware L0 只读 .allowed，needReset=false 跳过 ttl 命令（每秒省一次 Redis 往返）。
+  return checkLimit(`ip:${ip}`, IP_LIMIT_CONFIG, false);
 }
 
 /** Reset the in-memory store (for testing only). */

@@ -16,7 +16,9 @@ export function getPrisma(): PrismaClient | null {
       new Pool({
         connectionString: getDatabaseUrl(),
         connectionTimeoutMillis: 3000, // fail fast if PG is unreachable
-        max: 5
+        max: 5,
+        // 空闲 30s 回收连接——双进程常驻 10 后端各 5-10MB，空闲时缩到各 1 条
+        idleTimeoutMillis: 30_000
       });
     globalForPrisma.__pgPool = pool;
     const adapter = new PrismaPg(pool);
