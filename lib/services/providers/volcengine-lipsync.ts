@@ -8,6 +8,11 @@ import {
   hasCosyvoiceProvider,
 } from "@/lib/env";
 import { getObjectToBuffer, putObjectFromBuffer } from "@/lib/storage";
+import { getObjectToFile } from "@/lib/storage-stream";
+import { statSync, openAsBlob } from "node:fs";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { synthesizeDoubaoSpeech, type DoubaoTtsResult } from "@/lib/services/doubao-tts";
 import { createCosyVoice, deleteCosyVoice, queryCosyVoice, waitCosyVoiceReady } from "@/lib/services/cosyvoice-enrollment";
 import { synthesizeCosyVoiceSpeech } from "@/lib/services/cosyvoice-tts";
@@ -31,8 +36,9 @@ import { randomBytes } from "node:crypto";
  * 素材投递用字节直传火山存储（request-media-upload-url → PUT → file_id），
  * **不走 R2 presigned URL**——MediaKit 存储网关从 cn-beijing 拉取 Cloudflare R2
  * 不可靠（2026-09-21 生产实证：任务处理期 storageGW 500；探针走 file_id 则成功）。
- * file_id 30 天有效但本次任务用完即弃，不维护复用状态机（无状态优先，
- * 代价=每次渲染多一次 PUT，底板 ≤200MB 可接受）。
+ * file_id 30 天有效。底板按进程内缓存复用 file_id（见 footageFileIdCache）：同一底板
+ * 多个 onCamera 段只下载+上传一次；worker 重启丢缓存=每底板重传一次，代价可接受。
+ * 底板上传走 openAsBlob 磁盘流式（磁盘→网络，不整文件进堆）；音频 ~1MB 仍字节直传。
  * 探针实证（2026-09-16，scripts/probe-lipsync.mjs）：RTF≈7、并发≥2、9:16 保持、
  * 无可见水印、enable_video_loop=true 时输出时长恒等于音频时长。
  */
@@ -44,12 +50,26 @@ const UPLOAD_TIMEOUT_MS = 10 * 60_000;
 /** 产物下行预算：45s 成片约 20MB，10 分钟足够。 */
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 
+/**
+ * 底板 file_id 进程内缓存（资源治理 Task B）：同一底板多 onCamera 段只下载+上传一次。
+ * 必须放模块级：talking-head 分段路径每段都 createProviderByName 新建 provider，
+ * 工厂级 Map 永远命不中。MediaKit file_id 30 天有效；失败即时清除缓存允许下次重试。
+ */
+const footageFileIdCache = new Map<string, Promise<string>>();
+
+/** 测试隔离：清空底板 file_id 缓存（进程级，跨 provider 实例共享，用例间必须复位）。 */
+export function resetFootageFileIdCacheForTests(): void {
+  footageFileIdCache.clear();
+}
+
 export interface LipSyncProviderDeps {
   /** 本 provider 只拉取字符串 URL（MediaKit REST + 上传/产物地址）——窄化签名便于测试注入 mock。 */
   fetchImpl: (url: string, init?: RequestInit) => Promise<Response>;
   synthesizeSpeechFn: (input: { text: string; voice?: string }) => Promise<DoubaoTtsResult>;
   /** 底板字节从 R2 服务端直拉（SDK 直连，不经公网 presigned URL）。 */
   getObjectBytes: (storageKey: string) => Promise<Uint8Array>;
+  /** 底板流式落盘（缺省 lib/storage 的 getObjectToFile）；测试注入 spy。 */
+  getObjectToFileFn?: (storageKey: string, destPath: string) => Promise<void>;
   putObject: (key: string, bytes: Uint8Array, contentType: string) => Promise<unknown>;
   pollIntervalMs: number;
   pollTimeoutMs: number;
@@ -104,6 +124,7 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
   const fetchImpl = deps?.fetchImpl ?? fetch;
   const synthesize = deps?.synthesizeSpeechFn ?? synthesizeDoubaoSpeech;
   const getObjectBytes = deps?.getObjectBytes ?? getObjectToBuffer;
+  const getObjectToFileFn = deps?.getObjectToFileFn ?? getObjectToFile;
   const putObject = deps?.putObject ?? putObjectFromBuffer;
   const cosySynthesize = deps?.cosySynthesizeFn ?? synthesizeCosyVoiceSpeech;
   const extractSample = deps?.extractSampleFn ?? extractVoiceSampleFromVideo;
@@ -164,14 +185,10 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
   }
 
   /**
-   * 字节直传火山存储换 file_id（探针实证路径：申请上传地址 → PUT 二进制）。
-   * 上传地址是火山内部存储的预签名 PUT——不带 Authorization、Content-Type 按
-   * 真实媒体类型，外加 apply 响应里要求的额外头（探针实测必须透传）。
+   * apply → PUT 公共流程：申请火山上传地址 → 校验字段 → PUT 媒体体。
+   * 字节版（uploadToMediaKit）与磁盘流式版（uploadToMediaKitFile）共用，保证请求形状一致。
    */
-  async function uploadToMediaKit(bytes: Uint8Array, contentType: string): Promise<string> {
-    if (!bytes || bytes.byteLength === 0) {
-      throw new Error("待上传媒体为空（0 字节）——拒绝向 MediaKit 提交空文件");
-    }
+  async function applyUploadAndPut(body: BodyInit, contentType: string): Promise<string> {
     const apply = await mediakitCall<MediaKitUploadApplyResponse>("POST", "/api/v1/tools-sync/request-media-upload-url", {});
     const fileId = apply.result?.file_id;
     const uploadUrl = apply.result?.upload_url;
@@ -185,14 +202,60 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
     const res = await fetchImpl(uploadUrl, {
       method: "PUT",
       headers,
-      // TS 5.7 的 Uint8Array<ArrayBufferLike> 不在 BodyInit 联合里；运行时 fetch 接受。
-      body: bytes as unknown as BodyInit,
+      body,
       signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new Error(`MediaKit 媒体上传失败 HTTP ${res.status}`);
     }
     return fileId;
+  }
+
+  /**
+   * 字节直传火山存储换 file_id（探针实证路径：申请上传地址 → PUT 二进制）。
+   * 上传地址是火山内部存储的预签名 PUT——不带 Authorization、Content-Type 按
+   * 真实媒体类型，外加 apply 响应里要求的额外头（探针实测必须透传）。
+   */
+  async function uploadToMediaKit(bytes: Uint8Array, contentType: string): Promise<string> {
+    if (!bytes || bytes.byteLength === 0) {
+      throw new Error("待上传媒体为空（0 字节）——拒绝向 MediaKit 提交空文件");
+    }
+    // TS 5.7 的 Uint8Array<ArrayBufferLike> 不在 BodyInit 联合里；运行时 fetch 接受。
+    return applyUploadAndPut(bytes as unknown as BodyInit, contentType);
+  }
+
+  /**
+   * 磁盘流式版直传：底板 ≤200MB，readFile 进堆曾是 OOM 主因。openAsBlob 让
+   * fetch 直接以文件为 Blob 体（磁盘流式发送、带 Content-Length，Node 20.8+）。
+   */
+  async function uploadToMediaKitFile(filePath: string, contentType: string): Promise<string> {
+    if (statSync(filePath).size === 0) {
+      throw new Error("待上传媒体为空（0 字节）——拒绝向 MediaKit 提交空文件");
+    }
+    const body = await openAsBlob(filePath);
+    return applyUploadAndPut(body as unknown as BodyInit, contentType);
+  }
+
+  /**
+   * 底板 file_id 进程内缓存（模块级 Map，见 footageFileIdCache 注释）：
+   * 同一底板只下载+上传一次；失败即时清缓存，下次重试。临时文件 finally 清理。
+   */
+  async function getFootageFileId(storageKey: string): Promise<string> {
+    let pending = footageFileIdCache.get(storageKey);
+    if (!pending) {
+      pending = (async () => {
+        const tmpFile = join(tmpdir(), `footage-${randomBytes(8).toString("hex")}.mp4`);
+        try {
+          await getObjectToFileFn(storageKey, tmpFile);
+          return await uploadToMediaKitFile(tmpFile, "video/mp4");
+        } finally {
+          await rm(tmpFile, { force: true }).catch(() => undefined);
+        }
+      })();
+      footageFileIdCache.set(storageKey, pending);
+      pending.catch(() => footageFileIdCache.delete(storageKey));
+    }
+    return pending;
   }
 
   /** 克隆音色 ID 判定（实测格式：{target_model}-{prefix}-{uid}）。 */
@@ -339,10 +402,9 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
         speech = await cosySynthesize({ text: input.scriptText, voice: providerVoiceId });
       }
 
-      // Stage 2: 底板 + 音频字节直传火山存储换 file_id，提交对口型任务。
+      // Stage 2: 底板 file_id（进程内缓存，跨 onCamera 段只下载+上传一次）+ 音频字节直传换 file_id。
       // 顺序上传（先视频后音频）：音频 ~1MB 跟在大文件后面不过 +1s，换确定性。
-      const footageBytes = await getObjectBytes(input.providerAvatarId);
-      const videoFileId = await uploadToMediaKit(footageBytes, "video/mp4");
+      const videoFileId = await getFootageFileId(input.providerAvatarId);
       const audioFileId = await uploadToMediaKit(speech.audioBytes, "audio/mpeg");
       const submitted = await mediakitCall<MediaKitSubmitResponse>("POST", "/api/v1/tools/lip-sync", {
         video_url: videoFileId,

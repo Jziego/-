@@ -12,7 +12,8 @@ import type {
   RenderRepository,
   ScriptRepository
 } from "@/lib/repositories/types";
-import { createPresignedGetUrl, getObjectToBuffer, putObjectFromBuffer } from "@/lib/storage";
+import { createPresignedGetUrl, getObjectToBuffer } from "@/lib/storage";
+import { getObjectToFile, putObjectFromStream } from "@/lib/storage-stream";
 import {
   buildAss,
   buildCaptionCues,
@@ -32,7 +33,7 @@ import {
 import { parseVoiceTrackManifest, type VoiceTrackManifest } from "@/lib/services/voice-track";
 import { probeFileDuration, runFfmpeg, type FfmpegInput } from "@/lib/services/ffmpeg-runner";
 import { mkdtempSync, rmSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Asset, BgmTrack, VideoOutput } from "@/lib/types";
@@ -243,8 +244,8 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
 }
 
 async function downloadToFile(storageKey: string, destPath: string): Promise<void> {
-  const bytes = await getObjectToBuffer(storageKey);
-  await writeFile(destPath, bytes);
+  // 流式落盘：峰值内存=流缓冲（KB），不再整文件进堆（资源治理 Task B）。
+  await getObjectToFile(storageKey, destPath);
 }
 
 /**
@@ -359,8 +360,8 @@ export const defaultRenderComposite: RenderCompositeFn = async (input) => {
 
     input.onProgress(90);
     const storageKey = `renders/${input.projectId}/output-${createId("vid")}.mp4`;
-    const bytes = await readFile(outPath);
-    await putObjectFromBuffer(storageKey, new Uint8Array(bytes), "video/mp4");
+    // 成片流式上传：readFile+Uint8Array 复制曾是 2-3× 文件体积的堆占用。
+    await putObjectFromStream(storageKey, outPath, "video/mp4");
 
     return { storageKey, durationSeconds: input.totalDurationSec };
   } finally {

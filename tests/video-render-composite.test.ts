@@ -2,16 +2,22 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import { writeFile } from "node:fs/promises";
 
 // Mock object storage + ffmpeg so the composite orchestration runs without R2/ffmpeg.
-const { getObjectToBufferMock, putObjectFromBufferMock, runFfmpegMock } = vi.hoisted(() => ({
-  getObjectToBufferMock: vi.fn(),
-  putObjectFromBufferMock: vi.fn(),
+const { getObjectToFileMock, putObjectFromStreamMock, runFfmpegMock } = vi.hoisted(() => ({
+  getObjectToFileMock: vi.fn(),
+  putObjectFromStreamMock: vi.fn(),
   runFfmpegMock: vi.fn()
 }));
 
 vi.mock("@/lib/storage", () => ({
-  getObjectToBuffer: getObjectToBufferMock,
-  putObjectFromBuffer: putObjectFromBufferMock,
+  getObjectToBuffer: vi.fn(async () => new Uint8Array([0, 1, 2])),
+  putObjectFromBuffer: vi.fn(async () => undefined),
   createPresignedGetUrl: vi.fn(async () => "https://example.com/presigned")
+}));
+
+// 流式原语在 server-only 的 lib/storage-stream（node:fs/node:stream 不能进客户端图）
+vi.mock("@/lib/storage-stream", () => ({
+  getObjectToFile: getObjectToFileMock,
+  putObjectFromStream: putObjectFromStreamMock
 }));
 
 vi.mock("@/lib/services/ffmpeg-runner", () => ({
@@ -68,13 +74,13 @@ function compositeInput(overrides: Partial<Parameters<typeof defaultRenderCompos
 describe("defaultRenderComposite", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getObjectToBufferMock.mockImplementation(async (key: string) => {
+    getObjectToFileMock.mockImplementation(async (key: string, destPath: string) => {
       if (key.startsWith("bgm/")) {
         throw new Error("NoSuchKey: The specified key does not exist.");
       }
-      return new Uint8Array([0, 1, 2]);
+      await writeFile(destPath, new Uint8Array([0, 1, 2]));
     });
-    putObjectFromBufferMock.mockResolvedValue(undefined);
+    putObjectFromStreamMock.mockResolvedValue(undefined);
     runFfmpegMock.mockImplementation(async ({ outputPath }: { outputPath: string }) => {
       await writeFile(outputPath, new Uint8Array([9]));
     });
@@ -91,14 +97,22 @@ describe("defaultRenderComposite", () => {
     expect(inputs.some((i: { path: string }) => i.path.includes("bgm"))).toBe(false);
     expect(filter.filterComplex).not.toContain("[abgm]");
     expect(filter.mapAudio).toBe("[avoice]");
-    // Talking-head + asset still downloaded and composited.
-    expect(getObjectToBufferMock).toHaveBeenCalledWith("avatars/th.mp4");
-    expect(getObjectToBufferMock).toHaveBeenCalledWith("uploads/a.mp4");
-    expect(putObjectFromBufferMock).toHaveBeenCalledTimes(1);
+    // Talking-head + asset still downloaded (streamed to disk) and composited.
+    expect(getObjectToFileMock).toHaveBeenCalledWith("avatars/th.mp4", expect.any(String));
+    expect(getObjectToFileMock).toHaveBeenCalledWith("uploads/a.mp4", expect.any(String));
+    // 成片以流式上传（不整文件进堆）
+    expect(putObjectFromStreamMock).toHaveBeenCalledTimes(1);
+    expect(putObjectFromStreamMock).toHaveBeenCalledWith(
+      expect.stringMatching(/^renders\/proj_1\/output-vid_.+\.mp4$/),
+      expect.stringContaining("output.mp4"),
+      "video/mp4"
+    );
   });
 
   it("BGM object present → mixed into the audio graph", async () => {
-    getObjectToBufferMock.mockResolvedValue(new Uint8Array([0, 1, 2]));
+    getObjectToFileMock.mockImplementation(async (_key: string, destPath: string) => {
+      await writeFile(destPath, new Uint8Array([0, 1, 2]));
+    });
 
     await defaultRenderComposite(compositeInput());
 

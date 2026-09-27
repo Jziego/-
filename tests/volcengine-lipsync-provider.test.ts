@@ -1,5 +1,14 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
-import { createVolcEngineLipSyncProvider } from "@/lib/services/providers/volcengine-lipsync";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
+import { writeFile } from "node:fs/promises";
+import {
+  createVolcEngineLipSyncProvider,
+  resetFootageFileIdCacheForTests,
+} from "@/lib/services/providers/volcengine-lipsync";
+
+/** 每个用例前清进程级底板缓存（跨 provider 实例去重，不清会互相污染断言计数）。 */
+beforeEach(() => {
+  resetFootageFileIdCacheForTests();
+});
 
 const FOOTAGE_KEY = "stores/store_1/assets/asset_1-me.mp4";
 const FOOTAGE_BYTES = new Uint8Array([9, 9, 9]);
@@ -41,7 +50,17 @@ function mediakitTaskFailed(message = "视频中未检测到单人真人脸") {
 /**
  * 上传+任务全链路正常的路由 mock（各测试按需覆盖 submit/task/download 单点）。
  * 上传 apply 顺序恒定：先视频后音频（实现为顺序上传）。
+ * putLog 在 fetch 调用时刻读出 PUT body（与生产 undici 消费时机一致——
+ * openAsBlob 的 Blob 惰性引用临时文件，任务返回后文件即被清理，事后读不到）。
  */
+async function readBodyBytes(body: unknown): Promise<Uint8Array> {
+  if (body instanceof Uint8Array) return body;
+  if (body && typeof (body as Blob).arrayBuffer === "function") {
+    return new Uint8Array(await (body as Blob).arrayBuffer());
+  }
+  return new Uint8Array(0);
+}
+
 function makeMediakitRouter(overrides: {
   apply?: (fileId: string) => Response;
   put?: (url: string) => Response;
@@ -50,14 +69,17 @@ function makeMediakitRouter(overrides: {
   download?: () => Response;
 } = {}) {
   let applies = 0;
-  return vi.fn(async (url: string) => {
+  const putLog: { url: string; bytes: Uint8Array }[] = [];
+  const fn = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.includes("/api/v1/tools-sync/request-media-upload-url")) {
       applies++;
       const fileId = applies === 1 ? "fid-video" : "fid-audio";
       return overrides.apply ? overrides.apply(fileId) : mediakitUploadApplyOk(fileId);
     }
     if (url.startsWith("https://mediakit.example/upload/")) {
-      return overrides.put ? overrides.put(url) : new Response("ok", { status: 200 });
+      if (overrides.put) return overrides.put(url);
+      putLog.push({ url, bytes: await readBodyBytes(init?.body) });
+      return new Response("ok", { status: 200 });
     }
     if (url.includes("/api/v1/tools/lip-sync")) return overrides.submit?.() ?? mediakitSubmitOk();
     if (url.includes("/api/v1/tasks/")) return overrides.task?.() ?? mediakitTaskCompleted();
@@ -66,6 +88,7 @@ function makeMediakitRouter(overrides: {
     }
     throw new Error(`unexpected fetch: ${url}`);
   });
+  return Object.assign(fn, { putLog });
 }
 
 function makeDeps(overrides: Record<string, unknown> = {}) {
@@ -77,6 +100,10 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
       durationSeconds: 12.3,
       words: [{ word: "大", startSec: 0, endSec: 0.2 }],
     })),
+    // 底板经流式落盘（getObjectToFile）而非整文件进堆；测试注入 spy 模拟下载落盘
+    getObjectToFileFn: vi.fn(async (_key: string, destPath: string) => {
+      await writeFile(destPath, FOOTAGE_BYTES);
+    }),
     getObjectBytes: vi.fn(async (_key: string) => FOOTAGE_BYTES),
     putObject: vi.fn(async () => undefined),
     pollIntervalMs: 1,
@@ -140,18 +167,26 @@ describe("volcengine-lipsync provider", () => {
 
     // TTS 用形象的声音
     expect(deps.synthesizeSpeechFn).toHaveBeenCalledWith({ text: "大家好，本周全场八八折", voice: "voice_a" });
-    // 底板字节从 R2 服务端直拉（不经公网 presigned URL）
-    expect(deps.getObjectBytes).toHaveBeenCalledWith(FOOTAGE_KEY);
-    // 两次媒体 PUT：先视频后音频，各带火山要求的额外上传头与原始字节
+    // 底板经服务端流式落盘（Task B：不再整文件进堆）
+    expect(deps.getObjectToFileFn).toHaveBeenCalledWith(FOOTAGE_KEY, expect.any(String));
+    expect(deps.getObjectBytes).not.toHaveBeenCalled();
+    // 两次媒体 PUT：先视频后音频，各带火山要求的额外上传头
     const puts = uploadPutCalls(deps.fetchImpl);
     expect(puts).toHaveLength(2);
     expect(puts[0][0]).toBe("https://mediakit.example/upload/fid-video");
     expect((puts[0][1].headers as Record<string, string>)["Content-Type"]).toBe("video/mp4");
     expect((puts[0][1].headers as Record<string, string>)["x-upload-flag"]).toBe("1");
-    expect(puts[0][1].body as unknown as Uint8Array).toEqual(FOOTAGE_BYTES);
     expect(puts[1][0]).toBe("https://mediakit.example/upload/fid-audio");
     expect((puts[1][1].headers as Record<string, string>)["Content-Type"]).toBe("audio/mpeg");
-    expect(puts[1][1].body as unknown as Uint8Array).toEqual(TTS_BYTES);
+    // PUT 体字节（路由在 fetch 时刻读出，与生产 undici 消费时机一致）：
+    // 底板经 openAsBlob 磁盘流式，音频仍字节直传——两者字节都必须与源一致
+    const putLog = (deps.fetchImpl as ReturnType<typeof makeMediakitRouter>).putLog;
+    expect(putLog.map((p) => p.url)).toEqual([
+      "https://mediakit.example/upload/fid-video",
+      "https://mediakit.example/upload/fid-audio",
+    ]);
+    expect(putLog[0]?.bytes).toEqual(FOOTAGE_BYTES);
+    expect(putLog[1]?.bytes).toEqual(TTS_BYTES);
     // MediaKit 提交体：file_id 而非 URL + 恒 enable_video_loop
     const submitCall = (deps.fetchImpl as ReturnType<typeof vi.fn>).mock.calls.find(([url]) =>
       String(url).includes("/api/v1/tools/lip-sync"),
@@ -198,7 +233,11 @@ describe("volcengine-lipsync provider", () => {
   });
 
   it("generateTalkingHead rejects zero-byte footage before requesting any upload URL", async () => {
-    const deps = makeDeps({ getObjectBytes: vi.fn(async () => new Uint8Array([])) });
+    const deps = makeDeps({
+      getObjectToFileFn: vi.fn(async (_key: string, destPath: string) => {
+        await writeFile(destPath, new Uint8Array([]));
+      }),
+    });
     const provider = createVolcEngineLipSyncProvider(deps);
     await expect(
       provider.generateTalkingHead({ providerAvatarId: FOOTAGE_KEY, scriptText: "测试" }),
