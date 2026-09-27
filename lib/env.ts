@@ -181,3 +181,12 @@ export function getCosyvoiceModel(): string {
 export function hasCosyvoiceProvider(): boolean {
   return Boolean(getDashscopeApiKey());
 }
+
+// ── 资源治理（批次二 P0 止血）────────────────────────────────────────────────
+
+/** WORKER_CONCURRENCY：全局并发覆盖；缺省重队列 1、其余 2——4GB 小内存机上 render 串行。 */
+export function getWorkerConcurrency(jobType: string): number {
+  const raw = Number(process.env.WORKER_CONCURRENCY?.trim());
+  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  return jobType === "video_render" || jobType === "subtitle_generation" ? 1 : 2;
+}

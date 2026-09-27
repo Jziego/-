@@ -1,5 +1,5 @@
 import { Worker, Queue } from "bullmq";
-import { getRedisUrl } from "@/lib/env";
+import { getRedisUrl, getWorkerConcurrency } from "@/lib/env";
 import { getJobRepository, getRenderRepository } from "@/lib/repositories";
 import { queueNames } from "@/lib/queue";
 import { registerProcessor, getProcessor } from "@/worker/processors/index";
@@ -10,6 +10,7 @@ import { talkingHeadProcessor } from "@/worker/processors/talking-head";
 import { videoRenderProcessor } from "@/worker/processors/video-render";
 import { quotaResetProcessor } from "@/worker/processors/quota-reset";
 import { nowIso } from "@/lib/ids";
+import { sweepStaleTmpDirs } from "@/lib/tmp-sweep";
 import type { JobType } from "@/lib/types";
 
 // Register processors
@@ -17,7 +18,6 @@ registerProcessor("asset_analysis", assetAnalysisProcessor);
 registerProcessor("avatar_generation", avatarGenerationProcessor);
 registerProcessor("talking_head", talkingHeadProcessor);
 registerProcessor("video_render", videoRenderProcessor);
-registerProcessor("subtitle_generation", videoRenderProcessor); // placeholder for now
 registerProcessor("quota_monthly_reset", quotaResetProcessor);
 
 const connection = getRedisUrl()
@@ -87,7 +87,7 @@ function createWorker(type: JobType): Worker {
       console.log(`[${type}] Completed job ${jobId}`);
       return result;
     },
-    { connection, concurrency: 2 }
+    { connection, concurrency: getWorkerConcurrency(type) }
   );
 
   worker.on("failed", async (job, err) => {
@@ -140,7 +140,6 @@ const jobTypes: JobType[] = [
   "avatar_generation",
   "talking_head",
   "video_render",
-  "subtitle_generation",
   "quota_monthly_reset"
 ];
 
@@ -174,6 +173,10 @@ let cronQueue: Queue | null = null;
 scheduleQuotaReset().then((q) => { cronQueue = q; }).catch((err) => {
   console.error("[cron] Failed to schedule quota reset:", err.message);
 });
+
+// 启动清扫：OOM 被杀的渲染泄漏 render-*/tts-*（finally 在 SIGKILL 下不执行）
+const swept = sweepStaleTmpDirs({ maxAgeMs: 6 * 60 * 60 * 1000 });
+if (swept.count > 0) console.log(`[worker] 清扫残留临时目录 ${swept.count} 个（${swept.bytes} 字节）`);
 
 const workers = jobTypes.map(createWorker);
 

@@ -43,6 +43,9 @@ export function runFfmpeg(args: RunFfmpegArgs): Promise<void> {
         "libx264",
         "-preset",
         "veryfast",
+        // 4GB 小内存机：x264 默认 1.5×核数 线程，每线程挂 lookahead 帧队列（1080×1920 每帧 3.1MB）——限 2 不影响 CRF 画质
+        "-threads",
+        "2",
         "-pix_fmt",
         "yuv420p",
         "-c:a",
