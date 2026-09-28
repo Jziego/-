@@ -58,6 +58,8 @@ export interface RenderRepository {
   /** segmented_voice 是 Phase 3 分段口播产物，同为 video_render 的配音源。 */
   findTalkingHeadOutputByProject(projectId: string): Promise<VideoOutput | null>;
   listOutputsByOwner(ownerId: string, limit?: number): Promise<VideoOutput[]>;
+  /** 删除产物记录；不存在返回 false。存储清理由调用方负责（best-effort）。 */
+  deleteOutput(id: string): Promise<boolean>;
   updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject>;
 }
 

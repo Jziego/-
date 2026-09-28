@@ -204,6 +204,14 @@ export class MemoryRenderRepository implements RenderRepository {
     return limit ? outputs.slice(0, limit) : outputs;
   }
 
+  async deleteOutput(id: string): Promise<boolean> {
+    const state = getRuntimeState();
+    const index = state.outputs.findIndex((output) => output.id === id);
+    if (index === -1) return false;
+    state.outputs.splice(index, 1);
+    return true;
+  }
+
   async updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject> {
     const state = getRuntimeState();
     const index = state.renderProjects.findIndex((p) => p.id === id);

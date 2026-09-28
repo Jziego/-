@@ -273,6 +273,11 @@ export class PrismaRenderRepository implements RenderRepository {
     return rows.map(toVideoOutput);
   }
 
+  async deleteOutput(id: string): Promise<boolean> {
+    const result = await this.prisma.videoOutput.deleteMany({ where: { id } });
+    return result.count > 0;
+  }
+
   async updateProject(id: string, data: Partial<RenderProject>): Promise<RenderProject> {
     const prismaData: Record<string, unknown> = {};
     if (data.status !== undefined) prismaData.status = data.status;
