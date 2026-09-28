@@ -154,11 +154,16 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
 
   // ── Phase 3 分段路径 ──
   const plan = planSegmentSynthesis(segments, speakers, draft.speakerAvatarIds);
-  const trackSegments: VoiceTrackSegment[] = [];
 
-  for (let i = 0; i < plan.length; i++) {
-    const { segment, speaker } = plan[i]!;
+  // 分段并行：口播段的耗时在 provider 服务端渲染（火山对口型 ~1-1.5min/段），本地
+  // 只是等待——并发提交把串行的 5min+ 压到 ~2min，本地开销极小（音频几 MB + 底板
+  // 落盘文件，见 runbook §2）。默认并发 3（TALKING_HEAD_CONCURRENCY 覆盖，上限 4
+  // 防止 provider 并发任务配额被打爆）；TTS 上游限流有指数退避兜底。
+  const concurrency = Math.max(1, Math.min(4, Number(process.env.TALKING_HEAD_CONCURRENCY?.trim()) || 3));
+  let completedCount = 0;
+  const trackSegments = await runWithConcurrency(plan, concurrency, async ({ segment, speaker }) => {
     const speakerProvider = providerFor(speaker);
+    let trackSegment: VoiceTrackSegment;
     if (segment.onCamera) {
       // 出镜段：数字人视频（音视频一体）。对口型 provider 由内部 TTS 带回字级时间戳。
       const result = await speakerProvider.generateTalkingHead({
@@ -166,7 +171,7 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
         providerVoiceId: speaker.providerVoiceId,
         scriptText: segment.text,
       });
-      trackSegments.push({
+      trackSegment = {
         index: segment.index,
         speakerIndex: segment.speakerIndex,
         onCamera: true,
@@ -174,13 +179,15 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
         videoStorageKey: result.videoAssetId,
         durationSec: result.durationSeconds,
         words: result.words,
-      });
+      };
     } else {
-      // 画外音段：克隆声音 TTS（含词级时间轴）；失败重试 1 次 → 降级数字人视频（spec §6.5）
-      trackSegments.push(await synthesizeOffCameraSegment(segment, speaker, speakerProvider));
+      // 画外音段：克隆声音 TTS（含词级时间轴）；失败重试+退避 → 降级数字人视频（spec §6.5）
+      trackSegment = await synthesizeOffCameraSegment(segment, speaker, speakerProvider);
     }
-    void job.updateProgress(5 + Math.round(((i + 1) / plan.length) * 80));
-  }
+    completedCount += 1;
+    void job.updateProgress(5 + Math.round((completedCount / plan.length) * 80));
+    return trackSegment;
+  });
 
   const manifest: VoiceTrackManifest = {
     version: 1,
@@ -195,6 +202,28 @@ export async function processTalkingHead(job: Job, deps: TalkingHeadDeps): Promi
   await persistOutput(deps, output);
   await job.updateProgress(100);
   return output;
+}
+
+/**
+ * 有界并发执行：最多 limit 个 fn 同时进行，worker 完成即取下一项；
+ * 结果按输入顺序返回（分段 manifest 的顺序确定性依赖这一点）。
+ */
+async function runWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const lanes = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (cursor < items.length) {
+      const i = cursor;
+      cursor += 1;
+      results[i] = await fn(items[i]!);
+    }
+  });
+  await Promise.all(lanes);
+  return results;
 }
 
 async function synthesizeOffCameraSegment(

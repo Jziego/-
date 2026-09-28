@@ -391,6 +391,39 @@ describe("talking_head processor", () => {
       expect(seenVoices).toEqual(["pv_a", "pv_b"]);
     });
 
+    it("分段并行：默认并发 3 段同时进入 provider，manifest 顺序保持分段 index", async () => {
+      await seedAvatarAndDraft("provider_av_1");
+      const segs: ScriptSegment[] = Array.from({ length: 6 }, (_, i) => ({
+        index: i,
+        text: `第${i}段文案。`,
+        speakerIndex: 0,
+        onCamera: false,
+      }));
+      const draft = await seedSegmentedDraft({ id: "draft_parallel", segments: segs });
+      const provider = createMockProvider({});
+      let active = 0;
+      let maxActive = 0;
+      const orig = provider.synthesizeSpeech!.bind(provider);
+      provider.synthesizeSpeech = async (input) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        try {
+          await new Promise((r) => setTimeout(r, 25));
+          return await orig(input);
+        } finally {
+          active -= 1;
+        }
+      };
+      const upload = manifestSpy();
+      await processTalkingHead(
+        makeSegmentJob({ avatarProfileIds: ["av_1"], scriptDraftId: draft.id }),
+        depsWith(provider, upload),
+      );
+      const manifest = upload.mock.calls[0]![1];
+      expect(maxActive).toBe(3);
+      expect(manifest.segments.map((s) => s.index)).toEqual([0, 1, 2, 3, 4, 5]);
+    });
+
     it("TTS failure retries with backoff then falls back to a talking-head video for that segment", async () => {
       vi.stubEnv("TTS_RETRY_BACKOFF_MS", "1,1"); // 退避压缩到毫秒级，避免拖慢测试
       await seedAvatarAndDraft("provider_av_1");

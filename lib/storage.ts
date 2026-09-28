@@ -1,5 +1,5 @@
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { getSignedUrl, S3RequestPresigner } from "@aws-sdk/s3-request-presigner";
 
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 export const ALLOWED_MIME_PREFIXES = ["video/", "image/", "audio/"] as const;
@@ -87,12 +87,51 @@ export async function createPresignedGetUrl(
   key: string,
   expiresIn = PRESIGN_EXPIRES_SECONDS
 ): Promise<string> {
+  // CDN 域名（Cloudflare R2 自定义域名）设置时：直接对 CDN 主机名签名，生成
+  // https://cdn.example.com/key?X-Amz-... 形态的 URL。R2 要求签名与访问域名一致，
+  // 因此不能先按源站签名再替换 host。不设该变量时行为与原来完全一致（源站 getSignedUrl）。
+  const cdnBase = process.env.OBJECT_STORAGE_CDN_URL?.trim();
+  if (cdnBase) {
+    return presignGetViaCdnHost(key, cdnBase, expiresIn);
+  }
   const command = new GetObjectCommand({
     Bucket: getObjectStorageBucket(),
     Key: key
   });
 
   return getSignedUrl(getS3Client(), command, { expiresIn });
+}
+
+/**
+ * 对 R2 自定义域名做 GET 预签名。不走 getSignedUrl（它会把 bucket 拼进 path/host），
+ * 而是直接用 S3RequestPresigner 签一个「hostname=CDN 域名、path=/key」的请求——
+ * R2 自定义域名把域名映射到 bucket 根，路径里不能再带 bucket 名。
+ */
+async function presignGetViaCdnHost(key: string, cdnBase: string, expiresIn: number): Promise<string> {
+  const base = new URL(cdnBase);
+  if (base.protocol !== "https:" && base.protocol !== "http:") {
+    throw new Error(`OBJECT_STORAGE_CDN_URL 协议非法：${cdnBase}`);
+  }
+  const client = getS3Client();
+  // client.config 携带 sha256 实现（与 getSignedUrl 内部同源）
+  const presigner = new S3RequestPresigner({ ...client.config });
+  const request = {
+    method: "GET",
+    protocol: base.protocol,
+    hostname: base.host,
+    path: `/${key}`,
+    query: {},
+    headers: { host: base.host }
+  };
+  const signed = (await presigner.presign(request as never, { expiresIn })) as {
+    path: string;
+    query: Record<string, string | undefined>;
+  };
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(signed.query)) {
+    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+  }
+  return `${base.protocol}//${base.host}${signed.path}?${qs.toString()}`;
 }
 
 /**

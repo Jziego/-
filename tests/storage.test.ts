@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sendMock, getSignedUrlMock } = vi.hoisted(() => ({
+const { sendMock, getSignedUrlMock, presignMock } = vi.hoisted(() => ({
   sendMock: vi.fn(),
-  getSignedUrlMock: vi.fn()
+  getSignedUrlMock: vi.fn(),
+  presignMock: vi.fn()
 }));
 
 vi.mock("@aws-sdk/client-s3", () => {
@@ -12,6 +13,13 @@ vi.mock("@aws-sdk/client-s3", () => {
   }
 
   class PutObjectCommand {
+    input: unknown;
+    constructor(input: unknown) {
+      this.input = input;
+    }
+  }
+
+  class GetObjectCommand {
     input: unknown;
     constructor(input: unknown) {
       this.input = input;
@@ -32,11 +40,17 @@ vi.mock("@aws-sdk/client-s3", () => {
     }
   }
 
-  return { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand };
+  return { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand };
 });
 
 vi.mock("@aws-sdk/s3-request-presigner", () => ({
-  getSignedUrl: (...args: unknown[]) => getSignedUrlMock(...args)
+  getSignedUrl: (...args: unknown[]) => getSignedUrlMock(...args),
+  S3RequestPresigner: class {
+    constructor(public config: unknown) {}
+    presign(request: unknown, options: unknown) {
+      return presignMock(request, options);
+    }
+  }
 }));
 
 describe("object storage helpers", () => {
@@ -48,6 +62,7 @@ describe("object storage helpers", () => {
     process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "minioadmin";
     process.env.OBJECT_STORAGE_REGION = "us-east-1";
     process.env.OBJECT_STORAGE_PUBLIC_URL = "https://cdn.example.com";
+    delete process.env.OBJECT_STORAGE_CDN_URL;
   });
 
   it("creates presigned PUT URLs with bucket, key and content type", async () => {
@@ -136,6 +151,38 @@ describe("object storage helpers", () => {
       expect.anything()
     );
     warnSpy.mockRestore();
+  });
+
+  it("OBJECT_STORAGE_CDN_URL 设置时：GET 预签名指向 CDN 域名、路径不含 bucket", async () => {
+    process.env.OBJECT_STORAGE_CDN_URL = "https://cdn.example.com";
+    presignMock.mockResolvedValue({
+      path: "/voices/a.mp3",
+      query: { "X-Amz-Signature": "sig123", "X-Amz-Credential": "AKID/20260101/auto/s3/aws4_request" }
+    });
+    const { createPresignedGetUrl } = await import("@/lib/storage");
+    const url = await createPresignedGetUrl("voices/a.mp3", 900);
+    expect(url.startsWith("https://cdn.example.com/voices/a.mp3?")).toBe(true);
+    expect(url).toContain("X-Amz-Signature=sig123");
+    expect(url).toContain(encodeURIComponent("AKID/20260101/auto/s3/aws4_request"));
+    // 必须按 CDN 主机名签名（R2 自定义域名要求签名与访问域名一致），且不带 bucket 前缀
+    expect(presignMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        hostname: "cdn.example.com",
+        path: "/voices/a.mp3",
+        headers: expect.objectContaining({ host: "cdn.example.com" })
+      }),
+      { expiresIn: 900 }
+    );
+    expect(getSignedUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("未设置 OBJECT_STORAGE_CDN_URL 时：GET 预签名保持源站 getSignedUrl 路径", async () => {
+    getSignedUrlMock.mockResolvedValue("https://signed.example/get");
+    const { createPresignedGetUrl } = await import("@/lib/storage");
+    const url = await createPresignedGetUrl("voices/b.mp3", 300);
+    expect(url).toBe("https://signed.example/get");
+    expect(presignMock).not.toHaveBeenCalled();
   });
 
   it("builds public URLs from OBJECT_STORAGE_PUBLIC_URL when set", async () => {

@@ -16,6 +16,8 @@
 ## 2. 已落地的代码侧治理（随部署自动生效）
 
 - **堆上限**：web `1024MB`（`package.json` start）、worker `1536MB`（Zeabur 服务变量 NODE_OPTIONS）——V8 提前 GC 而不是被 OOM-kill。2026-09-28 服务器 2C4GB→4C8GB 后从 768/1024 放宽，若降配须回落
+- **talking_head 分段并发**：默认 3 路并行（`TALKING_HEAD_CONCURRENCY`，上限 4）——口播段耗时在 provider 服务端，本地只等待，并发后 talking_head 5min+ → ~2min；本地内存开销可忽略
+- **成片预览 CDN**：设 `OBJECT_STORAGE_CDN_URL=https://cdn.你的域名`（Cloudflare R2 自定义域名，需先在 R2 面板绑定域名）后，预签名 URL 直接签在 CDN 域名上（R2 要求签名与访问域名一致，不能签完换 host），浏览器走 CF 边缘节点，根治跨境预览卡顿
 - **worker 并发**：`video_render` 串行（concurrency 1），其余队列 2；`WORKER_CONCURRENCY` 环境变量可全局覆盖
 - **ffmpeg `-threads 2`**：x264 线程不再吃满 4 核的 lookahead 帧队列（CRF 画质不变）
 - **渲染全链路流式化**：输入下载直落盘（原 2× 文件大小在堆内）、成片流式上传（原 2-3× 拷贝）、底板 file_id 进程内缓存（7 天 TTL，MediaKit file_id 30 天有效的保险）
