@@ -180,6 +180,8 @@ describe("rateLimitOtpAttempt", () => {
       "@/lib/rate-limit"
     );
     _resetMemoryStore();
+    const { _resetRedis } = await import("@/lib/session-blacklist");
+    _resetRedis();
     for (let i = 0; i < 5; i++) {
       expect(await rateLimitOtpAttempt("1.2.3.4", "a@b.com")).toBe(true);
     }
@@ -194,6 +196,8 @@ describe("rateLimitOtpAttempt", () => {
       "@/lib/rate-limit"
     );
     _resetMemoryStore();
+    const { _resetRedis } = await import("@/lib/session-blacklist");
+    _resetRedis();
     for (let i = 0; i < 5; i++) {
       await rateLimitOtpAttempt("1.2.3.4", "A@b.com ");
     }
@@ -208,6 +212,8 @@ describe("rateLimitOtpAttempt", () => {
       "@/lib/rate-limit"
     );
     _resetMemoryStore();
+    const { _resetRedis } = await import("@/lib/session-blacklist");
+    _resetRedis();
     for (let i = 0; i < 20; i++) {
       expect(await rateLimitOtpAttempt("5.6.7.8", `user${i}@x.com`)).toBe(true);
     }

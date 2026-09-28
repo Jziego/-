@@ -986,7 +986,7 @@ strong {
   background: #000;
   border-radius: 10px;
   display: block;
-  object-fit: cover;
+  object-fit: contain; /* 非竖屏成片（1:1/16:9）不裁切，黑底留白 */
   width: 100%;
 }
 

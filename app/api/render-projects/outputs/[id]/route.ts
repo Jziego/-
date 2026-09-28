@@ -23,21 +23,16 @@ export async function DELETE(
   const repo = getRenderRepository();
   const output = await repo.findOutputById(id);
   if (!output || output.ownerId !== ownerId) {
-    return jsonError("产物不存在", 404);
+    return jsonError("Output not found", 404);
   }
 
   await repo.deleteOutput(id);
 
-  try {
-    await deleteObject(output.storageKey);
-    if (output.coverStorageKey) {
-      await deleteObject(output.coverStorageKey);
-    }
-  } catch (err) {
-    console.warn(
-      `[outputs] R2 cleanup failed for ${id}:`,
-      err instanceof Error ? err.message : String(err)
-    );
+  // R2 清理为尽力而为：deleteObject 契约保证永不 reject（见 lib/storage.ts），
+  // 路由层不再需要 try/catch——与素材删除端点一致。
+  await deleteObject(output.storageKey);
+  if (output.coverStorageKey) {
+    await deleteObject(output.coverStorageKey);
   }
 
   return jsonOk({ deleted: true });

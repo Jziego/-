@@ -43,7 +43,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       sendVerificationRequest: async ({ identifier: email, token, url }) => {
         if (!getResendApiKey()) {
           // Dev fallback: log the OTP code when Resend is not configured.
-          console.log(`[auth] otp dev fallback (no RESEND_API_KEY): ${email} → ${token}`);
+          console.log(`[auth] otp dev fallback (no RESEND_API_KEY): ${email} → ${token} | url: ${url}`);
           return;
         }
         await getResend().emails.send({

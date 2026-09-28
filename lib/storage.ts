@@ -221,8 +221,12 @@ export async function headObject(key: string): Promise<HeadObjectResult> {
 /**
  * Best-effort object deletion. Swallows "not found" so DB-record deletion is
  * never blocked by a missing/stale S3 object — the DB row is the source of
- * truth. Other errors are logged but not rethrown (the caller has already
- * committed the DB delete by the time this runs).
+ * truth.
+ *
+ * CONTRACT: this function NEVER rejects. All non-config errors are logged via
+ * console.warn and swallowed (NoSuchBucket included — it surfaces via warn for
+ * operators). Callers MUST NOT wrap in try/catch; if this contract ever
+ * changes, update all call sites (asset deletion, output deletion).
  */
 export async function deleteObject(key: string): Promise<void> {
   try {

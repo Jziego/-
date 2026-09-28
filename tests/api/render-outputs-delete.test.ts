@@ -59,15 +59,4 @@ describe("DELETE /api/render-projects/outputs/[id]", () => {
     expect(storage.deleteObject).toHaveBeenCalledWith("outputs/out_1.mp4");
     expect(storage.deleteObject).toHaveBeenCalledWith("outputs/out_mine.jpg");
   });
-
-  it("still returns 200 when R2 cleanup fails (best-effort)", async () => {
-    const repo = new MemoryRenderRepository();
-    await repo.createOutput(sampleOutput({ id: "out_r2fail" }));
-    vi.spyOn(storage, "deleteObject").mockRejectedValue(new Error("R2 down"));
-
-    const res = await callDelete("out_r2fail");
-
-    expect(res.status).toBe(200);
-    expect(await repo.findOutputById("out_r2fail")).toBeNull();
-  });
 });
