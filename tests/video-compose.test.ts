@@ -389,6 +389,52 @@ describe("buildAss highlights (Phase 2)", () => {
   });
 });
 
+describe("buildAss 逐词动效", () => {
+  const wordCue = (over: Partial<import("@/lib/services/video-compose").CaptionCue> = {}) => ({
+    startSec: 0.2, endSec: 0.4, text: "大家好", wordIndex: 1,
+    pageWords: ["大", "家", "好"], ...over,
+  });
+
+  it("pop：当前词放大 115% + 高亮色 + \\r 复位", () => {
+    const ass = buildAss([wordCue()], "pop");
+    expect(ass).toContain("{\\fscx115\\fscy115\\c&H0000FFFF&}家{\\r}");
+    expect(ass).toContain("Dialogue: 0,0:00:00.20,0:00:00.40");
+  });
+
+  it("highlight：当前词仅变色", () => {
+    const ass = buildAss([wordCue()], "highlight");
+    expect(ass).toContain("{\\c&H0000FFFF&}家{\\r}");
+    expect(ass).not.toContain("fscx");
+  });
+
+  it("bounce：两段 100ms 过冲", () => {
+    const ass = buildAss([wordCue()], "bounce");
+    expect(ass).toContain("{\\t(0,50,\\fscx120\\fscy120)\\t(50,100,\\fscx100\\fscy100)\\c&H0000FFFF&}家{\\r}");
+  });
+
+  it("karaoke：当前词 \\kf 厘秒扫色，已读词主色、未读词 SecondaryColour", () => {
+    const ass = buildAss([wordCue()], "karaoke");
+    expect(ass).toContain("{\\kf20}家"); // (0.4-0.2)*100 = 20 厘秒
+    expect(ass).toContain("{\\c&H0000FFFF&}大");   // 已读：主色（黄）
+    expect(ass).toContain("{\\c&H99FFFFFF&}好");   // 未读：半透明白
+  });
+
+  it("两行页：\\N 插在 lineBreakAfter 之后", () => {
+    const ass = buildAss([wordCue({ wordIndex: 0, pageWords: ["一", "二", "三"], lineBreakAfter: 1 })], "highlight");
+    expect(ass).toContain("二\\N三");
+  });
+
+  it("逐词事件中的危险字符被转义", () => {
+    const ass = buildAss([wordCue({ pageWords: ["价", "{", "格"], text: "价{格" })], "pop");
+    expect(ass).not.toContain("价{格");
+  });
+
+  it("整句 cue（无 wordIndex）走原路径不变", () => {
+    const ass = buildAss([{ startSec: 0, endSec: 1, text: "整句字幕" }], "default");
+    expect(ass).toContain("Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,整句字幕");
+  });
+});
+
 describe("assTimestamp 厘秒进位（bug fix）", () => {
   it("2.999 不产生非法三位厘秒 .100", () => {
     const ass = buildAss([{ startSec: 2.999, endSec: 3.5, text: "测试" }], "default");

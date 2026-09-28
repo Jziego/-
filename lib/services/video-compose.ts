@@ -196,7 +196,7 @@ export function buildTimeline(args: BuildTimelineArgs): BuildTimelineResult {
 
 // ── Subtitle (ASS) generation ──────────────────────────────────────────────
 
-export type SubtitleStylePreset = "default" | "bold_bottom" | "minimal";
+export type SubtitleStylePreset = "default" | "bold_bottom" | "minimal" | "pop" | "highlight" | "bounce" | "karaoke";
 
 interface AssStyleSpec {
   fontname: string;
@@ -213,14 +213,21 @@ interface AssStyleSpec {
   outline: number;
   alignment: number; // 2 = bottom-center
   marginV: number;
+  /** 逐词动效档位；"none" = 静态（现有三预设）。 */
+  animation: "none" | "highlight" | "pop" | "bounce" | "karaoke";
 }
 
 const CJK_FONT = "Noto Sans CJK SC";
 
 const SUBTITLE_PRESETS: Record<SubtitleStylePreset, AssStyleSpec> = {
-  default: { fontname: CJK_FONT, fontsize: 72, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H00FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 4, alignment: 2, marginV: 80 },
-  bold_bottom: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000F4FF", secondaryColour: "&H0000F4FF", highlightColour: "&H000000FF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60 },
-  minimal: { fontname: CJK_FONT, fontsize: 56, primaryColour: "&H00EEEEEE", secondaryColour: "&H00EEEEEE", highlightColour: "&H00FFFF", outlineColour: "&H80000000", backColour: "&H00000000", bold: 0, outline: 2, alignment: 2, marginV: 100 }
+  default: { fontname: CJK_FONT, fontsize: 72, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H00FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 4, alignment: 2, marginV: 80, animation: "none" },
+  bold_bottom: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000F4FF", secondaryColour: "&H0000F4FF", highlightColour: "&H000000FF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "none" },
+  minimal: { fontname: CJK_FONT, fontsize: 56, primaryColour: "&H00EEEEEE", secondaryColour: "&H00EEEEEE", highlightColour: "&H00FFFF", outlineColour: "&H80000000", backColour: "&H00000000", bold: 0, outline: 2, alignment: 2, marginV: 100, animation: "none" },
+  pop: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "pop" },
+  highlight: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "highlight" },
+  bounce: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "bounce" },
+  // karaoke：PrimaryColour=已读色（黄），SecondaryColour=未读色（半透明白）——\kf 从后者扫向前者。
+  karaoke: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000FFFF", secondaryColour: "&H99FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "karaoke" }
 };
 
 function assTimestamp(sec: number): string {
@@ -250,7 +257,7 @@ export function escapeFilterPath(p: string): string {
 
 /** Map a RenderProject.subtitleStyle string to a preset (default if unrecognized). */
 export function resolveSubtitlePreset(style: string | undefined | null): SubtitleStylePreset {
-  return style === "bold_bottom" || style === "minimal" ? style : "default";
+  return style === "bold_bottom" || style === "minimal" || style === "pop" || style === "highlight" || style === "bounce" || style === "karaoke" ? style : "default";
 }
 
 // ── Voiceover-derived caption cues ─────────────────────────────────────────
@@ -331,13 +338,54 @@ export function wrapHighlightsInAss(
   return out + text.slice(cursor);
 }
 
+/** 文本清洗组合：emoji 剔除 + ASS 转义（所有进 buildAss 的文本必经）。 */
+function sanitizeAssText(text: string): string {
+  return escapeAssText(stripEmoji(text));
+}
+
+/**
+ * 逐词事件文本渲染：整页词序列拼接，当前词按档位包动效 tag，tag 后 {\r} 复位防串色；
+ * lineBreakAfter 后插 \N 换行。karaoke 特例：已读词显式主色、未读词显式 SecondaryColour、
+ * 当前词 \kf<厘秒> 扫色（每词颜色全覆盖，无需 \r）。
+ */
+function renderWordEventText(
+  cue: { endSec: number; startSec: number; wordIndex?: number; pageWords?: string[]; lineBreakAfter?: number },
+  s: AssStyleSpec,
+): string {
+  const words = cue.pageWords ?? [];
+  const idx = cue.wordIndex ?? 0;
+  const parts = words.map((word, i) => {
+    const text = sanitizeAssText(word);
+    if (s.animation === "karaoke") {
+      if (i === idx) {
+        const durCs = Math.max(1, Math.round((cue.endSec - cue.startSec) * 100));
+        return `{\\kf${durCs}}${text}`;
+      }
+      return i < idx ? `{\\c${s.primaryColour}&}${text}` : `{\\c${s.secondaryColour}&}${text}`;
+    }
+    if (i !== idx) return text;
+    switch (s.animation) {
+      case "pop":
+        return `{\\fscx115\\fscy115\\c${s.highlightColour}&}${text}{\\r}`;
+      case "bounce":
+        return `{\\t(0,50,\\fscx120\\fscy120)\\t(50,100,\\fscx100\\fscy100)\\c${s.highlightColour}&}${text}{\\r}`;
+      default: // highlight
+        return `{\\c${s.highlightColour}&}${text}{\\r}`;
+    }
+  });
+  if (cue.lineBreakAfter !== undefined) {
+    parts.splice(cue.lineBreakAfter + 1, 0, "\\N");
+  }
+  return parts.join("");
+}
+
 /**
  * Generate an ASS subtitle file: one Dialogue line per cue (timeline segment
  * or voiceover caption cue), timed by the cue boundaries. Styled by the
  * chosen preset. Requires the CJK font (worker/Dockerfile installs font-noto-cjk).
  */
 export function buildAss(
-  cues: Array<{ startSec: number; endSec: number; text: string }>,
+  cues: Array<{ startSec: number; endSec: number; text: string; wordIndex?: number; pageWords?: string[]; lineBreakAfter?: number }>,
   preset: SubtitleStylePreset,
   highlights?: string[],
 ): string {
@@ -358,9 +406,11 @@ export function buildAss(
   const dialogues = cues
     .filter((cue) => cue.text.length > 0)
     .map((cue) => {
-      const text = highlights?.length
-        ? wrapHighlightsInAss(cue.text, highlights, s.highlightColour, s.primaryColour)
-        : cue.text;
+      const text = cue.wordIndex !== undefined
+        ? renderWordEventText(cue, s)
+        : highlights?.length
+          ? wrapHighlightsInAss(sanitizeAssText(cue.text), highlights, s.highlightColour, s.primaryColour)
+          : sanitizeAssText(cue.text);
       return `Dialogue: 0,${assTimestamp(cue.startSec)},${assTimestamp(cue.endSec)},Default,,0,0,0,,${text}`;
     });
   return [...header, ...dialogues].join("\n");
