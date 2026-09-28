@@ -406,6 +406,12 @@ describe("assTimestamp 厘秒进位（bug fix）", () => {
     const ass = buildAss([{ startSec: 3661.25, endSec: 3662, text: "测试" }], "default");
     expect(ass).toContain("1:01:01.25");
   });
+
+  it("0.29 等浮点噪声值不被 floor 截断", () => {
+    const ass = buildAss([{ startSec: 0.29, endSec: 0.58, text: "测试" }], "default");
+    expect(ass).toContain("0:00:00.29");
+    expect(ass).toContain("0:00:00.58");
+  });
 });
 
 describe("buildAss Style Format 字段位（bug fix）", () => {

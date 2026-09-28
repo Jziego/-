@@ -225,7 +225,9 @@ const SUBTITLE_PRESETS: Record<SubtitleStylePreset, AssStyleSpec> = {
 
 function assTimestamp(sec: number): string {
   // 总厘秒 floor 后拆分：round 在 x.999 时会进位出非法三位厘秒 ".100"（libass 解析漂移）。
-  const totalCs = Math.max(0, Math.floor(sec * 100));
+  // 加 1e-6 epsilon 抵消二进制浮点噪声（0.29*100=28.999…996），floor 不再提前 10ms；
+  // 1e-6 远小于 1 厘秒，故 2.999*100+1e-6 仍 floor=299，不产生 .100。
+  const totalCs = Math.max(0, Math.floor(sec * 100 + 1e-6));
   const h = Math.floor(totalCs / 360000);
   const m = Math.floor((totalCs % 360000) / 6000);
   const s = Math.floor((totalCs % 6000) / 100);
