@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderOtpEmail } from "@/lib/auth/magic-link-email";
+import { renderOtpEmail } from "@/lib/auth/otp-email";
 
 describe("renderOtpEmail", () => {
   it("contains the code, fallback link and 10-minute notice", () => {

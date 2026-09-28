@@ -7,7 +7,7 @@ import { getPrisma } from "@/lib/prisma";
 import { getResendApiKey, getEmailFrom, hasWechatProvider, getWechatAppId, getWechatAppSecret } from "@/lib/env";
 import { WeChatProvider } from "@/lib/auth/wechat-provider";
 import { generateOtpCode } from "@/lib/auth/otp";
-import { renderOtpEmail } from "@/lib/auth/magic-link-email";
+import { renderOtpEmail } from "@/lib/auth/otp-email";
 
 let _resend: Resend | null = null;
 function getResend(): Resend {
