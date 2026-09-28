@@ -1253,3 +1253,63 @@ strong {
     white-space: nowrap;
   }
 }
+
+/* ── 登录/验证码页（第三批次补充：纳入设计体系）── */
+.otpWrap {
+  cursor: text;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  position: relative;
+}
+
+.otpHiddenInput {
+  cursor: text;
+  inset: 0;
+  opacity: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.otpHiddenInput:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.otpCell {
+  align-items: center;
+  background: var(--input);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: var(--title);
+  display: flex;
+  font-size: 22px;
+  font-weight: 700;
+  height: 52px;
+  justify-content: center;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+  width: 44px;
+}
+
+.otpCellFilled {
+  background: var(--input-raised);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.otpCellActive {
+  border-color: var(--primary);
+  box-shadow: var(--focus);
+}
+
+.otpCaret {
+  animation: otpBlink 1.1s step-end infinite;
+  background: var(--primary-hover);
+  display: block;
+  height: 24px;
+  width: 2px;
+}
+
+@keyframes otpBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
