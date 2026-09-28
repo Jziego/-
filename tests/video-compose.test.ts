@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTimeline, resolveCompositionMode, buildAss, wrapHighlightsInAss, resolveSubtitlePreset, buildFilterGraph, buildCaptionCues, splitVoiceoverSentences } from "@/lib/services/video-compose";
+import { buildTimeline, resolveCompositionMode, buildAss, wrapHighlightsInAss, resolveSubtitlePreset, buildFilterGraph, buildCaptionCues, splitVoiceoverSentences, escapeAssText, stripEmoji } from "@/lib/services/video-compose";
 import type { TimelineSegment } from "@/lib/services/video-compose";
 import type { Asset, ScriptScene, VideoOutput } from "@/lib/types";
 
@@ -430,5 +430,23 @@ describe("buildAss Style Format 字段位（bug fix）", () => {
     // karaoke 前置：SecondaryColour 列必须存在
     expect(cols).toContain("SecondaryColour");
     expect(cols).toContain("BackColour");
+  });
+});
+
+describe("escapeAssText / stripEmoji", () => {
+  it("剔除花括号（防 ASS tag 注入）", () => {
+    expect(escapeAssText("价格{100}元")).toBe("价格100元");
+  });
+
+  it("反斜杠换全角（防 \\N 被解释成换行）", () => {
+    expect(escapeAssText("A\\N B")).toBe("A＼N B");
+  });
+
+  it("剔除 emoji（libass 渲染不了彩色 emoji）", () => {
+    expect(stripEmoji("好消息🔥快来💰")).toBe("好消息快来");
+  });
+
+  it("普通中文文本原样通过", () => {
+    expect(escapeAssText(stripEmoji("龙岗君姐15年助300家店"))).toBe("龙岗君姐15年助300家店");
   });
 });

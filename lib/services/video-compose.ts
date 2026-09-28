@@ -255,6 +255,19 @@ export function resolveSubtitlePreset(style: string | undefined | null): Subtitl
 
 // ── Voiceover-derived caption cues ─────────────────────────────────────────
 
+/**
+ * ASS 文本转义：{ } 是 override tag 定界符、\ 起始 \N/\n/\h 转义序列——AI 文案
+ * 若含之会注入 tag 或破坏渲染。ASS 无转义机制，策略：花括号剔除、反斜杠换全角。
+ */
+export function escapeAssText(text: string): string {
+  return text.replace(/[{}]/g, "").replace(/\\/g, "＼");
+}
+
+/** 剔除 emoji（libass 无彩色 emoji 字形，烧录后变豆腐块）。口播稿已禁 emoji，此为防御兜底。 */
+export function stripEmoji(text: string): string {
+  return text.replace(/[\p{Extended_Pictographic}]/gu, "").replace(/️/g, "");
+}
+
 export interface CaptionCue {
   startSec: number;
   endSec: number;
