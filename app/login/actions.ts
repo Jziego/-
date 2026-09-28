@@ -19,10 +19,14 @@ export async function sendMagicLink(email: string) {
     return { success: true, message: "若邮箱存在，我们会发送邮件" };
   }
 
-  // redirectTo becomes the magic-link's callbackUrl, so the user lands on the
-  // dashboard (/) after clicking the link. The post-send "check your email"
-  // screen is governed independently by pages.verifyRequest in auth.ts.
-  await signIn("email", { email, redirectTo: "/" });
+  // redirect:false —— 发码后由前端显式跳 /login/verify?email=...（NextAuth 默认
+  // 跳 pages.verifyRequest 且不带 email，OTP 页需要 email 才能提交验证码）。
+  // 注意 redirect:false 下发信失败不会 throw，而是 resolve { ok:false, error }。
+  const result = await signIn("email", { email, redirect: false });
+  if (result?.ok === false) {
+    // 仅真实发信失败才向上抛（不泄露邮箱是否存在的差异，防枚举契约不变）
+    throw new Error("send failed");
+  }
   return { success: true, message: "若邮箱存在，我们会发送邮件" };
 }
 
