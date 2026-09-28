@@ -265,6 +265,44 @@ describe("redis fixed-window command sequence", () => {
   });
 });
 
+describe("rateLimitAuthNamespace", () => {
+  it("allows up to 60 requests per minute per IP, then rejects", async () => {
+    vi.stubEnv("APP_MODE", "demo");
+    vi.stubEnv("REDIS_URL", "");
+    const { rateLimitAuthNamespace, _resetMemoryStore } = await import("@/lib/rate-limit");
+    const { _resetRedis } = await import("@/lib/session-blacklist");
+    _resetMemoryStore();
+    _resetRedis();
+    for (let i = 0; i < 60; i++) {
+      expect(await rateLimitAuthNamespace("9.9.9.9")).toBe(true);
+    }
+    expect(await rateLimitAuthNamespace("9.9.9.9")).toBe(false);
+    vi.unstubAllEnvs();
+  });
+
+  it("isolates counters per IP", async () => {
+    vi.stubEnv("APP_MODE", "demo");
+    vi.stubEnv("REDIS_URL", "");
+    const { rateLimitAuthNamespace, _resetMemoryStore } = await import("@/lib/rate-limit");
+    const { _resetRedis } = await import("@/lib/session-blacklist");
+    _resetMemoryStore();
+    _resetRedis();
+    for (let i = 0; i < 60; i++) await rateLimitAuthNamespace("9.9.9.9");
+    expect(await rateLimitAuthNamespace("8.8.8.8")).toBe(true);
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("isAuthL0Exempt", () => {
+  it("exempts the session endpoint only", async () => {
+    const { isAuthL0Exempt } = await import("@/lib/rate-limit");
+    expect(isAuthL0Exempt("/api/auth/session")).toBe(true);
+    expect(isAuthL0Exempt("/api/auth/csrf")).toBe(false);
+    expect(isAuthL0Exempt("/api/auth/callback/email")).toBe(false);
+    expect(isAuthL0Exempt("/api/auth/signin/email")).toBe(false);
+  });
+});
+
 describe("shared Redis connection (rate-limit <-> session-blacklist)", () => {
   it("rate-limit reconnects through the shared getter after a shared reset", async () => {
     vi.stubEnv("APP_MODE", "production");

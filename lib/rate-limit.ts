@@ -250,6 +250,27 @@ export function _resetMemoryStore(): void {
   memoryStore.clear();
 }
 
+// ── L0-auth: /api/auth/* 命名空间级限流 ──────────────────────────────────────
+
+const AUTH_NAMESPACE_LIMIT: RateLimitConfig = { windowSeconds: 60, maxRequests: 60 };
+
+/**
+ * L0-auth: /api/auth/* 命名空间级 IP 限流（OTP 专项限流之外的兜底）。
+ * 正常登录流程一分钟约十余次请求（csrf+signin+callback+页面加载），60/min
+ * 只挡脚本级刷量。/api/auth/session 由 middleware 豁免（每次页面加载都打）。
+ * 与 L0/L2 同一后端：无 Redis 时 demo 走 memory / production fail-open（既有口径）。
+ */
+export async function rateLimitAuthNamespace(ip: string): Promise<boolean> {
+  // 同 rateLimitByIp：middleware 只消费 .allowed，needReset=false 跳过 ttl 命令。
+  const result = await checkLimit(`auth:ns:${ip}`, AUTH_NAMESPACE_LIMIT, false);
+  return result.allowed;
+}
+
+/** 豁免 L0 命名空间限流的 auth 路径（高频只读，限流会误伤正常浏览）。 */
+export function isAuthL0Exempt(pathname: string): boolean {
+  return pathname === "/api/auth/session";
+}
+
 // ── Convenience helper for API routes ────────────────────────────────────────
 
 /**
