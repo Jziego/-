@@ -388,3 +388,41 @@ describe("buildAss highlights (Phase 2)", () => {
     expect(ass).not.toContain("\\c&H00FFFF&");
   });
 });
+
+describe("assTimestamp 厘秒进位（bug fix）", () => {
+  it("2.999 不产生非法三位厘秒 .100", () => {
+    const ass = buildAss([{ startSec: 2.999, endSec: 3.5, text: "测试" }], "default");
+    expect(ass).toContain("0:00:02.99");
+    expect(ass).not.toContain(".100");
+  });
+
+  it("整秒与常规值不受影响", () => {
+    const ass = buildAss([{ startSec: 0, endSec: 3.001, text: "测试" }], "default");
+    expect(ass).toContain("0:00:00.00");
+    expect(ass).toContain("0:00:03.00");
+  });
+
+  it("小时位正常进位", () => {
+    const ass = buildAss([{ startSec: 3661.25, endSec: 3662, text: "测试" }], "default");
+    expect(ass).toContain("1:01:01.25");
+  });
+});
+
+describe("buildAss Style Format 字段位（bug fix）", () => {
+  it("Format 声明与 Style 值逐列对齐，OutlineColour 列拿到描边色", () => {
+    const ass = buildAss([{ startSec: 0, endSec: 1, text: "测试" }], "minimal");
+    const lines = ass.split("\n");
+    const formatLine = lines.find((l) => l.startsWith("Format: Name,"));
+    const styleLine = lines.find((l) => l.startsWith("Style: Default,"));
+    expect(formatLine).toBeDefined();
+    expect(styleLine).toBeDefined();
+    const cols = (formatLine as string).replace("Format: ", "").split(",").map((s) => s.trim());
+    const vals = (styleLine as string).replace("Style: ", "").split(",");
+    expect(cols.length).toBe(vals.length);
+    // minimal 的半透明描边必须落在 OutlineColour 列（修复前错位到 BackColour）
+    expect(vals[cols.indexOf("OutlineColour")]).toBe("&H80000000");
+    // karaoke 前置：SecondaryColour 列必须存在
+    expect(cols).toContain("SecondaryColour");
+    expect(cols).toContain("BackColour");
+  });
+});

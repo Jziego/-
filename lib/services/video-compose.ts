@@ -202,9 +202,13 @@ interface AssStyleSpec {
   fontname: string;
   fontsize: number;
   primaryColour: string; // &H00BBGGRR (ASS alpha+BGR)
+  /** karaoke 未读色（\kf 起点色）；非 karaoke 预设填与主色同值占位。 */
+  secondaryColour: string;
   /** 关键词高亮 override 色（{\c...&}）；须与 primaryColour 对比明显（黄底预设用红）。 */
   highlightColour: string;
   outlineColour: string;
+  /** 阴影/底色（BackColour 列）；本管线 Shadow=0，填不透明黑占位。 */
+  backColour: string;
   bold: 0 | 1;
   outline: number;
   alignment: number; // 2 = bottom-center
@@ -214,17 +218,19 @@ interface AssStyleSpec {
 const CJK_FONT = "Noto Sans CJK SC";
 
 const SUBTITLE_PRESETS: Record<SubtitleStylePreset, AssStyleSpec> = {
-  default: { fontname: CJK_FONT, fontsize: 72, primaryColour: "&H00FFFFFF", highlightColour: "&H00FFFF", outlineColour: "&H00000000", bold: 1, outline: 4, alignment: 2, marginV: 80 },
-  bold_bottom: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000F4FF", highlightColour: "&H000000FF", outlineColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60 },
-  minimal: { fontname: CJK_FONT, fontsize: 56, primaryColour: "&H00EEEEEE", highlightColour: "&H00FFFF", outlineColour: "&H80000000", bold: 0, outline: 2, alignment: 2, marginV: 100 }
+  default: { fontname: CJK_FONT, fontsize: 72, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H00FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 4, alignment: 2, marginV: 80 },
+  bold_bottom: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000F4FF", secondaryColour: "&H0000F4FF", highlightColour: "&H000000FF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60 },
+  minimal: { fontname: CJK_FONT, fontsize: 56, primaryColour: "&H00EEEEEE", secondaryColour: "&H00EEEEEE", highlightColour: "&H00FFFF", outlineColour: "&H80000000", backColour: "&H00000000", bold: 0, outline: 2, alignment: 2, marginV: 100 }
 };
 
 function assTimestamp(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const sWhole = Math.floor(sec % 60);
-  const cs = Math.round((sec - Math.floor(sec)) * 100);
-  return `${h}:${String(m).padStart(2, "0")}:${String(sWhole).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+  // 总厘秒 floor 后拆分：round 在 x.999 时会进位出非法三位厘秒 ".100"（libass 解析漂移）。
+  const totalCs = Math.max(0, Math.floor(sec * 100));
+  const h = Math.floor(totalCs / 360000);
+  const m = Math.floor((totalCs % 360000) / 6000);
+  const s = Math.floor((totalCs % 6000) / 100);
+  const cs = totalCs % 100;
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
 /**
@@ -322,8 +328,8 @@ export function buildAss(
     "PlayResY: 1920",
     "",
     "[V4+ Styles]",
-    "Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    `Style: Default,${s.fontname},${s.fontsize},${s.primaryColour},${s.outlineColour},${s.bold},0,1,${s.outline},0,${s.alignment},40,40,${s.marginV},1`,
+    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+    `Style: Default,${s.fontname},${s.fontsize},${s.primaryColour},${s.secondaryColour},${s.outlineColour},${s.backColour},${s.bold},0,1,${s.outline},0,${s.alignment},40,40,${s.marginV},1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
