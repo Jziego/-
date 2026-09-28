@@ -309,6 +309,10 @@ export async function fetchVideoOutputUrl(outputId: string): Promise<string> {
   return data.url;
 }
 
+export async function deleteVideoOutputApi(id: string): Promise<void> {
+  await api<{ deleted: boolean }>(`/api/render-projects/outputs/${id}`, { method: "DELETE" });
+}
+
 export async function updateScriptDraftApi(input: {
   scriptDraftId: string;
   voiceover: string;

@@ -965,6 +965,52 @@ strong {
   width: auto;
 }
 
+/* ── Render output grid（第三批次：产物管理 UI）── */
+.outputGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.outputCard {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.outputCover {
+  aspect-ratio: 9 / 16;
+  background: #000;
+  border-radius: 10px;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.outputMeta {
+  display: grid;
+  gap: 2px;
+}
+
+.outputMeta span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.outputActions {
+  display: flex;
+  gap: 8px;
+}
+
+.outputError {
+  color: #f87171;
+  font-size: 12px;
+  margin: 0;
+}
+
 .cleanupButton {
   width: auto;
 }

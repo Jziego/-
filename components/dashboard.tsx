@@ -23,7 +23,6 @@ import {
   fetchRenderOutputs,
   fetchScriptDrafts,
   fetchStores,
-  fetchVideoOutputUrl,
   reanalyzeAssetApi,
   reissueAvatarConsentApi,
   saveStore,
@@ -34,6 +33,7 @@ import {
 } from "@/lib/api-client";
 import { ScriptConfirm } from "@/components/script-confirm";
 import { StoreFieldCandidates } from "@/components/store-field-candidates";
+import { VideoOutputCard } from "@/components/video-output-card";
 import { nextAngle } from "@/lib/copywriting-rules";
 import { MAX_ASSETS_PER_STORE, clampUploadBatch } from "@/lib/asset-library";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/assets";
@@ -49,7 +49,7 @@ import {
 } from "@/lib/draft-storage";
 import { createId, nowIso } from "@/lib/ids";
 import { useJobProgressSSE } from "@/lib/use-job-progress";
-import type { Asset, AssetAnalysis, AvatarProfile, Job, MarketingPurpose, ScriptDraft, StoreProfile, VideoOutput } from "@/lib/types";
+import type { Asset, AssetAnalysis, AvatarProfile, Job, MarketingPurpose, ScriptDraft, StoreProfile } from "@/lib/types";
 import { selectLatestBatchJobs } from "@/lib/dashboard-jobs";
 
 type StoreFormValues = {
@@ -1824,7 +1824,7 @@ export function Dashboard() {
               <p>视频已合成完成，点击播放预览，或下载成片直接使用。</p>
             </div>
           </div>
-          <div className="timeline">
+          <div className="outputGrid">
             {completedOutputs.map((output) => (
               <VideoOutputCard key={output.id} output={output} />
             ))}
@@ -1862,44 +1862,6 @@ function AssetThumbnail({ asset }: { asset: Asset }) {
     return <video className="thumbnailVideo" data-testid="asset-thumbnail-video" muted preload="metadata" src={data.url} />;
   }
   return <span className="thumbnail thumbnailAudio" aria-hidden="true" />;
-}
-
-function VideoOutputCard({ output }: { output: VideoOutput }) {
-  // Presigned URLs are short-lived (~15min). Cache ~10min so switching tabs
-  // doesn't re-hit the route, and let it refresh after expiry.
-  const { data: url, isPending, isError } = useQuery({
-    queryKey: ["output-url", output.id],
-    queryFn: () => fetchVideoOutputUrl(output.id),
-    staleTime: 10 * 60 * 1000
-  });
-
-  return (
-    <div className="previewCard">
-      {isPending ? (
-        <div className="previewLoading">
-          <span className="spinner" aria-hidden="true" />
-          正在生成预览链接…
-        </div>
-      ) : isError ? (
-        <div className="previewLoading">预览链接生成失败，请稍后刷新重试。</div>
-      ) : (
-        <video className="previewVideo" controls preload="metadata" src={url} />
-      )}
-      <div className="previewMeta">
-        <div>
-          <strong>成片视频</strong>
-          <span>
-            {output.durationSeconds} 秒 · {output.aspectRatio}
-          </span>
-        </div>
-        {url ? (
-          <a className="secondaryButton previewDownload" download href={url} rel="noopener noreferrer" target="_blank">
-            下载成片
-          </a>
-        ) : null}
-      </div>
-    </div>
-  );
 }
 
 function splitCsv(value: string): string[] {
