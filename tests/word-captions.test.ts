@@ -47,10 +47,28 @@ describe("buildWordCaptionEvents", () => {
     };
     const cues = buildWordCaptionEvents(manifest);
     expect(cues).toHaveLength(4);
-    expect(cues[0]).toMatchObject({ startSec: 0, endSec: 0.2, wordIndex: 0, text: "大家好啊" });
+    expect(cues[0]).toMatchObject({ startSec: 0, endSec: 0.2, wordIndex: 0, text: "大家好啊", pageWords: ["大", "家", "好", "啊"] });
     expect(cues[1]).toMatchObject({ startSec: 0.2, endSec: 0.4, wordIndex: 1 });
     expect(cues[3]!.wordIndex).toBe(3);
     expect(cues[3]!.endSec).toBeCloseTo(0.8); // 末词延伸到词自身 endSec
+  });
+
+  it("两行页：pageWords 为整页词序列，lineBreakAfter 传播第一行末词下标", () => {
+    const manifest: VoiceTrackManifest = {
+      version: 1,
+      totalDurationSec: 3.0,
+      segments: [
+        { index: 0, speakerIndex: 0, onCamera: true, text: "一二三四五六七八九十一二三四五", durationSec: 3.0, words: wordsOf("一二三四五六七八九十一二三四五") },
+      ],
+    };
+    const cues = buildWordCaptionEvents(manifest);
+    expect(cues).toHaveLength(15);
+    const expectedWords = Array.from("一二三四五六七八九十一二三四五");
+    expect(cues[0]!.pageWords).toEqual(expectedWords); // 每词事件都带整页序列
+    expect(cues[0]!.lineBreakAfter).toBe(11); // 第一行末词下标
+    expect(cues[11]!.wordIndex).toBe(11);
+    expect(cues[12]!.wordIndex).toBe(12); // 第二行首词
+    expect(cues[14]!.endSec).toBeCloseTo(3.0); // 末词到词自身 endSec
   });
 
   it("段偏移正确叠加", () => {

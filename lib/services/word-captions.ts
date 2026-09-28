@@ -17,7 +17,7 @@ export interface CaptionPage {
 
 /**
  * 词序列 → 分页（每页 ≤2 行、每行 ≤12 字，贪心填充）。
- * 标点永不触发换行/翻页——页首与行首不会是标点。
+ * 标点永不触发换行/翻页——行首不会是标点；页首仅在输入本身以标点起始时例外。
  */
 export function paginateWords(words: WordTimestamp[]): CaptionPage[] {
   const pages: CaptionPage[] = [];
