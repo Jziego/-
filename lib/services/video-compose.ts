@@ -369,6 +369,9 @@ function renderWordEventText(
         return `{\\fscx115\\fscy115\\c${s.highlightColour}&}${text}{\\r}`;
       case "bounce":
         return `{\\t(0,50,\\fscx120\\fscy120)\\t(50,100,\\fscx100\\fscy100)\\c${s.highlightColour}&}${text}{\\r}`;
+      case "none":
+        // 静态预设：逐词事件渲染为纯文本拼接（存量项目零影响）
+        return text;
       default: // highlight
         return `{\\c${s.highlightColour}&}${text}{\\r}`;
     }

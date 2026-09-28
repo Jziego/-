@@ -412,11 +412,31 @@ describe("buildAss 逐词动效", () => {
     expect(ass).toContain("{\\t(0,50,\\fscx120\\fscy120)\\t(50,100,\\fscx100\\fscy100)\\c&H0000FFFF&}家{\\r}");
   });
 
+  it.each(["default", "bold_bottom", "minimal"] as const)("静态预设 %s + 逐词事件仍保持静态（无 override tag）", (preset) => {
+    const ass = buildAss([wordCue()], preset);
+    expect(ass).toContain("Dialogue: 0,0:00:00.20,0:00:00.40,Default,,0,0,0,,大家好");
+    expect(ass).not.toContain("\\c&H");
+    expect(ass).not.toContain("fscx");
+  });
+
   it("karaoke：当前词 \\kf 厘秒扫色，已读词主色、未读词 SecondaryColour", () => {
     const ass = buildAss([wordCue()], "karaoke");
     expect(ass).toContain("{\\kf20}家"); // (0.4-0.2)*100 = 20 厘秒
     expect(ass).toContain("{\\c&H0000FFFF&}大");   // 已读：主色（黄）
     expect(ass).toContain("{\\c&H99FFFFFF&}好");   // 未读：半透明白
+  });
+
+  it("karaoke 当前词为页首：全是未读词", () => {
+    const ass = buildAss([wordCue({ wordIndex: 0 })], "karaoke");
+    expect(ass).toContain("{\\kf20}大");
+    expect(ass).toContain("{\\c&H99FFFFFF&}家"); // 未读
+    expect(ass).toContain("{\\c&H99FFFFFF&}好");
+  });
+
+  it("karaoke 当前词为页末：全是已读词", () => {
+    const ass = buildAss([wordCue({ wordIndex: 2 })], "karaoke");
+    expect(ass).toContain("{\\c&H0000FFFF&}大"); // 已读
+    expect(ass).toContain("{\\kf20}好");
   });
 
   it("两行页：\\N 插在 lineBreakAfter 之后", () => {
@@ -425,8 +445,18 @@ describe("buildAss 逐词动效", () => {
   });
 
   it("逐词事件中的危险字符被转义", () => {
-    const ass = buildAss([wordCue({ pageWords: ["价", "{", "格"], text: "价{格" })], "pop");
+    const ass = buildAss(
+      [
+        // 花括号词被剔除后，当前词动效与其后词渲染不受影响
+        wordCue({ pageWords: ["价{", "家", "格"], text: "价{格" }),
+        // 当前词含花括号：剔除后该词仍渲染（而非整词删除）
+        wordCue({ pageWords: ["价", "家", "{格}"], text: "价{格", wordIndex: 2 }),
+      ],
+      "pop",
+    );
     expect(ass).not.toContain("价{格");
+    expect(ass).toContain("}家{");
+    expect(ass).toContain("\\c&H0000FFFF&}格{\\r}"); // 花括号被剔除而非整词删除
   });
 
   it("整句 cue（无 wordIndex）走原路径不变", () => {
