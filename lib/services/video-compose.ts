@@ -272,7 +272,7 @@ export function escapeAssText(text: string): string {
 
 /** 剔除 emoji（libass 无彩色 emoji 字形，烧录后变豆腐块）。口播稿已禁 emoji，此为防御兜底。 */
 export function stripEmoji(text: string): string {
-  return text.replace(/[\p{Extended_Pictographic}]/gu, "").replace(/️/g, "");
+  return text.replace(/[\p{Extended_Pictographic}]/gu, "").replace(/\uFE0F/g, "");
 }
 
 export interface CaptionCue {

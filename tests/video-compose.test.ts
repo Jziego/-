@@ -495,4 +495,8 @@ describe("escapeAssText / stripEmoji", () => {
   it("普通中文文本原样通过", () => {
     expect(escapeAssText(stripEmoji("龙岗君姐15年助300家店"))).toBe("龙岗君姐15年助300家店");
   });
+
+  it("VS16 残留路径：❤ + FE0F 组合也能剔除干净", () => {
+    expect(stripEmoji("好❤️快")).toBe("好快");
+  });
 });
