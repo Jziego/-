@@ -6,7 +6,8 @@ import type { AdapterUser } from "@auth/core/adapters";
 import { getPrisma } from "@/lib/prisma";
 import { getResendApiKey, getEmailFrom, hasWechatProvider, getWechatAppId, getWechatAppSecret } from "@/lib/env";
 import { WeChatProvider } from "@/lib/auth/wechat-provider";
-import { renderMagicLinkEmail } from "@/lib/auth/magic-link-email";
+import { generateOtpCode } from "@/lib/auth/otp";
+import { renderOtpEmail } from "@/lib/auth/magic-link-email";
 
 let _resend: Resend | null = null;
 function getResend(): Resend {
@@ -34,18 +35,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     EmailProvider({
       server: {},
       from: getEmailFrom(),
-      sendVerificationRequest: async ({ identifier: email, url }) => {
+      // OTP 10 分钟有效（默认 24h 对验证码过长）；verify 页文案与此保持一致。
+      maxAge: 10 * 60,
+      // 6 位数字验证码替代 32 位随机串；哈希存储/一次性消费/自动建用户均为
+      // NextAuth 内置流程，不变。爆破防护：middleware 对 callback/email 限流。
+      generateVerificationToken: async () => generateOtpCode(),
+      sendVerificationRequest: async ({ identifier: email, token, url }) => {
         if (!getResendApiKey()) {
-          // Dev fallback: log the verification URL when Resend is not configured.
-          // In production, set RESEND_API_KEY to send real magic-link emails.
-          console.log(`[auth] magic-link dev fallback (no RESEND_API_KEY): ${email} → ${url}`);
+          // Dev fallback: log the OTP code when Resend is not configured.
+          console.log(`[auth] otp dev fallback (no RESEND_API_KEY): ${email} → ${token}`);
           return;
         }
         await getResend().emails.send({
           from: getEmailFrom(),
           to: email,
-          subject: "登录 AI 短视频助手",
-          html: renderMagicLinkEmail(url),
+          subject: `登录验证码：${token}`,
+          html: renderOtpEmail(token, url),
         });
       },
     }),
