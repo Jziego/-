@@ -172,6 +172,50 @@ describe("rateLimitByIp", () => {
   });
 });
 
+describe("rateLimitOtpAttempt", () => {
+  it("allows up to 5 attempts per email in 10min, then blocks", async () => {
+    vi.stubEnv("APP_MODE", "demo");
+    vi.stubEnv("REDIS_URL", "");
+    const { rateLimitOtpAttempt, _resetMemoryStore } = await import(
+      "@/lib/rate-limit"
+    );
+    _resetMemoryStore();
+    for (let i = 0; i < 5; i++) {
+      expect(await rateLimitOtpAttempt("1.2.3.4", "a@b.com")).toBe(true);
+    }
+    expect(await rateLimitOtpAttempt("1.2.3.4", "a@b.com")).toBe(false);
+    vi.unstubAllEnvs();
+  });
+
+  it("email bucket is case/whitespace-insensitive", async () => {
+    vi.stubEnv("APP_MODE", "demo");
+    vi.stubEnv("REDIS_URL", "");
+    const { rateLimitOtpAttempt, _resetMemoryStore } = await import(
+      "@/lib/rate-limit"
+    );
+    _resetMemoryStore();
+    for (let i = 0; i < 5; i++) {
+      await rateLimitOtpAttempt("1.2.3.4", "A@b.com ");
+    }
+    expect(await rateLimitOtpAttempt("1.2.3.4", "a@b.com")).toBe(false);
+    vi.unstubAllEnvs();
+  });
+
+  it("allows up to 20 attempts per IP across different emails, then blocks", async () => {
+    vi.stubEnv("APP_MODE", "demo");
+    vi.stubEnv("REDIS_URL", "");
+    const { rateLimitOtpAttempt, _resetMemoryStore } = await import(
+      "@/lib/rate-limit"
+    );
+    _resetMemoryStore();
+    for (let i = 0; i < 20; i++) {
+      expect(await rateLimitOtpAttempt("5.6.7.8", `user${i}@x.com`)).toBe(true);
+    }
+    expect(await rateLimitOtpAttempt("5.6.7.8", "another@x.com")).toBe(false);
+    vi.unstubAllEnvs();
+  });
+});
+
 describe("redis fixed-window command sequence", () => {
   beforeEach(async () => {
     vi.stubEnv("APP_MODE", "production");

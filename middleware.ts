@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { getAppMode } from "@/lib/env";
 import { NextResponse } from "next/server";
-import { rateLimitByIp, getClientIp } from "@/lib/rate-limit";
+import { rateLimitByIp, getClientIp, rateLimitOtpAttempt } from "@/lib/rate-limit";
 import { isSessionRevoked } from "@/lib/session-blacklist";
 
 // Middleware runs on the Node.js runtime (not Edge) so that ioredis is available
@@ -16,8 +16,22 @@ export default auth(async (req) => {
   const { pathname } = req.nextUrl;
 
   // Public paths (accessible without login)
+  if (pathname.startsWith("/api/auth")) {
+    // OTP 校验端点爆破防护：此路径在 L0 IP 限流之前 return（公开路径），
+    // 6 位码若无尝试上限可在线爆破——必须专项限流。
+    if (pathname === "/api/auth/callback/email") {
+      const ip = getClientIp(req.headers);
+      const email = req.nextUrl.searchParams.get("email") ?? "";
+      if (email && !(await rateLimitOtpAttempt(ip, email))) {
+        return NextResponse.json(
+          { error: "rate_limited", message: "尝试次数过多，请 10 分钟后再试" },
+          { status: 429 },
+        );
+      }
+    }
+    return NextResponse.next();
+  }
   if (
-    pathname.startsWith("/api/auth") ||
     pathname === "/api/health" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/_next")

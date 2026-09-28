@@ -18,6 +18,8 @@ interface RateLimitConfig {
 const LOGIN_IP_PER_MINUTE: RateLimitConfig = { windowSeconds: 60, maxRequests: 5 };
 const LOGIN_IP_PER_HOUR: RateLimitConfig = { windowSeconds: 3600, maxRequests: 20 };
 const LOGIN_EMAIL_PER_MINUTE: RateLimitConfig = { windowSeconds: 60, maxRequests: 1 };
+const OTP_EMAIL_ATTEMPTS: RateLimitConfig = { windowSeconds: 600, maxRequests: 5 };
+const OTP_IP_ATTEMPTS: RateLimitConfig = { windowSeconds: 600, maxRequests: 20 };
 const API_READ: RateLimitConfig = { windowSeconds: 60, maxRequests: 60 };
 const API_WRITE: RateLimitConfig = { windowSeconds: 60, maxRequests: 20 };
 
@@ -166,6 +168,26 @@ export async function rateLimitLogin(
     checkLimit(`login:email:${normalized}`, LOGIN_EMAIL_PER_MINUTE, false),
   ]);
   return ipMin.allowed && ipHour.allowed && emailMin.allowed;
+}
+
+/**
+ * OTP 校验尝试限流（middleware 对 /api/auth/callback/email 调用）。
+ * 6 位码空间仅 1e6：每邮箱 10 分钟 5 次（单码成功率 5e-6），每 IP 10 分钟 20 次。
+ * 进入即计数（成功也计）——NextAuth 一次性消费 token 天然防重放，
+ * 正常用户 1-2 次内成功，5 次硬顶不构成误伤。
+ * 与全局限流同一后端：无 Redis 时 demo 走 memory / production fail-open（既有口径）。
+ */
+export async function rateLimitOtpAttempt(
+  ip: string,
+  email: string,
+): Promise<boolean> {
+  const normalized = normalizeEmail(email);
+  // 同 rateLimitLogin：只消费 .allowed，needReset=false 省 ttl 命令。
+  const [emailLimit, ipLimit] = await Promise.all([
+    checkLimit(`otp:try:email:${normalized}`, OTP_EMAIL_ATTEMPTS, false),
+    checkLimit(`otp:try:ip:${ip}`, OTP_IP_ATTEMPTS, false),
+  ]);
+  return emailLimit.allowed && ipLimit.allowed;
 }
 
 /**
