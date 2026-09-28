@@ -39,7 +39,6 @@ export function OtpInput({
         inputMode="numeric"
         autoComplete="one-time-code"
         aria-label="登录验证码"
-        maxLength={OTP_LENGTH}
         value={value}
         disabled={disabled}
         autoFocus

@@ -28,6 +28,18 @@ describe("OtpInput", () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
+  it("pastes a separator-padded code and keeps all 6 digits", () => {
+    // 真实浏览器先按 HTML maxLength 截断再触发 change：粘贴 "123-456" 会被
+    // 截成 "123-45"，过滤后丢失第 6 位。jsdom 的 fireEvent 不模拟该截断，
+    // 故此用例在 jsdom 为文档性回归测试，浏览器差异由移除 maxLength 保障。
+    const onChange = vi.fn();
+    const onComplete = vi.fn();
+    render(<OtpInput value="" onChange={onChange} onComplete={onComplete} />);
+    fireEvent.change(screen.getByLabelText("登录验证码"), { target: { value: "123-456" } });
+    expect(onChange).toHaveBeenCalledWith("123456");
+    expect(onComplete).toHaveBeenCalledWith("123456");
+  });
+
   it("renders filled cells from value (paste path)", () => {
     render(<OtpInput value="123456" onChange={() => {}} />);
     const cells = document.querySelectorAll(".otpCell");
