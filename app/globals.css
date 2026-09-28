@@ -1313,3 +1313,101 @@ strong {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
+
+/* ---- 登录 / verify 页 ----
+   .authPage 提供定位上下文，复用主界面 .ambientGlow（L151，已含
+   position: absolute），光晕随卡片顶部居中铺开，无需额外规则。 */
+
+.authPage {
+  align-items: center;
+  background: var(--background);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 24px 16px;
+  position: relative;
+}
+
+.authCard {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  max-width: 420px;
+  padding: 32px 28px;
+  position: relative;
+  width: 100%;
+  z-index: 1;
+}
+
+.authCardHeader {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.authCardHeader h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+
+.authCardHeader p {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.authForm {
+  display: grid;
+  gap: 16px;
+}
+
+.authError {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 10px;
+  color: var(--warning);
+  font-size: 13px;
+  padding: 10px 14px;
+}
+
+.authLinks {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
+}
+
+.authLink,
+.authLinkButton {
+  color: var(--primary-hover);
+}
+
+.authLink:hover,
+.authLinkButton:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.authLinkButton {
+  background: transparent;
+  min-height: 0;
+  padding: 0;
+  width: auto;
+}
+
+.authLinkButton:disabled {
+  color: var(--muted);
+}
+
+.authFallback {
+  text-align: center;
+}
+
+.authFallback p {
+  color: var(--text);
+  font-size: 14px;
+}
