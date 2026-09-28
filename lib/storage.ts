@@ -240,8 +240,12 @@ export async function deleteObject(key: string): Promise<void> {
         : undefined;
     const name = typeof error === "object" && error !== null && "name" in error ? String(error.name) : "";
 
-    // Note: NoSuchBucket is intentionally NOT swallowed — it signals config
-    // drift, not a missing object, and should surface to operators.
+    // NoSuchBucket signals config drift (wrong bucket name), not a missing
+    // object — warn so operators notice; still swallow (NEVER rejects contract).
+    if (name === "NoSuchBucket") {
+      console.warn(`[storage] deleteObject: bucket missing for ${key}:`, error);
+      return;
+    }
     if (statusCode === 404 || name === "NotFound" || name === "NoSuchKey") return;
 
     console.warn(`[storage] deleteObject failed for ${key}:`, name || error);

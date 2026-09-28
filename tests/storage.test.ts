@@ -153,6 +153,21 @@ describe("object storage helpers", () => {
     warnSpy.mockRestore();
   });
 
+  it("deleteObject warns on NoSuchBucket (HTTP 404) and still does not rethrow", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    sendMock.mockRejectedValue({ name: "NoSuchBucket", $metadata: { httpStatusCode: 404 } });
+
+    const { deleteObject, resetS3ClientForTests } = await import("@/lib/storage");
+    resetS3ClientForTests();
+
+    await expect(deleteObject("stores/store_1/assets/asset_1-demo.mp4")).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[storage] deleteObject: bucket missing"),
+      expect.anything()
+    );
+    warnSpy.mockRestore();
+  });
+
   it("OBJECT_STORAGE_CDN_URL 设置时：GET 预签名指向 CDN 域名、路径不含 bucket", async () => {
     process.env.OBJECT_STORAGE_CDN_URL = "https://cdn.example.com";
     presignMock.mockResolvedValue({
