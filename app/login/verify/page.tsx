@@ -45,9 +45,13 @@ function VerifyContent() {
       <div className="authCard">
         <div className="authCardHeader">
           <h1>输入登录验证码</h1>
-          <p>
-            若邮箱 <strong>{email || "已注册"}</strong> 存在，验证码已发送（10 分钟内有效）
-          </p>
+          {email ? (
+            <p>
+              若邮箱 <strong>{email}</strong> 存在，验证码已发送（10 分钟内有效）
+            </p>
+          ) : (
+            <p>若邮箱存在，验证码已发送（10 分钟内有效）</p>
+          )}
         </div>
 
         {email ? (

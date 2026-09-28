@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import VerifyPage from "@/app/login/verify/page";
 
 const { sendMagicLinkMock } = vi.hoisted(() => ({ sendMagicLinkMock: vi.fn() }));
@@ -66,6 +66,26 @@ describe("/login/verify OTP page", () => {
 
     expect(await screen.findByRole("button", { name: "重新发送（60s）" })).toBeInTheDocument();
     expect(sendMagicLinkMock).toHaveBeenCalledWith("a@b.com");
+  });
+
+  it("counts the resend cooldown down every second (fake timers)", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<VerifyPage />);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "重新发送" }));
+        // 等 sendMagicLink resolve 后的微任务落地，冷却置 60
+        await Promise.resolve();
+      });
+      expect(screen.getByRole("button", { name: "重新发送（60s）" })).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(screen.getByRole("button", { name: "重新发送（59s）" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows an error and skips the cooldown when resend fails", async () => {
