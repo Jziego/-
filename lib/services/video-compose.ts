@@ -272,6 +272,12 @@ export interface CaptionCue {
   startSec: number;
   endSec: number;
   text: string;
+  /** 逐词事件：当前词在 pageWords 中的下标；undefined = 整句 cue（回退路径，行为不变）。 */
+  wordIndex?: number;
+  /** 逐词事件：页内词文本序列（渲染时逐词包动效 tag）。 */
+  pageWords?: string[];
+  /** 逐词事件：两行页的第一行末词下标（其后插 \N 换行）。 */
+  lineBreakAfter?: number;
 }
 
 /** 按中英文句读切句，保留句尾标点。无标点时整段为一句。 */
