@@ -24,6 +24,7 @@ vi.mock("next/headers", () => ({
 }));
 
 import { sendMagicLink } from "@/app/login/actions";
+import { rateLimitLogin } from "@/lib/rate-limit";
 
 describe("sendMagicLink", () => {
   beforeEach(() => {
@@ -42,6 +43,15 @@ describe("sendMagicLink", () => {
 
   it("keeps the generic success message for malformed emails and never calls the provider (anti-enumeration)", async () => {
     const result = await sendMagicLink("not-an-email");
+
+    expect(result).toEqual({ success: true, message: "若邮箱存在，我们会发送邮件" });
+    expect(signInMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the generic success message when rate-limited (anti-enumeration)", async () => {
+    vi.mocked(rateLimitLogin).mockResolvedValueOnce(false);
+
+    const result = await sendMagicLink("user@example.com");
 
     expect(result).toEqual({ success: true, message: "若邮箱存在，我们会发送邮件" });
     expect(signInMock).not.toHaveBeenCalled();

@@ -1411,3 +1411,58 @@ strong {
   color: var(--text);
   font-size: 14px;
 }
+
+.authHero {
+  margin-bottom: 32px;
+  position: relative;
+  text-align: center;
+  z-index: 1;
+}
+
+.authHero .eyebrow {
+  margin-bottom: 12px;
+}
+
+.authHero h1 {
+  color: var(--title);
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.authHeroRule {
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.35), transparent);
+  border-radius: 999px;
+  display: block;
+  filter: blur(8px);
+  height: 2px;
+  margin: 20px auto 0;
+  width: min(280px, 60vw);
+}
+
+.authDivider {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin: 4px 0;
+}
+
+.authDivider::before,
+.authDivider::after {
+  background: var(--border);
+  content: "";
+  flex: 1;
+  height: 1px;
+}
+
+.authDivider span {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.authWechatButton {
+  gap: 8px;
+}
