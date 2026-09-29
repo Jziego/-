@@ -32,6 +32,13 @@ export class UserNotFoundError extends Error {
   }
 }
 
+export class PointsUnavailableError extends Error {
+  constructor() {
+    super("积分功能未启用");
+    this.name = "PointsUnavailableError";
+  }
+}
+
 /** 查询积分余额；无数据库（本地 dev）返回 null，前端显示「—」。 */
 export async function getPointsBalance(userId: string): Promise<number | null> {
   if (!hasDatabase()) return null;
@@ -82,7 +89,7 @@ export async function redeemPointsCode(
   userId: string,
   rawCode: string,
 ): Promise<{ points: number; balance: number }> {
-  if (!hasDatabase()) throw new Error("积分功能未启用");
+  if (!hasDatabase()) throw new PointsUnavailableError();
   const code = normalizeRedeemCode(rawCode);
   const prisma = getPrisma()!;
   return prisma.$transaction(async (tx) => {
@@ -119,7 +126,7 @@ export async function adminAdjustPoints(
   delta: number,
   note: string,
 ): Promise<{ email: string; balance: number }> {
-  if (!hasDatabase()) throw new Error("积分功能未启用");
+  if (!hasDatabase()) throw new PointsUnavailableError();
   if (!Number.isInteger(delta) || delta === 0) {
     throw new AdminAdjustError("delta 必须是非零整数");
   }
@@ -186,7 +193,7 @@ export async function generateRechargeCodes(
   points: number,
   count: number,
 ): Promise<string[]> {
-  if (!hasDatabase()) throw new Error("积分功能未启用");
+  if (!hasDatabase()) throw new PointsUnavailableError();
   const prisma = getPrisma()!;
   const codes: string[] = [];
   for (let i = 0; i < count; i++) {

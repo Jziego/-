@@ -190,6 +190,31 @@ export async function rateLimitOtpAttempt(
   return emailLimit.allowed && ipLimit.allowed;
 }
 
+// ── Redeem & admin rate limits ─────────────────────────────────────────────
+
+const REDEEM_OWNER_PER_MINUTE: RateLimitConfig = { windowSeconds: 60, maxRequests: 10 };
+const REDEEM_IP_PER_MINUTE: RateLimitConfig = { windowSeconds: 60, maxRequests: 30 };
+const ADMIN_IP_PER_MINUTE: RateLimitConfig = { windowSeconds: 60, maxRequests: 30 };
+
+/**
+ * 兑换接口爆破防护：每 owner 10 次/分钟 + 每 IP 30 次/分钟。
+ * 兑换码空间 32^16，爆破不现实，限流挡的是脚本刷接口/探测。
+ * 与 OTP 同口径：只消费 .allowed，needReset=false 跳过 ttl 命令。
+ */
+export async function rateLimitRedeem(ownerId: string, ip: string): Promise<boolean> {
+  const [owner, ipResult] = await Promise.all([
+    checkLimit(`redeem:owner:${ownerId}`, REDEEM_OWNER_PER_MINUTE, false),
+    checkLimit(`redeem:ip:${ip}`, REDEEM_IP_PER_MINUTE, false),
+  ]);
+  return owner.allowed && ipResult.allowed;
+}
+
+/** 后台接口 IP 限流（30/min）：后台走 x-admin-key 鉴权，多一层防扫。 */
+export async function rateLimitAdminIp(ip: string): Promise<boolean> {
+  const result = await checkLimit(`admin:ip:${ip}`, ADMIN_IP_PER_MINUTE, false);
+  return result.allowed;
+}
+
 /**
  * Resolve the rate-limit bucket (key + config) for an API request.
  *

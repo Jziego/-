@@ -321,3 +321,47 @@ describe("shared Redis connection (rate-limit <-> session-blacklist)", () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe("rateLimitRedeem / rateLimitAdminIp", () => {
+  // 清理全部进 afterEach：用例中途失败时 env stub、内存计数器、共享
+  // Redis 连接都不会泄漏到后续用例。
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    const { _resetMemoryStore } = await import("@/lib/rate-limit");
+    const { _resetRedis } = await import("@/lib/session-blacklist");
+    _resetMemoryStore();
+    _resetRedis();
+  });
+
+  it("兑换限流：按 owner 与 IP 双窗口计数（memory 后端，demo 模式）", async () => {
+    vi.stubEnv("APP_MODE", "demo");
+    vi.stubEnv("REDIS_URL", "");
+    const { _resetMemoryStore } = await import("@/lib/rate-limit");
+    const { rateLimitRedeem, rateLimitAdminIp } = await import("@/lib/rate-limit");
+    const { _resetRedis } = await import("@/lib/session-blacklist");
+    _resetRedis();
+    _resetMemoryStore();
+
+    // owner 窗口 10/min：第 11 次拒绝
+    for (let i = 0; i < 10; i++) {
+      expect(await rateLimitRedeem("u1", "1.2.3.4")).toBe(true);
+    }
+    expect(await rateLimitRedeem("u1", "1.2.3.4")).toBe(false);
+    // 另一 owner 不受 u1 计数影响
+    expect(await rateLimitRedeem("u2", "1.2.3.4")).toBe(true);
+    _resetMemoryStore();
+
+    // IP 窗口 30/min：同 IP 不同 owner 累计到 30 后拒绝（第 31 次拒绝）
+    for (let i = 0; i < 30; i++) {
+      expect(await rateLimitRedeem(`u${i}`, "9.9.9.9")).toBe(true);
+    }
+    expect(await rateLimitRedeem("uX", "9.9.9.9")).toBe(false);
+    _resetMemoryStore();
+
+    // admin IP 窗口 30/min
+    for (let i = 0; i < 30; i++) {
+      expect(await rateLimitAdminIp("5.5.5.5")).toBe(true);
+    }
+    expect(await rateLimitAdminIp("5.5.5.5")).toBe(false);
+  });
+});
