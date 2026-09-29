@@ -30,7 +30,7 @@
 ## 2026-09-28 第四批次（登录 UI 重做后 hotfix）
 
 ### 登录 / OTP
-- [ ] **EMAIL_FROM 落 resend.dev 沙箱域**：生产未设 `EMAIL_FROM` 时默认 `noreply@resend.dev`——Resend 沙箱模式只许发给账号本人邮箱，其他地址 API 层被拒（旧邮箱=账号主邮箱能收，新邮箱全丢）。**需验证自有域名**（如 `mail.jziego.win`）并在 Zeabur 设 `EMAIL_FROM=AI短视频助手 <noreply@mail.jziego.win>`。（来源：静默丢信 hotfix 2026-09-28）
+- [x] ~~**EMAIL_FROM 落 resend.dev 沙箱域**~~：已治本（2026-09-29）——Resend 建域 `mail.jziego.win` 并验证通过（DKIM/SPF 全绿），DNS 四条记录（CF 手动录入：DKIM TXT/SPF TXT/MX/CNAME），Zeabur `EMAIL_FROM` 切换为 `AI短视频助手 <noreply@mail.jziego.win>`，新邮箱实测收码成功。配套代码修复 `cc1698e`（Resend API 错误不再静默吞）。
 - [ ] **OTP 登录不回跳原路径**：middleware 登出带 `callbackUrl=<原路径>`，登录页忽略、verify 硬编码 `/`，被踢出用户落首页。下一批次 login 页透传即可。（来源：整体终审 Minor #2）
 - [ ] **Tailwind 死依赖**：全仓已零 Tailwind 类/`cn()`，`tailwindcss`+`tailwind-merge` 可卸载，CLAUDE.md 技术栈行同步更新。（来源：整体终审 Minor #4）
 
