@@ -105,17 +105,17 @@ R2 bucket → Settings → CORS Policy，允许 web 域名直传 PUT、预检 OP
 | `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | 不设 `SENTRY_DSN` → 自动跳过 Sentry |
 | `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | sourcemap 上传用，仅 CI 需要 |
 
-### 3.7 微信 OAuth（可选）
-| 变量 | 说明 |
-|------|------|
-| `WECHAT_APP_ID` / `WECHAT_APP_SECRET` | 不设 → 隐藏微信登录按钮（需企业 AppID） |
+### 3.7 积分后台
+| 变量 | 必填 | 生产值 | 说明 |
+|------|------|--------|------|
+| `ADMIN_KEY` | ⚠️ | 强随机串（`openssl rand -hex 32`） | 未配 → `/admin` 与 `/api/admin/*` 返回 503；配置后浏览器访问 `/admin` 输入密钥操作（批量生成兑换码/手动加减积分/查流水） |
 
 ### 3.8 Worker 专有（可选）
 | 变量 | 说明 |
 |------|------|
 | `RUN_QUOTA_RESET_ON_STARTUP` | `1` → worker 启动时立即触发一次配额重置（运维用，正常留空） |
 
-> **worker 服务必须配置与 web 相同的** `DATABASE_URL`、`REDIS_URL`、`APP_MODE=production`、`OPENAI_*`、`AVATAR_*`、`OBJECT_STORAGE_*`（成片上传需要）。Sentry/WeChat 可不配。
+> **worker 服务必须配置与 web 相同的** `DATABASE_URL`、`REDIS_URL`、`APP_MODE=production`、`OPENAI_*`、`AVATAR_*`、`OBJECT_STORAGE_*`（成片上传需要）。Sentry 可不配。
 
 ---
 
@@ -184,7 +184,7 @@ Zeabur 新版 UI 无独立 Build Type / Dockerfile Path 字段，worker 用 Sett
 
 | 项 | 现状 | 后续 |
 |----|------|------|
-| **微信 OAuth** | 需企业 AppID；未配则隐藏按钮 | 取得 AppID 后配 `WECHAT_APP_ID/SECRET` |
+| **积分体系** | 核心功能扣积分（写稿 10/渲染 30+250×数字人/预览 250），兑换码充值，余额不足 402 | 配 `ADMIN_KEY` 后在 `/admin` 生成兑换码分发；线下收款用「手动调整」充值 |
 | **HeyGen 数字人** | 需付费 key；production 未配则分身接口 503（不再静默 mock） | web + worker 均配 `AVATAR_PROVIDER=heygen` + `AVATAR_PROVIDER_API_KEY` |
 | **Resend 邮件** | 生产未配 `RESEND_API_KEY` 则 magic-link 无法发送 | 上线前必须配真实 key + 验证发件域名 |
 | **多实例** | 外层 IP 限流 + JWT 黑名单均走 Redis 后端，**多实例安全**；内层 userId 限流亦 Redis 共享 | 可水平扩展 web 实例 |
