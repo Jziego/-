@@ -108,4 +108,42 @@ describe("buildWordCaptionEvents", () => {
     const cues = buildWordCaptionEvents(manifest);
     expect(cues).toEqual([{ startSec: 0, endSec: 1.0, text: "画外音" }]);
   });
+
+  it("words 含坏条目：坏词被丢弃，好词正常展开", () => {
+    const manifest = {
+      version: 1,
+      totalDurationSec: 1.0,
+      segments: [
+        {
+          index: 0, speakerIndex: 0, onCamera: true, text: "你好", durationSec: 1.0,
+          words: [
+            { word: "你", startSec: 0, endSec: 0.3 },
+            { word: "", startSec: 0.3, endSec: 0.5 } as unknown as WordTimestamp, // 空词丢弃
+            { word: "好", startSec: Number.NaN, endSec: 0.8 } as unknown as WordTimestamp, // NaN 丢弃
+            { word: "好", startSec: 0.5, endSec: 0.8 },
+          ],
+        },
+      ],
+    } as unknown as VoiceTrackManifest;
+    const cues = buildWordCaptionEvents(manifest);
+    expect(cues).toHaveLength(2);
+    // 页内连续性：词 i 结束 = 词 i+1 开始——「你」过滤后紧邻「好」(0.5)，故 endSec 取 0.5 而非自身 0.3
+    expect(cues[0]).toMatchObject({ startSec: 0, endSec: 0.5, wordIndex: 0 });
+    expect(cues[1]).toMatchObject({ startSec: 0.5, endSec: 0.8, wordIndex: 1 });
+  });
+
+  it("words 全坏：回退整句", () => {
+    const manifest = {
+      version: 1,
+      totalDurationSec: 1.0,
+      segments: [
+        {
+          index: 0, speakerIndex: 0, onCamera: true, text: "你好", durationSec: 1.0,
+          words: [{ word: undefined, startSec: 0, endSec: 0.5 }],
+        },
+      ],
+    } as unknown as VoiceTrackManifest;
+    const cues = buildWordCaptionEvents(manifest);
+    expect(cues).toEqual([{ startSec: 0, endSec: 1.0, text: "你好" }]);
+  });
 });

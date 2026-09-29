@@ -68,7 +68,10 @@ export function buildWordCaptionEvents(manifest: VoiceTrackManifest): CaptionCue
   const cues: CaptionCue[] = [];
   let segOffset = 0;
   for (const seg of manifest.segments) {
-    const words = seg.words ?? [];
+    // 坏条目（缺字段/NaN 时间戳）直接丢弃；全坏则回退整句——坏 manifest 不应让渲染 job 失败
+    const words = (seg.words ?? []).filter(
+      (w) => typeof w.word === "string" && w.word.length > 0 && Number.isFinite(w.startSec) && Number.isFinite(w.endSec),
+    );
     if (words.length === 0) {
       cues.push({ startSec: segOffset, endSec: segOffset + seg.durationSec, text: seg.text });
     } else {
