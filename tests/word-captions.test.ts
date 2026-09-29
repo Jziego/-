@@ -26,9 +26,9 @@ describe("paginateWords", () => {
   });
 
   it("标点不置行首：超宽标点并入当前行", () => {
-    // 12 字后紧跟句号——句号不应单独开行
+    // 12 字后紧跟逗号——逗号不应单独开行
     const pages = paginateWords(wordsOf("一二三四五六七八九十一二，三四")); // 12 字 + ，+ 2 字
-    expect(pages[0]!.lineBreakAfter).toBe(12); // 句号并入第一行（下标 12），第二行从「三」开始
+    expect(pages[0]!.lineBreakAfter).toBe(12); // 逗号并入第一行（下标 12），第二行从「三」开始
   });
 
   it("空数组返回空页列", () => {
