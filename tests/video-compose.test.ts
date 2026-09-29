@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildTimeline, resolveCompositionMode, buildAss, wrapHighlightsInAss, resolveSubtitlePreset, buildFilterGraph, buildCaptionCues, splitVoiceoverSentences, escapeAssText, stripEmoji } from "@/lib/services/video-compose";
-import type { TimelineSegment } from "@/lib/services/video-compose";
+import type { TimelineSegment, SubtitleStylePreset } from "@/lib/services/video-compose";
 import type { Asset, ScriptScene, VideoOutput } from "@/lib/types";
 
 describe("video-compose buildTimeline", () => {
@@ -258,6 +258,23 @@ describe("resolveSubtitlePreset 新预设", () => {
     const ass = buildAss([{ startSec: 0, endSec: 1, text: "测试" }], "karaoke");
     const styleLine = ass.split("\n").find((l) => l.startsWith("Style: Default,"));
     expect(styleLine).toContain("&H99FFFFFF");
+  });
+});
+
+describe("buildAss MarginV（字幕上移至画面下 1/3 线）", () => {
+  const ALL_PRESETS: SubtitleStylePreset[] = ["default", "bold_bottom", "minimal", "pop", "highlight", "bounce", "karaoke"];
+
+  it.each(ALL_PRESETS)("%s 预设 MarginV=640（PlayResY=1920 的下 1/3 线，避让抖音底部 UI）", (preset) => {
+    const ass = buildAss([{ startSec: 0, endSec: 1, text: "测试" }], preset);
+    const lines = ass.split("\n");
+    const formatLine = lines.find((l) => l.startsWith("Format: Name,")) as string;
+    const styleLine = lines.find((l) => l.startsWith("Style: Default,")) as string;
+    const cols = formatLine.replace("Format: ", "").split(",").map((s) => s.trim());
+    const vals = styleLine.replace("Style: ", "").split(",");
+    // MarginL/MarginR 不动（40），仅 MarginV 从 60/80/100 统一上移至 640
+    expect(vals[cols.indexOf("MarginL")]).toBe("40");
+    expect(vals[cols.indexOf("MarginR")]).toBe("40");
+    expect(vals[cols.indexOf("MarginV")]).toBe("640");
   });
 });
 

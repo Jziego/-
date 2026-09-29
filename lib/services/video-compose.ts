@@ -219,15 +219,22 @@ interface AssStyleSpec {
 
 const CJK_FONT = "Noto Sans CJK SC";
 
+/**
+ * 字幕垂直边距（ASS MarginV，PlayResY=1920）。抖音底部 ~15-20% 区域被
+ * 账号名/标题/按钮占用，字幕块底边锚定到画面下 1/3 线（1920/3=640），
+ * 全预设统一，避免某个样式仍贴底被遮挡。
+ */
+const SUBTITLE_MARGIN_V = 640;
+
 const SUBTITLE_PRESETS: Record<SubtitleStylePreset, AssStyleSpec> = {
-  default: { fontname: CJK_FONT, fontsize: 72, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H00FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 4, alignment: 2, marginV: 80, animation: "none" },
-  bold_bottom: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000F4FF", secondaryColour: "&H0000F4FF", highlightColour: "&H000000FF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "none" },
-  minimal: { fontname: CJK_FONT, fontsize: 56, primaryColour: "&H00EEEEEE", secondaryColour: "&H00EEEEEE", highlightColour: "&H00FFFF", outlineColour: "&H80000000", backColour: "&H00000000", bold: 0, outline: 2, alignment: 2, marginV: 100, animation: "none" },
-  pop: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "pop" },
-  highlight: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "highlight" },
-  bounce: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "bounce" },
+  default: { fontname: CJK_FONT, fontsize: 72, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H00FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 4, alignment: 2, marginV: SUBTITLE_MARGIN_V, animation: "none" },
+  bold_bottom: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000F4FF", secondaryColour: "&H0000F4FF", highlightColour: "&H000000FF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: SUBTITLE_MARGIN_V, animation: "none" },
+  minimal: { fontname: CJK_FONT, fontsize: 56, primaryColour: "&H00EEEEEE", secondaryColour: "&H00EEEEEE", highlightColour: "&H00FFFF", outlineColour: "&H80000000", backColour: "&H00000000", bold: 0, outline: 2, alignment: 2, marginV: SUBTITLE_MARGIN_V, animation: "none" },
+  pop: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: SUBTITLE_MARGIN_V, animation: "pop" },
+  highlight: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: SUBTITLE_MARGIN_V, animation: "highlight" },
+  bounce: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H00FFFFFF", secondaryColour: "&H00FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: SUBTITLE_MARGIN_V, animation: "bounce" },
   // karaoke：PrimaryColour=已读色（黄），SecondaryColour=未读色（半透明白）——\kf 从后者扫向前者。
-  karaoke: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000FFFF", secondaryColour: "&H99FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: 60, animation: "karaoke" }
+  karaoke: { fontname: CJK_FONT, fontsize: 84, primaryColour: "&H0000FFFF", secondaryColour: "&H99FFFFFF", highlightColour: "&H0000FFFF", outlineColour: "&H00000000", backColour: "&H00000000", bold: 1, outline: 6, alignment: 2, marginV: SUBTITLE_MARGIN_V, animation: "karaoke" }
 };
 
 function assTimestamp(sec: number): string {
