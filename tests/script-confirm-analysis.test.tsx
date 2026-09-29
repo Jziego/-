@@ -17,7 +17,7 @@ function makeDraft(overrides: Partial<ScriptDraft> = {}): ScriptDraft {
 }
 
 const baseProps = {
-  avatars: [], bgmTracks: [], librarySelectedAssetIds: [],
+  avatars: [], librarySelectedAssetIds: [],
   onConfirm: async () => {}, pending: false,
 };
 

@@ -34,15 +34,12 @@ const avatars: AvatarProfile[] = [
   makeAvatar("avatar_training", "新形象", "processing"),
 ];
 
-const bgmTracks = [{ id: "bgm_upbeat_01", name: "欢快01", category: "general" }];
-
 function renderConfirm(overrides: Partial<Parameters<typeof ScriptConfirm>[0]> = {}) {
   const onConfirm = vi.fn(async () => {});
   render(
     <ScriptConfirm
       draft={draft}
       avatars={avatars}
-      bgmTracks={bgmTracks}
       librarySelectedAssetIds={["asset_a", "asset_b"]}
       onConfirm={onConfirm}
       pending={false}
@@ -74,7 +71,6 @@ describe("ScriptConfirm", () => {
         selectedAssetIds: ["asset_a", "asset_b"],
         avatarProfileIds: ["avatar_a"],
         subtitleStyle: "pop",
-        bgmTrackId: "bgm_upbeat_01",
       });
     });
   });
@@ -179,14 +175,10 @@ describe("ScriptConfirm", () => {
     });
   });
 
-  it("offers a 无音乐 option that confirms with empty bgmTrackId", async () => {
-    const user = userEvent.setup();
-    const { onConfirm } = renderConfirm();
-    await user.selectOptions(screen.getByLabelText(/背景音乐/), "");
-    await user.click(screen.getByRole("button", { name: /确认生成/ }));
-    await waitFor(() => {
-      expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ bgmTrackId: "" }));
-    });
+  it("不再提供背景音乐选项", () => {
+    renderConfirm();
+    expect(screen.queryByLabelText(/背景音乐/)).not.toBeInTheDocument();
+    expect(screen.queryByText("背景音乐")).not.toBeInTheDocument();
   });
 
   it("disables confirm when the voiceover is empty", async () => {

@@ -86,7 +86,7 @@ describe("AI video assistant dashboard", () => {
     expect(within(stepper).getByText("AI 分身")).toBeInTheDocument();
     expect(within(stepper).getByText("智能成片")).toBeInTheDocument();
     expect(
-      screen.getByText("0 基础也能做。自动写脚本、配音乐、加字幕，你只管传素材，剩下的 AI 全包，让顾客主动找到你。")
+      screen.getByText("0 基础也能做。自动写脚本、加字幕，你只管传素材，剩下的 AI 全包，让顾客主动找到你。")
     ).toBeInTheDocument();
     expect(screen.getByText("上传你的视频、图片或音频，AI 自动看懂内容并分类，找素材时一搜就有")).toBeInTheDocument();
     expect(screen.getByText("我是视频中的本人（或已获其授权），同意用这段视频生成 AI 配音口播视频")).toBeInTheDocument();

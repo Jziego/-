@@ -30,13 +30,11 @@ export interface ScriptConfirmSelection {
   selectedAssetIds: string[];
   avatarProfileIds: string[];
   subtitleStyle: string;
-  bgmTrackId: string;
 }
 
 interface Props {
   draft: ScriptDraft;
   avatars: AvatarProfile[];
-  bgmTracks: { id: string; name: string; category: string }[];
   /** 素材库完整勾选集合（未匹配的素材也必须进入渲染，B2 修复语义不变）。 */
   librarySelectedAssetIds: string[];
   onConfirm: (selection: ScriptConfirmSelection) => Promise<void>;
@@ -64,9 +62,9 @@ function highlightParts(text: string, words: string[]): Array<{ text: string; hi
 
 /**
  * 口播确认卡片（Phase 2 去分镜）：标黄高亮预览 + 整稿编辑 + 形象多选（≤3，Phase 3）+
- * 字幕样式 + BGM（自旧分镜确认卡片挪入）→ 确认生成。
+ * 字幕样式 → 确认生成。
  */
-export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetIds, onConfirm, pending, onChangeAngle, changingAngle }: Props) {
+export function ScriptConfirm({ draft, avatars, librarySelectedAssetIds, onConfirm, pending, onChangeAngle, changingAngle }: Props) {
   const [voiceover, setVoiceover] = useState(draft.voiceover);
   // 形象多选（Phase 3，spec §6.4）：≤3，默认勾选第一个 ready 形象；全不勾 = 纯素材成片。
   const [avatarIds, setAvatarIds] = useState<string[]>(
@@ -76,7 +74,6 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
     },
   );
   const [subtitleStyle, setSubtitleStyle] = useState("pop");
-  const [bgmTrackId, setBgmTrackId] = useState(bgmTracks[0]?.id ?? "");
 
   // 标黄词随编辑实时失效（spec §5.1：文中不存在的词渲染时自动失效）
   const parts = useMemo(
@@ -108,7 +105,6 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
       selectedAssetIds: librarySelectedAssetIds,
       avatarProfileIds: avatarIds,
       subtitleStyle,
-      bgmTrackId,
     });
   }
 
@@ -190,15 +186,6 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
           <select value={subtitleStyle} onChange={(e) => setSubtitleStyle(e.target.value)}>
             {SUBTITLE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          背景音乐
-          <select value={bgmTrackId} onChange={(e) => setBgmTrackId(e.target.value)}>
-            <option value="">无音乐</option>
-            {bgmTracks.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
         </label>

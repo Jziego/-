@@ -282,7 +282,6 @@ export async function createRenderProjectApi(input: {
   avatarProfileIds?: string[];
   aspectRatio?: string;
   subtitleStyle?: string;
-  bgmTrackId?: string;
 }) {
   return api<{ project: unknown; jobs: Job[] }>("/api/render-projects", {
     method: "POST",
@@ -322,18 +321,6 @@ export async function updateScriptDraftApi(input: {
     { method: "PATCH", body: JSON.stringify({ voiceover: input.voiceover }) },
   );
   return data.script;
-}
-
-export interface BgmTrackOption {
-  id: string;
-  name: string;
-  category: string;
-  durationSeconds: number;
-}
-
-export async function fetchBgmTracks(): Promise<BgmTrackOption[]> {
-  const data = await api<{ tracks: BgmTrackOption[] }>("/api/bgm-tracks");
-  return data.tracks;
 }
 
 // ── Points ─────────────────────────────────────────────────────────────────

@@ -18,7 +18,6 @@ import {
   fetchAssets,
   fetchAvatarStatusApi,
   fetchAvatars,
-  fetchBgmTracks,
   fetchJobs,
   fetchRenderOutputs,
   fetchScriptDrafts,
@@ -302,9 +301,6 @@ export function Dashboard() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [clearingJobs, setClearingJobs] = useState(false);
   const [confirmDraft, setConfirmDraft] = useState<ScriptDraft | null>(null);
-  const [bgmTracks, setBgmTracks] = useState<
-    { id: string; name: string; category: string; durationSeconds: number }[]
-  >([]);
   const [targetDuration, setTargetDuration] = useState<number>(45);
   const [generating, setGenerating] = useState(false);
   const [changingAngle, setChangingAngle] = useState(false);
@@ -428,20 +424,6 @@ export function Dashboard() {
     seededSelectionRef.current = true;
     setSelectedAssetIds(new Set(assets.map((a) => a.id)));
   }, [assets]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchBgmTracks()
-      .then((tracks) => {
-        if (!cancelled) setBgmTracks(Array.isArray(tracks) ? tracks : []);
-      })
-      .catch(() => {
-        /* 静默：无曲目也能渲染 */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // 形象选择器数据源：本店形象列表（含本会话新建、尚未回源的；平台公共形象跨店可见）。
   const storeAvatars = useMemo(() => {
@@ -1146,7 +1128,6 @@ export function Dashboard() {
     selectedAssetIds: string[];
     avatarProfileIds: string[];
     subtitleStyle: string;
-    bgmTrackId: string;
   }) {
     if (!confirmDraft) return;
     setPendingAction("render");
@@ -1169,14 +1150,13 @@ export function Dashboard() {
         selectedAssetIds: selection.selectedAssetIds,
         avatarProfileIds: selection.avatarProfileIds.length > 0 ? selection.avatarProfileIds : undefined,
         aspectRatio: "9:16",
-        subtitleStyle: selection.subtitleStyle,
-        bgmTrackId: selection.bgmTrackId || undefined
+        subtitleStyle: selection.subtitleStyle
       });
       setLocalJobs(plannedJobs);
       setConfirmDraft(null);
       await queryClient.invalidateQueries({ queryKey: ["jobs"] });
       notifyPointsChanged();
-      setMessage("AI 正在生成你的视频：自动写文案、剪画面、加字幕、配音乐。");
+      setMessage("AI 正在生成你的视频：自动写文案、剪画面、加字幕。");
     } catch (error) {
       // 失败时确认卡片保留（confirmDraft 不清空），用户改稿后可重试。
       if (error instanceof ApiError && error.status === 402) {
@@ -1219,7 +1199,7 @@ export function Dashboard() {
       <section className="hero">
         <p className="eyebrow">AI 视频工作台</p>
         <h1>不会拍视频？AI 一键帮你生成门店引流片</h1>
-        <p>0 基础也能做。自动写脚本、配音乐、加字幕，你只管传素材，剩下的 AI 全包，让顾客主动找到你。</p>
+        <p>0 基础也能做。自动写脚本、加字幕，你只管传素材，剩下的 AI 全包，让顾客主动找到你。</p>
       </section>
 
       <nav className="stepper" aria-label="全局步骤导航">
@@ -1767,7 +1747,6 @@ export function Dashboard() {
               key={confirmDraft.id}
               draft={confirmDraft}
               avatars={storeAvatars}
-              bgmTracks={bgmTracks}
               librarySelectedAssetIds={selectedAssets.map((a) => a.id)}
               onConfirm={confirmScriptAndRender}
               pending={pendingAction === "render"}
