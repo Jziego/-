@@ -73,7 +73,7 @@ describe("ScriptConfirm", () => {
         voiceover: draft.voiceover,
         selectedAssetIds: ["asset_a", "asset_b"],
         avatarProfileIds: ["avatar_a"],
-        subtitleStyle: "bold_bottom",
+        subtitleStyle: "pop",
         bgmTrackId: "bgm_upbeat_01",
       });
     });

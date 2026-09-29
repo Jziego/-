@@ -8,9 +8,13 @@ import { SPEECH_CHARS_PER_SECOND } from "@/lib/speech-rate";
 import type { AvatarProfile, ScriptDraft } from "@/lib/types";
 
 const SUBTITLE_OPTIONS = [
-  { value: "bold_bottom", label: "综艺黄（粗体底部）" },
-  { value: "default", label: "标准白字" },
-  { value: "minimal", label: "极简小字" },
+  { value: "pop", label: "动感放大（推荐）" },
+  { value: "highlight", label: "逐词变色" },
+  { value: "bounce", label: "弹跳入场" },
+  { value: "karaoke", label: "卡拉OK扫色" },
+  { value: "bold_bottom", label: "综艺黄（粗体底部·静态）" },
+  { value: "default", label: "标准白字（静态）" },
+  { value: "minimal", label: "极简小字（静态）" },
 ];
 
 // 镜像服务端上限（app/api/script-drafts/[id]/route.ts 的 MAX_VOICEOVER_CHARS），
@@ -70,7 +74,7 @@ export function ScriptConfirm({ draft, avatars, bgmTracks, librarySelectedAssetI
       return first ? [first.id] : [];
     },
   );
-  const [subtitleStyle, setSubtitleStyle] = useState("bold_bottom");
+  const [subtitleStyle, setSubtitleStyle] = useState("pop");
   const [bgmTrackId, setBgmTrackId] = useState(bgmTracks[0]?.id ?? "");
 
   // 标黄词随编辑实时失效（spec §5.1：文中不存在的词渲染时自动失效）

@@ -244,6 +244,23 @@ describe("buildAss", () => {
   });
 });
 
+describe("resolveSubtitlePreset 新预设", () => {
+  it.each(["pop", "highlight", "bounce", "karaoke"] as const)("%s 映射到自身", (p) => {
+    expect(resolveSubtitlePreset(p)).toBe(p);
+  });
+
+  it("未知值与 undefined 仍回退 default（旧数据语义不动）", () => {
+    expect(resolveSubtitlePreset("legacy_x")).toBe("default");
+    expect(resolveSubtitlePreset(undefined)).toBe("default");
+  });
+
+  it("karaoke 预设 Style 行 SecondaryColour 为半透明白", () => {
+    const ass = buildAss([{ startSec: 0, endSec: 1, text: "测试" }], "karaoke");
+    const styleLine = ass.split("\n").find((l) => l.startsWith("Style: Default,"));
+    expect(styleLine).toContain("&H99FFFFFF");
+  });
+});
+
 describe("buildFilterGraph", () => {
   const segs: TimelineSegment[] = [
     { role: "presenter", startSec: 0, endSec: 4, durationSec: 4, sceneOrder: 1, text: "a", assetId: null },

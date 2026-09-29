@@ -106,7 +106,7 @@ export async function POST(request: Request) {
     selectedAssetIds: (body.selectedAssetIds as string[]) ?? [],
     avatarProfiles,
     aspectRatio: (body.aspectRatio as AspectRatio) ?? "9:16",
-    subtitleStyle: ((body.subtitleStyle as RenderProject["subtitleStyle"]) ?? "bold_bottom"),
+    subtitleStyle: ((body.subtitleStyle as RenderProject["subtitleStyle"]) ?? "pop"),
     bgmTrackId: body.bgmTrackId as string | undefined
   });
 

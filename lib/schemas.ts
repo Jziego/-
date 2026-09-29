@@ -165,7 +165,7 @@ export const renderProjectSchema = z.object({
   avatarProfileIds: z.array(z.string()).optional(),
   purpose: marketingPurposeSchema,
   aspectRatio: z.enum(["9:16", "1:1", "16:9"]),
-  subtitleStyle: z.enum(["default", "bold_bottom", "minimal"]),
+  subtitleStyle: z.enum(["default", "bold_bottom", "minimal", "pop", "highlight", "bounce", "karaoke"]),
   bgmTrackId: z.string().optional(),
   status: z.enum(["draft", "queued", "processing", "ready", "failed"]),
   createdAt: isoDateString,

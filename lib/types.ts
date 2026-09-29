@@ -196,7 +196,7 @@ export interface RenderProject {
   avatarProfileIds?: string[];
   purpose: MarketingPurpose;
   aspectRatio: AspectRatio;
-  subtitleStyle: "default" | "bold_bottom" | "minimal";
+  subtitleStyle: "default" | "bold_bottom" | "minimal" | "pop" | "highlight" | "bounce" | "karaoke";
   bgmTrackId?: string;
   /** 继承自 ScriptDraft：目标成片时长（秒）。 */
   targetDurationSec?: number;
