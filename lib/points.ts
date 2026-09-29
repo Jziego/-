@@ -1,8 +1,9 @@
 import { randomInt } from "node:crypto";
 import { Prisma, type PointsLedger } from "@prisma/client";
-import { hasDatabase } from "@/lib/env";
+import { hasDatabase, getAppMode } from "@/lib/env";
 import { createId } from "@/lib/ids";
 import { getPrisma } from "@/lib/prisma";
+import { demoOwnerId } from "@/lib/runtime-store";
 
 export class PointsExhaustedError extends Error {
   constructor() {
@@ -39,11 +40,13 @@ export class PointsUnavailableError extends Error {
   }
 }
 
-/** 查询积分余额；无数据库（本地 dev）返回 null，前端显示「—」。 */
+/** 查询积分余额；无数据库（本地 dev）或 demo 用户返回 null，前端显示「—」。 */
 export async function getPointsBalance(userId: string): Promise<number | null> {
   if (!hasDatabase()) return null;
-  const user = await getPrisma()!.user.findUniqueOrThrow({ where: { id: userId } });
-  return user.pointsBalance;
+  // 演示用户豁免 —— 与 lib/quota.ts 同口径：demo/dev 不拦功能、不写流水
+  if (userId === demoOwnerId && getAppMode() === "demo") return null;
+  const user = await getPrisma()!.user.findUnique({ where: { id: userId } });
+  return user?.pointsBalance ?? null;
 }
 
 /**
@@ -57,6 +60,8 @@ export async function consumePoints(
   reason: string,
 ): Promise<{ balance: number }> {
   if (!hasDatabase()) return { balance: 0 };
+  // 演示用户豁免 —— 与 lib/quota.ts 同口径：demo/dev 不拦功能、不写流水
+  if (userId === demoOwnerId && getAppMode() === "demo") return { balance: 0 };
   if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error("consumePoints amount must be a positive integer");
   }
@@ -67,17 +72,18 @@ export async function consumePoints(
       data: { pointsBalance: { decrement: amount } },
     });
     if (result.count === 0) throw new PointsExhaustedError();
-    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    // updateMany 守卫（count=1）已保证行存在，同事务内 findUnique 必命中
+    const user = await tx.user.findUnique({ where: { id: userId } });
     await tx.pointsLedger.create({
       data: {
         id: createId("pl"),
         ownerId: userId,
         delta: -amount,
         reason,
-        balanceAfter: user.pointsBalance,
+        balanceAfter: user!.pointsBalance,
       },
     });
-    return { balance: user.pointsBalance };
+    return { balance: user!.pointsBalance };
   });
 }
 

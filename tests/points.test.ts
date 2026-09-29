@@ -22,8 +22,12 @@ function makeFakePrisma(initialBalance: number) {
         state.balance += data.pointsBalance.increment;
         return Promise.resolve({ id: "u1", pointsBalance: state.balance });
       }),
-      findUnique: (_args: { where: { email: string } }) =>
-        Promise.resolve<{ id: string; email: string; pointsBalance: number } | null>(null),
+      // 默认按 id 查询返回当前余额（consumePoints / getPointsBalance 读此桩）；
+      // 声明参数保留 { where: { email } } 形状以兼容按邮箱覆盖的既有用例（Mock 类型参数需同形）
+      findUnique: vi.fn((_args: { where: { email: string } }) =>
+        Promise.resolve<{ id: string; pointsBalance: number } | null>({ id: "u1", pointsBalance: state.balance }),
+      ),
+      // adminAdjustPoints（本次修复范围外）仍读 findUniqueOrThrow，保留同名桩
       findUniqueOrThrow: vi.fn(() => Promise.resolve({ id: "u1", pointsBalance: state.balance })),
     },
     rechargeCode: {
@@ -101,6 +105,29 @@ describe("points service", () => {
     vi.stubEnv("DATABASE_URL", "");
     const { consumePoints } = await importPoints();
     await expect(consumePoints("u1", 10, "生成口播稿")).resolves.toEqual({ balance: 0 });
+  });
+
+  it("consumePoints：demo 用户豁免——不查库、不写流水", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://fake");
+    vi.stubEnv("APP_MODE", "demo");
+    const { prisma, created } = makeFakePrisma(0);
+    vi.doMock("@/lib/prisma", () => ({ getPrisma: () => prisma }));
+    const { demoOwnerId } = await import("@/lib/runtime-store");
+    const { consumePoints } = await importPoints();
+
+    await expect(consumePoints(demoOwnerId, 10, "生成口播稿")).resolves.toEqual({ balance: 0 });
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+    expect(created).toHaveLength(0);
+  });
+
+  it("getPointsBalance：用户行不存在返回 null（demo+PG 未建行前不 500）", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://fake");
+    const { prisma } = makeFakePrisma(0);
+    prisma.user.findUnique = vi.fn(() => Promise.resolve(null));
+    vi.doMock("@/lib/prisma", () => ({ getPrisma: () => prisma }));
+    const { getPointsBalance } = await importPoints();
+
+    await expect(getPointsBalance("ghost-user")).resolves.toBeNull();
   });
 
   it("redeemPointsCode：未使用码 → 加余额、标记已兑换、写正数流水", async () => {

@@ -3,7 +3,7 @@ import { applyRateLimit } from "@/lib/rate-limit";
 import { hasRedis } from "@/lib/env";
 import { PointsExhaustedError, consumePoints } from "@/lib/points";
 import { renderPointsCost } from "@/lib/points-pricing";
-import { createBullQueue, createFlowProducer, toFlowJobs, toQueuePayload } from "@/lib/queue";
+import { createFlowProducer, toFlowJobs } from "@/lib/queue";
 import {
   getAvatarRepository,
   getJobRepository,
