@@ -22,6 +22,15 @@ export function jsonQuotaError(plan: string): Response {
   );
 }
 
+// ── Points exhausted (402) ─────────────────────────────────────────────────
+
+export function jsonPointsError(): Response {
+  return Response.json(
+    { error: "points_exhausted", message: "积分已用完，请联系客服充值" },
+    { status: 402 },
+  );
+}
+
 // ── Rate limited (429) ─────────────────────────────────────────────────────
 
 export function jsonRateLimited(result: RateLimitResult): Response {

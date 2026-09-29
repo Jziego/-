@@ -1,7 +1,9 @@
-import { jsonError, jsonOk } from "@/lib/api-response";
+import { jsonError, jsonOk, jsonPointsError } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { getAssetAnalysisRepository, getAvatarRepository, getScriptRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
+import { PointsExhaustedError, consumePoints } from "@/lib/points";
+import { SCRIPT_DRAFT_POINTS } from "@/lib/points-pricing";
 import { createScriptDraft, createTemplateScriptDraft } from "@/lib/services/script-engine";
 import { COPY_ANGLES, type CopyAngle } from "@/lib/copywriting-rules";
 import type { MarketingPurpose, Platform } from "@/lib/types";
@@ -55,6 +57,14 @@ export async function POST(request: Request) {
     id: a.id,
     name: a.name || `形象${index + 1}`,
   }));
+
+  // 核心功能前置扣费：校验全过后、生成前扣 10 积分；余额不足 402（事务内防负）。
+  try {
+    await consumePoints(ownerId, SCRIPT_DRAFT_POINTS, "生成口播稿");
+  } catch (error) {
+    if (error instanceof PointsExhaustedError) return jsonPointsError();
+    throw error;
+  }
 
   const script = body.forceTemplate
     ? createTemplateScriptDraft({

@@ -1,7 +1,8 @@
-import { jsonError, jsonOk, jsonQuotaError } from "@/lib/api-response";
+import { jsonError, jsonOk, jsonPointsError } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { hasRedis } from "@/lib/env";
-import { consumeQuota, QuotaExhaustedError } from "@/lib/quota";
+import { PointsExhaustedError, consumePoints } from "@/lib/points";
+import { AVATAR_APPEARANCE_POINTS } from "@/lib/points-pricing";
 import { createBullQueue, toQueuePayload } from "@/lib/queue";
 import { getAvatarRepository, getJobRepository, getScriptRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
@@ -57,13 +58,11 @@ export async function POST(request: Request) {
     return jsonError("Script draft not found", 404);
   }
 
-  // Quota: talking-head consumes HeyGen credits — preview is charged (Q2).
+  // Points: talking-head consumes Volcengine lip-sync quota — preview is charged (Q2).
   try {
-    await consumeQuota(ownerId);
+    await consumePoints(ownerId, AVATAR_APPEARANCE_POINTS, "数字人出镜");
   } catch (error) {
-    if (error instanceof QuotaExhaustedError) {
-      return jsonQuotaError(error.plan);
-    }
+    if (error instanceof PointsExhaustedError) return jsonPointsError();
     throw error;
   }
 
