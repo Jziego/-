@@ -29,8 +29,11 @@ import {
   suggestFieldCandidatesApi,
   suggestStoreProfileApi,
   updateScriptDraftApi,
-  uploadFileToStorage
+  uploadFileToStorage,
+  POINTS_EXHAUSTED_MESSAGE,
+  notifyPointsChanged
 } from "@/lib/api-client";
+import { ApiError } from "@/lib/api-client";
 import { ScriptConfirm } from "@/components/script-confirm";
 import { StoreFieldCandidates } from "@/components/store-field-candidates";
 import { VideoOutputCard } from "@/components/video-output-card";
@@ -1094,10 +1097,15 @@ export function Dashboard() {
       setConfirmDraft(draft);
       setLocalScript(draft);
       await queryClient.invalidateQueries({ queryKey: ["script-drafts"] });
+      notifyPointsChanged();
       setMessage("脚本已生成：确认口播稿与出镜形象后，点「确认生成」出片。");
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "请稍后重试";
-      setMessage(`脚本生成失败：${detail}`);
+      if (error instanceof ApiError && error.status === 402) {
+        setMessage(POINTS_EXHAUSTED_MESSAGE);
+      } else {
+        const detail = error instanceof Error ? error.message : "请稍后重试";
+        setMessage(`脚本生成失败：${detail}`);
+      }
     } finally {
       setGenerating(false);
     }
@@ -1119,10 +1127,15 @@ export function Dashboard() {
       setConfirmDraft(draft);
       setLocalScript(draft);
       await queryClient.invalidateQueries({ queryKey: ["script-drafts"] });
+      notifyPointsChanged();
       setMessage(`已换「${draft.angle ?? "新角度"}」重新生成，看看这版。`);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "请稍后重试";
-      setMessage(`换方向生成失败：${detail}`);
+      if (error instanceof ApiError && error.status === 402) {
+        setMessage(POINTS_EXHAUSTED_MESSAGE);
+      } else {
+        const detail = error instanceof Error ? error.message : "请稍后重试";
+        setMessage(`换方向生成失败：${detail}`);
+      }
     } finally {
       setChangingAngle(false);
     }
@@ -1162,11 +1175,16 @@ export function Dashboard() {
       setLocalJobs(plannedJobs);
       setConfirmDraft(null);
       await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      notifyPointsChanged();
       setMessage("AI 正在生成你的视频：自动写文案、剪画面、加字幕、配音乐。");
     } catch (error) {
       // 失败时确认卡片保留（confirmDraft 不清空），用户改稿后可重试。
-      const detail = error instanceof Error ? error.message : "请稍后重试";
-      setMessage(`确认生成失败：${detail}`);
+      if (error instanceof ApiError && error.status === 402) {
+        setMessage(POINTS_EXHAUSTED_MESSAGE);
+      } else {
+        const detail = error instanceof Error ? error.message : "请稍后重试";
+        setMessage(`确认生成失败：${detail}`);
+      }
     } finally {
       setPendingAction(null);
     }

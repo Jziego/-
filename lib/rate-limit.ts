@@ -314,7 +314,7 @@ export async function applyRateLimit(
   if (!rl.allowed) {
     const retryAfter = Math.max(0, rl.reset - Math.floor(Date.now() / 1000));
     return Response.json(
-      { error: "rate_limited", retryAfter },
+      { error: "rate_limited", retryAfter, message: "请求过于频繁，请稍后再试" },
       {
         status: 429,
         headers: {

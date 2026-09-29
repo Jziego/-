@@ -32,7 +32,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const json = await res.json();
   if (!res.ok) {
-    throw new ApiError(json.error ?? "Request failed", res.status);
+    throw new ApiError(json.message ?? json.error ?? "Request failed", res.status);
   }
   return json as T;
 }
@@ -334,4 +334,29 @@ export interface BgmTrackOption {
 export async function fetchBgmTracks(): Promise<BgmTrackOption[]> {
   const data = await api<{ tracks: BgmTrackOption[] }>("/api/bgm-tracks");
   return data.tracks;
+}
+
+// ── Points ─────────────────────────────────────────────────────────────────
+
+export const POINTS_EXHAUSTED_MESSAGE = "积分已用完，请联系客服充值";
+
+export async function fetchPoints(): Promise<number | null> {
+  const data = await api<{ balance: number | null }>("/api/points");
+  return data.balance;
+}
+
+export async function redeemPointsApi(
+  code: string,
+): Promise<{ points: number; balance: number }> {
+  return api<{ points: number; balance: number }>("/api/points/redeem", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+/** 扣费动作成功后通知 Header 刷新余额（window 事件桥，避免跨组件传参）。 */
+export function notifyPointsChanged(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("ava:points-changed"));
+  }
 }

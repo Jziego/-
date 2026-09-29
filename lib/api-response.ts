@@ -44,7 +44,7 @@ export function jsonRateLimited(result: RateLimitResult): Response {
     "Retry-After": String(retryAfter),
   };
   return Response.json(
-    { error: "rate_limited", retryAfter },
+    { error: "rate_limited", retryAfter, message: "请求过于频繁，请稍后再试" },
     { status: 429, headers },
   );
 }

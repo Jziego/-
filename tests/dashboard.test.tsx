@@ -2569,4 +2569,99 @@ describe("AI video assistant dashboard", () => {
     expect(screen.getByLabelText("口播稿编辑")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /确认生成/ })).toBeEnabled();
   });
+
+  it("confirm card: maps a 402 points_exhausted response to the recharge notice and keeps the draft", async () => {
+    const user = userEvent.setup();
+    const savedStore = {
+      id: "store_402",
+      ownerId: "demo_user",
+      name: "积分耗尽店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const savedAssets = [
+      { id: "asset_p1", ownerId: "demo_user", storeId: "store_402", type: "video", originalFilename: "p1.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+    const savedAnalyses = [
+      { id: "analysis_p1", assetId: "asset_p1", visualTags: ["food"], businessTags: ["招牌菜"], keywords: [], confidence: 0.9, recommendedUses: [], analysisStatus: "succeeded", createdAt: "2026-01-01T00:00:00.000Z" }
+    ];
+    const scriptPayload = {
+      id: "script_402",
+      ownerId: "demo_user",
+      storeId: "store_402",
+      purpose: "store_traffic",
+      platform: "douyin",
+      title: "引流",
+      hook: "来店",
+      scenes: [],
+      voiceover: "原口播稿。",
+      highlights: ["口播"],
+      segments: [{ index: 0, text: "原口播稿。", speakerIndex: 0, onCamera: true }],
+      captions: [],
+      cta: "到店",
+      generationMode: "ai",
+      complianceWarnings: [],
+      createdAt: "2026-01-02T00:00:00.000Z"
+    };
+    const fetchedBodies: Record<string, unknown> = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method !== "GET") {
+          fetchedBodies[`${method} ${url}`] = init?.body ? JSON.parse(init.body as string) : {};
+        }
+        // 积分耗尽：PATCH（或 render-projects）→ 402 points_exhausted
+        if (url === `/api/script-drafts/${scriptPayload.id}` && method === "PATCH") {
+          return {
+            ok: false,
+            status: 402,
+            json: async () => ({ error: "points_exhausted", message: "积分已用完，请联系客服充值" })
+          };
+        }
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/script-drafts" && method === "POST") return { script: scriptPayload };
+            if (url === "/api/render-projects" && method === "POST") {
+              return { project: { id: "proj_402" }, jobs: [] };
+            }
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: savedAssets };
+            if (url === "/api/asset-analyses") return { analyses: savedAnalyses };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+
+    await screen.findByText("已选 1 / 共 1");
+    await user.click(screen.getByRole("button", { name: "生成脚本" }));
+
+    const editor = await screen.findByLabelText("口播稿编辑");
+    await user.clear(editor);
+    await user.type(editor, "改后的口播稿。");
+    await user.click(screen.getByRole("button", { name: /确认生成/ }));
+
+    // 402 优先映射为充值提示（而非「确认生成失败：…」house style 前缀）
+    const toast = screen.getByRole("status");
+    expect(await within(toast).findByText("积分已用完，请联系客服充值")).toBeInTheDocument();
+    expect(toast).not.toHaveTextContent("确认生成失败");
+    // 确认卡片保留、可改稿重试；渲染项目未创建
+    expect(screen.getByLabelText("口播稿编辑")).toBeInTheDocument();
+    expect(fetchedBodies["POST /api/render-projects"]).toBeUndefined();
+  });
 });

@@ -1241,6 +1241,67 @@ strong {
   color: var(--muted);
 }
 
+.appHeader__pointsWrap {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.appHeader__points {
+  color: var(--title);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.appHeader__redeem {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 34px;
+  padding: 0 14px;
+  width: auto;
+}
+
+.appHeader__redeem:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--title);
+}
+
+/* 兑换弹层：fixed 卡片（项目内无现成 dialog 模式，仿账户区暗色风格） */
+.redeemDialog {
+  background: #17171a;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  gap: 12px;
+  left: 50%;
+  padding: 20px;
+  position: fixed;
+  top: 72px;
+  transform: translateX(-50%);
+  width: min(360px, calc(100vw - 32px));
+  z-index: 100;
+}
+
+.redeemDialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.redeemDialog p[role="status"] {
+  color: var(--title);
+  margin: 0;
+}
+
 @media (max-width: 520px) {
   .appHeader {
     padding: 12px 16px;

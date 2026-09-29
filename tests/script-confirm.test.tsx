@@ -123,6 +123,20 @@ describe("ScriptConfirm", () => {
     expect(screen.queryByText(/预计数字人成本/)).not.toBeInTheDocument();
   });
 
+  it("shows the points cost notice matching server billing (30 + 250 × avatar count)", async () => {
+    const user = userEvent.setup();
+    renderConfirm();
+    // 默认勾选 1 个 ready 形象 → 30 + 250 × 1 = 280
+    expect(screen.getByLabelText("消耗积分")).toHaveTextContent(
+      "本次生成将消耗 280 积分（10 积分 = 1 元）",
+    );
+    // 取消全部勾选 → 纯素材成片基础价 30
+    await user.click(screen.getByLabelText(/店长形象/));
+    expect(screen.getByLabelText("消耗积分")).toHaveTextContent(
+      "本次生成将消耗 30 积分（10 积分 = 1 元）",
+    );
+  });
+
   it("re-estimates the cost from the live edited voiceover, not the stale draft segments", async () => {
     const user = userEvent.setup();
     renderConfirm();
