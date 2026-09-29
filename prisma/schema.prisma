@@ -13,6 +13,7 @@ model User {
   image          String?
   plan           String          @default("free")
   quotaRemaining Int             @default(10)
+  pointsBalance  Int             @default(0)
   lastQuotaReset DateTime?
   createdAt      DateTime        @default(now())
   stores         StoreProfile[]
@@ -22,6 +23,7 @@ model User {
   renderProjects RenderProject[]
   jobs           Job[]
   accounts       Account[]
+  pointsLedgers  PointsLedger[]
 }
 
 model Account {
@@ -239,4 +241,28 @@ model BgmTrack {
   durationSeconds Float
   category        String   @default("general")
   createdAt       DateTime @default(now())
+}
+
+model PointsLedger {
+  id           String   @id
+  ownerId      String
+  delta        Int
+  reason       String
+  balanceAfter Int
+  createdAt    DateTime @default(now())
+  owner        User     @relation(fields: [ownerId], references: [id])
+
+  @@index([ownerId, createdAt])
+}
+
+model RechargeCode {
+  id           String    @id
+  code         String    @unique
+  points       Int
+  status       String    @default("unused")
+  redeemedById String?
+  redeemedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([status])
 }
