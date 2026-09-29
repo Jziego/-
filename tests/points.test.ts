@@ -47,6 +47,7 @@ function makeFakePrisma(initialBalance: number) {
         created.push({ table: "pointsLedger", data });
         return Promise.resolve(data);
       }),
+      findMany: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
     },
   };
   const prisma = {
@@ -184,5 +185,29 @@ describe("points service", () => {
 
     await expect(adminAdjustPoints("a@b.com", -50, "测试")).rejects.toBeInstanceOf(AdminAdjustError);
     await expect(adminAdjustPoints("ghost@x.com", 10, "")).rejects.toBeInstanceOf(UserNotFoundError);
+  });
+
+  it("getAdminLedgerByEmail：返回倒序流水；邮箱不存在抛 UserNotFoundError", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://fake");
+    const { prisma } = makeFakePrisma(0);
+    const entries = [{ id: "pl1" }];
+    prisma.user.findUnique = vi.fn(({ where }: { where: { email: string } }) =>
+      Promise.resolve(
+        where.email === "a@b.com"
+          ? { id: "u1", email: "a@b.com", pointsBalance: 0 }
+          : null,
+      ),
+    );
+    prisma.pointsLedger.findMany = vi.fn(() => Promise.resolve(entries));
+    vi.doMock("@/lib/prisma", () => ({ getPrisma: () => prisma }));
+    const { getAdminLedgerByEmail, UserNotFoundError } = await importPoints();
+
+    const ok = await getAdminLedgerByEmail("A@B.com", 50);
+    expect(ok.entries).toBe(entries);
+    expect(prisma.pointsLedger.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { ownerId: "u1" }, orderBy: { createdAt: "desc" }, take: 50 }),
+    );
+
+    await expect(getAdminLedgerByEmail("ghost@x.com", 50)).rejects.toBeInstanceOf(UserNotFoundError);
   });
 });

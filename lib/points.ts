@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, type PointsLedger } from "@prisma/client";
 import { hasDatabase } from "@/lib/env";
 import { createId } from "@/lib/ids";
 import { getPrisma } from "@/lib/prisma";
@@ -217,4 +217,24 @@ function isUniqueViolation(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
   );
+}
+
+/**
+ * 后台按邮箱查流水。无库抛 PointsUnavailableError；邮箱未注册抛 UserNotFoundError。
+ */
+export async function getAdminLedgerByEmail(
+  email: string,
+  limit: number,
+): Promise<{ email: string; entries: PointsLedger[] }> {
+  if (!hasDatabase()) throw new PointsUnavailableError();
+  const normalized = email.trim().toLowerCase();
+  const prisma = getPrisma()!;
+  const user = await prisma.user.findUnique({ where: { email: normalized } });
+  if (!user) throw new UserNotFoundError();
+  const entries = await prisma.pointsLedger.findMany({
+    where: { ownerId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+  return { email: normalized, entries };
 }

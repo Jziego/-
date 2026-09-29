@@ -190,3 +190,10 @@ export function getWorkerConcurrency(jobType: string): number {
   if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
   return jobType === "video_render" || jobType === "subtitle_generation" ? 1 : 2;
 }
+
+// ── Admin ─────────────────────────────────────────────────────────────────
+
+/** 后台管理密钥（/admin 与 /api/admin/* 的 x-admin-key 头比对）。只存在于环境变量。 */
+export function getAdminKey(): string | undefined {
+  return process.env.ADMIN_KEY?.trim() || undefined;
+}
