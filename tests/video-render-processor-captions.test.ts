@@ -198,4 +198,92 @@ describe("video_render processor: target duration + voiceover captions", () => {
     expect(broll.reduce((acc, s) => acc + s.durationSec, 0)).toBeCloseTo(10, 5);
     expect(captured.input?.totalDurationSec).toBeCloseTo(14, 5);
   });
+
+  it("manifest 带 words 时产出逐词字幕事件（每词一条 Dialogue，pop 动效生效）", async () => {
+    const segmentedVoice: VideoOutput = {
+      ...talkingHead,
+      kind: "segmented_voice",
+      storageKey: "voice-tracks/render_1/manifest.json",
+    };
+    // 单段画外音：词级时间轴 2 词（页内时间连续），段长 4s
+    const segManifest: VoiceTrackManifest = {
+      version: 1,
+      totalDurationSec: 4,
+      segments: [
+        {
+          index: 0, speakerIndex: 0, onCamera: false, text: "大家",
+          audioStorageKey: "voices/s0.mp3", durationSec: 4,
+          words: [
+            { word: "大", startSec: 0, endSec: 0.2 },
+            { word: "家", startSec: 0.2, endSec: 0.4 },
+          ],
+        },
+      ],
+    };
+
+    const captured: { input?: RenderCompositeInput } = {};
+    const segProject: RenderProject = { ...project, subtitleStyle: "pop", targetDurationSec: undefined };
+    const deps = makeDeps(captured, segmentedVoice);
+    deps.renderRepository = {
+      findProjectById: async () => segProject,
+      findTalkingHeadOutputByProject: async () => segmentedVoice,
+      createOutput: async (o: VideoOutput) => o,
+    } as unknown as VideoRenderDeps["renderRepository"];
+    deps.loadVoiceTrack = async () => segManifest;
+
+    await processVideoRender(fakeJob, deps);
+
+    const ass = captured.input?.assContent ?? "";
+    const dialogues = ass.split("\n").filter((l) => l.startsWith("Dialogue:"));
+    // 改造前每段一条整句 Dialogue（仅 1 条）；接入逐词事件后每词一条（2 条）
+    expect(dialogues).toHaveLength(2);
+    // 页内连续：当前词结束 = 下一词开始；末词延伸到词自身 endSec
+    expect(dialogues[0]).toContain("0:00:00.00,0:00:00.20");
+    expect(dialogues[0]).toContain("大");
+    expect(dialogues[1]).toContain("0:00:00.20,0:00:00.40");
+    expect(dialogues[1]).toContain("家");
+    // pop 预设：当前词缩放动效 tag 生效（逐词事件的标志性特征）
+    expect(dialogues[0]).toContain("\\fscx115");
+    expect(dialogues[1]).toContain("\\fscx115");
+  });
+
+  it("manifest 无 words 时回退整句（每段一条 Dialogue，与改造前一致）", async () => {
+    const segmentedVoice: VideoOutput = {
+      ...talkingHead,
+      kind: "segmented_voice",
+      storageKey: "voice-tracks/render_1/manifest.json",
+    };
+    // 与既有 segmented_voice 用例同款 manifest：段不带 words
+    const segManifest: VoiceTrackManifest = {
+      version: 1,
+      totalDurationSec: 14,
+      segments: [
+        { index: 0, speakerIndex: 0, onCamera: true, text: "开场白。", videoStorageKey: "avatars/s0.mp4", durationSec: 4 },
+        { index: 1, speakerIndex: 0, onCamera: false, text: "介绍产品。", audioStorageKey: "voices/s1.mp3", durationSec: 10 },
+      ],
+    };
+
+    const captured: { input?: RenderCompositeInput } = {};
+    // pop 预设下断言「无动效 tag」才有意义（default 预设本就不产生 fscx）
+    const segProject: RenderProject = { ...project, subtitleStyle: "pop", targetDurationSec: undefined };
+    const deps = makeDeps(captured, segmentedVoice);
+    deps.renderRepository = {
+      findProjectById: async () => segProject,
+      findTalkingHeadOutputByProject: async () => segmentedVoice,
+      createOutput: async (o: VideoOutput) => o,
+    } as unknown as VideoRenderDeps["renderRepository"];
+    deps.loadVoiceTrack = async () => segManifest;
+
+    await processVideoRender(fakeJob, deps);
+
+    const ass = captured.input?.assContent ?? "";
+    const dialogues = ass.split("\n").filter((l) => l.startsWith("Dialogue:"));
+    expect(dialogues).toHaveLength(2);
+    expect(dialogues[0]).toContain("0:00:00.00,0:00:04.00");
+    expect(dialogues[0]).toContain("开场白。");
+    expect(dialogues[1]).toContain("0:00:04.00,0:00:14.00");
+    expect(dialogues[1]).toContain("介绍产品。");
+    // 回退整句 cue 无词级事件：整份 ASS 不含任何缩放动效 tag
+    expect(ass).not.toContain("\\fscx");
+  });
 });

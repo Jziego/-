@@ -25,11 +25,11 @@ import {
   type TimelineSegment
 } from "@/lib/services/video-compose";
 import {
-  buildSegmentedCaptionCues,
   buildSegmentedFilterGraph,
   buildSegmentedTimeline,
   type SegmentedTimelineSegment
 } from "@/lib/services/segmented-compose";
+import { buildWordCaptionEvents } from "@/lib/services/word-captions";
 import { parseVoiceTrackManifest, type VoiceTrackManifest } from "@/lib/services/voice-track";
 import { probeFileDuration, runFfmpeg, type FfmpegInput } from "@/lib/services/ffmpeg-runner";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -195,9 +195,9 @@ export async function processVideoRender(job: Job, deps: VideoRenderDeps): Promi
 
   // Subtitles follow the voiceover (Bug 3 fix): presenter mode burns the spoken
   // script; asset_only has no voice track, hence no subtitles at all.
-  // 分段模式：每段一条 cue，边界 = 段真实时长（TTS 词级时间轴天然精准）。
+  // 分段模式：有 words 段展开为逐词事件（动效生效），无 words 段回退整句 cue。
   const captionCues = voiceTrack
-    ? buildSegmentedCaptionCues(voiceTrack)
+    ? buildWordCaptionEvents(voiceTrack)
     : mode === "presenter_broll"
       ? buildCaptionCues(draft.voiceover, totalDurationSec)
       : [];
