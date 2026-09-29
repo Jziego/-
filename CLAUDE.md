@@ -52,7 +52,7 @@ with optional AI avatar (HeyGen) voiceover.
 These MUST be checked in every PR review:
 
 ### 1. Authentication & Authorization
-- **Current state:** Auth is LIVE (Phase 5 + 5b). NextAuth v5 (`auth.ts`) with JWT sessions, PrismaAdapter, and providers: Email (magic-link via Resend, dev fallback logs the URL) + WeChat (registered when `hasWechatProvider()`). Custom pages: `/login`, `/login/verify`.
+- **Current state:** Auth is LIVE (Phase 5 + 5b). NextAuth v5 (`auth.ts`) with JWT sessions, PrismaAdapter, and providers: Email only (magic-link via Resend, dev fallback logs the URL; WeChat removed 2026-09-29). Custom pages: `/login`, `/login/verify`.
 - **Dual mode via `APP_MODE` env (default `demo`):**
   - `demo` — middleware allows all traffic; `getOwnerId()` falls back to `demoOwnerId` when there is no session. For local dev / preview.
   - `production` — middleware guards every non-public path: API → 401 JSON, pages → redirect to `/login`. Also runs Redis IP rate-limiting and JWT session-blacklist checks.
