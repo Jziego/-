@@ -1,19 +1,12 @@
 import NextAuth from "next-auth";
 import EmailProvider from "next-auth/providers/email";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { Resend } from "resend";
 import type { AdapterUser } from "@auth/core/adapters";
 import { getPrisma } from "@/lib/prisma";
 import { getResendApiKey, getEmailFrom, hasWechatProvider, getWechatAppId, getWechatAppSecret } from "@/lib/env";
 import { WeChatProvider } from "@/lib/auth/wechat-provider";
 import { generateOtpCode } from "@/lib/auth/otp";
-import { renderOtpEmail } from "@/lib/auth/otp-email";
-
-let _resend: Resend | null = null;
-function getResend(): Resend {
-  if (!_resend) _resend = new Resend(getResendApiKey());
-  return _resend;
-}
+import { sendOtpViaResend } from "@/lib/auth/resend-send";
 
 /**
  * JWT session lifetime. NextAuth v5 defaults maxAge to 30 days; we pin it
@@ -46,12 +39,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           console.log(`[auth] otp dev fallback (no RESEND_API_KEY): ${email} → ${token} | url: ${url}`);
           return;
         }
-        await getResend().emails.send({
-          from: getEmailFrom(),
-          to: email,
-          subject: `登录验证码：${token}`,
-          html: renderOtpEmail(token, url),
-        });
+        await sendOtpViaResend(email, token, url);
       },
     }),
     // Conditionally register WeChat provider
