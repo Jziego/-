@@ -169,6 +169,27 @@ describe("core SaaS schemas", () => {
     expect(project.aspectRatio).toBe("9:16");
   });
 
+  it.each(["pop", "highlight", "bounce", "karaoke"])(
+    "renderProjectSchema accepts animated subtitle style %s",
+    (subtitleStyle) => {
+      const project = renderProjectSchema.parse({
+        id: "render_1",
+        ownerId: "user_1",
+        storeId: "store_1",
+        scriptDraftId: "script_1",
+        selectedAssetIds: ["asset_1"],
+        purpose: "new_product",
+        aspectRatio: "9:16",
+        subtitleStyle,
+        status: "queued",
+        createdAt: "2026-06-03T10:00:00.000Z",
+        updatedAt: "2026-06-03T10:00:00.000Z"
+      });
+
+      expect(project.subtitleStyle).toBe(subtitleStyle);
+    }
+  );
+
   it("confirmAssetUploadSchema accepts category=lipsync_footage", () => {
     const parsed = confirmAssetUploadSchema.safeParse({
       assetId: "asset_1",

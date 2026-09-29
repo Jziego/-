@@ -153,6 +153,31 @@ describe("POST /api/render-projects", () => {
     expect(saved).not.toBeNull();
   });
 
+  it("defaults subtitleStyle to pop when omitted in the request body", async () => {
+    const store = createTestStore();
+    await getStoreRepository().upsert(store);
+    const script = createTestScript(store.id);
+    await getScriptRepository().create(script);
+
+    const req = new Request("http://localhost/api/render-projects", {
+      method: "POST",
+      body: JSON.stringify({
+        scriptDraftId: script.id,
+        selectedAssetIds: [],
+        aspectRatio: "9:16"
+      })
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.project.subtitleStyle).toBe("pop");
+
+    // Verify the default is persisted, not just echoed back
+    const saved = await getRenderRepository().findProjectById(body.project.id);
+    expect(saved?.subtitleStyle).toBe("pop");
+  });
+
   it("plans avatar_generation job before video_render when avatar is provided", async () => {
     const store = createTestStore();
     await getStoreRepository().upsert(store);
