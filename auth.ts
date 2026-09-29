@@ -3,8 +3,7 @@ import EmailProvider from "next-auth/providers/email";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { AdapterUser } from "@auth/core/adapters";
 import { getPrisma } from "@/lib/prisma";
-import { getResendApiKey, getEmailFrom, hasWechatProvider, getWechatAppId, getWechatAppSecret } from "@/lib/env";
-import { WeChatProvider } from "@/lib/auth/wechat-provider";
+import { getResendApiKey, getEmailFrom } from "@/lib/env";
 import { generateOtpCode } from "@/lib/auth/otp";
 import { sendOtpViaResend } from "@/lib/auth/resend-send";
 
@@ -42,15 +41,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         await sendOtpViaResend(email, token, url);
       },
     }),
-    // Conditionally register WeChat provider
-    ...(hasWechatProvider()
-      ? [
-          WeChatProvider({
-            clientId: getWechatAppId()!,
-            clientSecret: getWechatAppSecret()!,
-          }),
-        ]
-      : []),
   ],
   session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SECONDS },
   pages: {

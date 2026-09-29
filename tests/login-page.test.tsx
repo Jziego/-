@@ -2,10 +2,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import LoginPage from "@/app/login/page";
 
-const { sendMagicLinkMock, pushMock, signInWithWeChatMock } = vi.hoisted(() => ({
+const { sendMagicLinkMock, pushMock } = vi.hoisted(() => ({
   sendMagicLinkMock: vi.fn(),
   pushMock: vi.fn(),
-  signInWithWeChatMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -15,7 +14,6 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/app/login/actions", () => ({
   sendMagicLink: sendMagicLinkMock,
-  signInWithWeChat: signInWithWeChatMock,
 }));
 
 describe("/login page", () => {
@@ -42,5 +40,11 @@ describe("/login page", () => {
     await vi.waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith("/login/verify?email=a%40b.com");
     });
+  });
+
+  it("不再提供微信登录入口", () => {
+    render(<LoginPage />);
+    expect(screen.queryByText("微信登录")).not.toBeInTheDocument();
+    expect(screen.queryByText("其他登录方式")).not.toBeInTheDocument();
   });
 });

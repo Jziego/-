@@ -9,7 +9,6 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/app/login/actions", () => ({
   sendMagicLink: vi.fn(),
-  signInWithWeChat: vi.fn(),
 }));
 
 describe("/login?error=Verification", () => {

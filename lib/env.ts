@@ -108,20 +108,6 @@ export function getSentryAuthToken(): string | undefined {
   return process.env.SENTRY_AUTH_TOKEN?.trim() || undefined;
 }
 
-// ── WeChat OAuth ─────────────────────────────────────────────────────────────
-
-export function getWechatAppId(): string | undefined {
-  return process.env.WECHAT_APP_ID?.trim() || undefined;
-}
-
-export function getWechatAppSecret(): string | undefined {
-  return process.env.WECHAT_APP_SECRET?.trim() || undefined;
-}
-
-export function hasWechatProvider(): boolean {
-  return Boolean(getWechatAppId() && getWechatAppSecret());
-}
-
 // ── 火山引擎对口型（MediaKit + 豆包 TTS）────────────────────────────────────
 // 对口型供应商双 Key：MediaKit 管视频改口型任务，豆包语音管配音合成。
 // 2026-09-16 实测：两个产品线 Key 不通用（MediaKit Key 调语音服务 401）。

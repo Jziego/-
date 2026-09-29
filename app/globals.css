@@ -1502,28 +1502,3 @@ strong {
   margin: 20px auto 0;
   width: min(280px, 60vw);
 }
-
-.authDivider {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  margin: 4px 0;
-}
-
-.authDivider::before,
-.authDivider::after {
-  background: var(--border);
-  content: "";
-  flex: 1;
-  height: 1px;
-}
-
-.authDivider span {
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.authWechatButton {
-  gap: 8px;
-}
