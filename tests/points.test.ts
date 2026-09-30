@@ -5,10 +5,16 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
  * user.updateMany 依据 where.pointsBalance.gte 模拟守卫；
  * 记录所有 create 调用供流水断言。
  */
+/** 测试辅助：无横杠码按 4-4-4-4 加横杠，模拟用户从后台复制/手输带横杠版本。 */
+function insertDashes(code: string): string {
+  return code.replace(/(.{4})(?=.)/g, "$1-");
+}
+
 function makeFakePrisma(initialBalance: number) {
   const state = { balance: initialBalance };
   const created: { table: string; data: Record<string, unknown> }[] = [];
   const rcState = { status: "unused" };
+  const rcCreated: { id: string; code: string; points: number }[] = [];
   const tx = {
     user: {
       updateMany: vi.fn(({ where, data }) => {
@@ -31,6 +37,10 @@ function makeFakePrisma(initialBalance: number) {
       findUniqueOrThrow: vi.fn(() => Promise.resolve({ id: "u1", pointsBalance: state.balance })),
     },
     rechargeCode: {
+      create: vi.fn(({ data }: { data: { id: string; code: string; points: number } }) => {
+        rcCreated.push(data);
+        return Promise.resolve(data);
+      }),
       findUnique: vi.fn(({ where }: { where: { code: string } }) =>
         Promise.resolve(
           where.code === "GOODCODE"
@@ -58,7 +68,7 @@ function makeFakePrisma(initialBalance: number) {
     $transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
     ...tx,
   };
-  return { prisma, state, created, tx };
+  return { prisma, state, created, tx, rcCreated };
 }
 
 async function importPoints() {
@@ -212,6 +222,57 @@ describe("points service", () => {
 
     await expect(adminAdjustPoints("a@b.com", -50, "测试")).rejects.toBeInstanceOf(AdminAdjustError);
     await expect(adminAdjustPoints("ghost@x.com", 10, "")).rejects.toBeInstanceOf(UserNotFoundError);
+  });
+
+  it("generateRechargeCodes：入库与返回均为无横杠格式（库存与 redeem 归一化口径一致）", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://fake");
+    const { prisma, rcCreated } = makeFakePrisma(0);
+    vi.doMock("@/lib/prisma", () => ({ getPrisma: () => prisma }));
+    const { generateRechargeCodes } = await importPoints();
+
+    const codes = await generateRechargeCodes(100, 3);
+
+    expect(codes).toHaveLength(3);
+    for (const code of codes) {
+      expect(code).not.toContain("-");
+      expect(code).toHaveLength(16);
+    }
+    expect(rcCreated.map((r) => r.code)).toEqual(codes);
+    for (const row of rcCreated) expect(row.code).not.toContain("-");
+  });
+
+  it("redeemPointsCode：带横杠输入可兑换——与库存无横杠格式归一化匹配", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://fake");
+    const { prisma, state, created, tx } = makeFakePrisma(0);
+    // 以 create 落入的假库存模拟真实 DB：findUnique 按归一化后的无横杠码精确命中
+    const stored: { id: string; code: string; points: number; status: string }[] = [];
+    tx.rechargeCode.create.mockImplementation(
+      ({ data }: { data: { id: string; code: string; points: number } }) => {
+        stored.push({ ...data, status: "unused" });
+        return Promise.resolve(data);
+      },
+    );
+    tx.rechargeCode.findUnique.mockImplementation(({ where }: { where: { code: string } }) =>
+      Promise.resolve(stored.find((s) => s.code === where.code) ?? null),
+    );
+    tx.rechargeCode.updateMany.mockImplementation(
+      ({ where, data }: { where: { id: string; status: string }; data: { status: string } }) => {
+        const row = stored.find((s) => s.id === where.id && s.status === where.status);
+        if (!row) return Promise.resolve({ count: 0 });
+        row.status = data.status;
+        return Promise.resolve({ count: 1 });
+      },
+    );
+    vi.doMock("@/lib/prisma", () => ({ getPrisma: () => prisma }));
+    const { generateRechargeCodes, redeemPointsCode } = await importPoints();
+
+    const [generated] = await generateRechargeCodes(100, 1);
+    const dashed = insertDashes(generated);
+    expect(dashed).toContain("-");
+
+    await expect(redeemPointsCode("u1", dashed)).resolves.toEqual({ points: 100, balance: 100 });
+    expect(state.balance).toBe(100);
+    expect(created[0].data).toMatchObject({ delta: 100, reason: "兑换码充值", balanceAfter: 100 });
   });
 
   it("getAdminLedgerByEmail：返回倒序流水；邮箱不存在抛 UserNotFoundError", async () => {

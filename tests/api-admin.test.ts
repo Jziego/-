@@ -11,7 +11,12 @@ const { codesMock, adjustMock, ledgerMock, assertAdminRequestMock, rateLimitAdmi
 vi.mock("@/lib/admin-auth", () => ({
   assertAdminRequest: assertAdminRequestMock,
   AdminAuthError: class AdminAuthError extends Error {
-    status = 401;
+    status: number;
+    constructor(status = 401) {
+      super(status === 503 ? "Admin not configured" : "Unauthorized");
+      this.name = "AdminAuthError";
+      this.status = status;
+    }
   },
 }));
 vi.mock("@/lib/rate-limit", async (importOriginal) => {
@@ -32,6 +37,7 @@ vi.mock("@/lib/points", async (importOriginal) => {
 import { POST as codesPOST } from "@/app/api/admin/codes/route";
 import { POST as adjustPOST } from "@/app/api/admin/adjust/route";
 import { GET as ledgerGET } from "@/app/api/admin/ledger/route";
+import { GET as pingGET } from "@/app/api/admin/ping/route";
 
 describe("admin routes", () => {
   beforeEach(() => {
@@ -51,6 +57,19 @@ describe("admin routes", () => {
     expect(ok.status).toBe(201);
     expect(await ok.json()).toEqual({ codes: ["AAAA-BBBB-CCCC-DDDD"] });
     expect(codesMock).toHaveBeenCalledWith(100, 1);
+  });
+
+  it("ping：鉴权通过 → 200 ok:true；未配置 ADMIN_KEY → 503 透传", async () => {
+    const ok = await pingGET(new Request("http://localhost/api/admin/ping"));
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ ok: true });
+
+    const { AdminAuthError } = await import("@/lib/admin-auth");
+    assertAdminRequestMock.mockImplementationOnce(() => {
+      throw new AdminAuthError(503);
+    });
+    const unconfigured = await pingGET(new Request("http://localhost/api/admin/ping"));
+    expect(unconfigured.status).toBe(503);
   });
 
   it("批量生成：数量/面值越界 → 400", async () => {

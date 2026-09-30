@@ -204,7 +204,8 @@ export async function generateRechargeCodes(
   const codes: string[] = [];
   for (let i = 0; i < count; i++) {
     for (let attempt = 0; ; attempt++) {
-      const code = generateCodeString();
+      // 入库前归一化（去横杠大写），与 redeemPointsCode 的查询口径一致
+      const code = normalizeRedeemCode(generateCodeString());
       try {
         await prisma.rechargeCode.create({
           data: { id: createId("rc"), code, points },

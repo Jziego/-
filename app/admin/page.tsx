@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 
 const LS_KEY = "ava_admin_key";
 
+/** 展示层格式化：每 4 字符一组用 - 连接（4×4 组约定）；长度非 4 倍数时原样返回防呆。 */
+function formatCode(code: string): string {
+  if (!code || code.length % 4 !== 0) return code;
+  return code.match(/.{4}/g)!.join("-");
+}
+
 async function adminFetch<T>(path: string, key: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -57,9 +63,31 @@ export default function AdminPage() {
           onSubmit={(e) => {
             e.preventDefault();
             const trimmed = keyInput.trim();
-            if (!trimmed) return;
-            window.localStorage.setItem(LS_KEY, trimmed);
-            setKey(trimmed);
+            if (!trimmed || busy) return;
+            setBusy(true);
+            setNotice(null);
+            void (async () => {
+              try {
+                // 进门即验证：只有 ping 200 才写入 localStorage 并放行工作台
+                const res = await fetch("/api/admin/ping", {
+                  headers: { "x-admin-key": trimmed },
+                });
+                if (res.ok) {
+                  window.localStorage.setItem(LS_KEY, trimmed);
+                  setKey(trimmed);
+                  return;
+                }
+                setNotice(
+                  res.status === 503
+                    ? "后台未配置（联系部署设置 ADMIN_KEY）"
+                    : "密钥错误，请重试",
+                );
+              } catch {
+                setNotice("网络错误，请重试");
+              } finally {
+                setBusy(false);
+              }
+            })();
           }}
         >
           <h1>管理后台</h1>
@@ -72,7 +100,7 @@ export default function AdminPage() {
               autoComplete="off"
             />
           </label>
-          <button type="submit" className="primaryButton">进入后台</button>
+          <button type="submit" className="primaryButton" disabled={busy}>进入后台</button>
           {notice ? <p role="alert">{notice}</p> : null}
         </form>
       </main>
@@ -139,7 +167,7 @@ export default function AdminPage() {
             <textarea
               readOnly
               aria-label="生成的兑换码"
-              value={codes.join("\n")}
+              value={codes.map(formatCode).join("\n")}
               rows={Math.min(10, codes.length)}
               style={{ width: "100%", marginTop: 8 }}
             />
@@ -148,7 +176,7 @@ export default function AdminPage() {
               className="secondaryButton"
               onClick={() =>
                 void navigator.clipboard
-                  .writeText(codes.join("\n"))
+                  .writeText(codes.map(formatCode).join("\n"))
                   .then(() => setNotice("已复制到剪贴板"))
                   .catch(() => setNotice("复制失败，请手动选择复制"))
               }
