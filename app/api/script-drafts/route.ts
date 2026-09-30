@@ -2,7 +2,7 @@ import { jsonError, jsonOk, jsonPointsError } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { getAssetAnalysisRepository, getAvatarRepository, getScriptRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
-import { PointsExhaustedError, consumePoints } from "@/lib/points";
+import { PointsExhaustedError, PointsUnavailableError, consumePoints, countRecentScriptDrafts } from "@/lib/points";
 import { SCRIPT_DRAFT_POINTS } from "@/lib/points-pricing";
 import { createScriptDraft, createTemplateScriptDraft } from "@/lib/services/script-engine";
 import { COPY_ANGLES, type CopyAngle } from "@/lib/copywriting-rules";
@@ -58,12 +58,23 @@ export async function POST(request: Request) {
     name: a.name || `形象${index + 1}`,
   }));
 
-  // 核心功能前置扣费：校验全过后、生成前扣 10 积分；余额不足 402（事务内防负）。
+  // 重写收费规则：同店 24h 窗口内第 1/4/7/10…次扣 10 积分（窗口内已生成 N 条，N%3===0 时扣），
+  // 其余免费——免费不消费不记流水。计数发生在本次草稿创建之前（count 口径，非创建后统计）。
+  // 无库（本地 dev/demo 降级）无法计数时降级旧口径走 consumePoints（其内部同样无库豁免），不 500。
+  let recentDrafts = 0;
   try {
-    await consumePoints(ownerId, SCRIPT_DRAFT_POINTS, "生成口播稿");
+    recentDrafts = await countRecentScriptDrafts(ownerId, store.id, new Date(Date.now() - 24 * 60 * 60 * 1000));
   } catch (error) {
-    if (error instanceof PointsExhaustedError) return jsonPointsError();
-    throw error;
+    if (!(error instanceof PointsUnavailableError)) throw error;
+  }
+  // 核心功能前置扣费：校验全过后、生成前扣 10 积分；余额不足 402（事务内防负）。
+  if (recentDrafts % 3 === 0) {
+    try {
+      await consumePoints(ownerId, SCRIPT_DRAFT_POINTS, "生成口播稿");
+    } catch (error) {
+      if (error instanceof PointsExhaustedError) return jsonPointsError();
+      throw error;
+    }
   }
 
   const script = body.forceTemplate

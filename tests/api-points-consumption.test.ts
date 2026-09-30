@@ -1,9 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const { getOwnerIdMock, consumeMock, repos, scriptEngine, renderPipeline } = vi.hoisted(
+const { getOwnerIdMock, consumeMock, countRecentMock, repos, scriptEngine, renderPipeline } = vi.hoisted(
   () => ({
     getOwnerIdMock: vi.fn(),
     consumeMock: vi.fn(),
+    countRecentMock: vi.fn(),
     repos: {
       store: { findById: vi.fn() },
       assetAnalysis: { listByIds: vi.fn() },
@@ -28,15 +29,14 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/rate-limit")>();
   return { ...actual, applyRateLimit: vi.fn(() => Promise.resolve(null)) };
 });
-vi.mock("@/lib/points", () => ({
-  consumePoints: consumeMock,
-  PointsExhaustedError: class PointsExhaustedError extends Error {
-    constructor() {
-      super("积分已用完，请联系客服充值");
-      this.name = "PointsExhaustedError";
-    }
-  },
-}));
+vi.mock("@/lib/points", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/points")>();
+  return {
+    ...actual,
+    consumePoints: consumeMock,
+    countRecentScriptDrafts: countRecentMock,
+  };
+});
 // 路由的 repositories 工厂与生成/渲染服务：全部占位，按用例逐個 stub。
 vi.mock("@/lib/repositories", () => ({
   getStoreRepository: () => repos.store,
@@ -60,7 +60,11 @@ import { POST as renderPOST } from "@/app/api/render-projects/route";
 import { POST as talkingHeadPOST } from "@/app/api/avatars/talking-head/route";
 
 describe("扣费接入", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // 默认窗口计数 0（第 1 次生成）→ 走扣费；收费规则专项用例自行覆盖
+    countRecentMock.mockResolvedValue(0);
+  });
 
   it("写稿：校验通过后扣 10 积分，成功 201", async () => {
     getOwnerIdMock.mockResolvedValue("u1");
@@ -162,5 +166,73 @@ describe("扣费接入", () => {
     expect(consumeMock).toHaveBeenCalledWith("u1", 250, "数字人出镜");
     // 扣费之后的建 job/入队未被触达
     expect(repos.job.createMany).not.toHaveBeenCalled();
+  });
+});
+
+// 口播稿重写收费规则：同店 24h 窗口内第 1/4/7/10…次扣 10 积分（N%3===0），其余免费。
+describe("口播稿重写收费规则", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getOwnerIdMock.mockResolvedValue("u1");
+    repos.store.findById.mockResolvedValue({ id: "s1", ownerId: "u1" });
+    repos.avatar.listByOwner.mockResolvedValue([]);
+    scriptEngine.createScriptDraft.mockResolvedValue({ id: "d1" });
+    repos.script.create.mockResolvedValue({ id: "d1" });
+  });
+
+  const postDraft = () =>
+    scriptPOST(
+      new Request("http://localhost/api/script-drafts", {
+        method: "POST",
+        body: JSON.stringify({ storeId: "s1", purpose: "store_traffic" }),
+      }),
+    );
+
+  it("窗口计数 1、2（第 2、3 次）→ 免费：不消费不记流水，正常生成 201", async () => {
+    for (const recent of [1, 2]) {
+      countRecentMock.mockResolvedValue(recent);
+      consumeMock.mockClear();
+      scriptEngine.createScriptDraft.mockClear();
+      repos.script.create.mockClear();
+
+      const res = await postDraft();
+
+      expect(res.status).toBe(201);
+      expect(countRecentMock).toHaveBeenCalledWith("u1", "s1", expect.any(Date));
+      expect(consumeMock).not.toHaveBeenCalled();
+      expect(scriptEngine.createScriptDraft).toHaveBeenCalledTimes(1);
+      expect(repos.script.create).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("窗口计数 3（第 4 次）→ 扣 10 积分", async () => {
+    countRecentMock.mockResolvedValue(3);
+    consumeMock.mockResolvedValue({ balance: 210 });
+
+    const res = await postDraft();
+
+    expect(res.status).toBe(201);
+    expect(consumeMock).toHaveBeenCalledWith("u1", 10, "生成口播稿");
+  });
+
+  it("计数无库（PointsUnavailableError）→ 降级旧口径仍走 consumePoints，本地 dev 不 500", async () => {
+    const { PointsUnavailableError } = await import("@/lib/points");
+    countRecentMock.mockRejectedValue(new PointsUnavailableError());
+    consumeMock.mockResolvedValue({ balance: 220 });
+
+    const res = await postDraft();
+
+    expect(res.status).toBe(201);
+    expect(consumeMock).toHaveBeenCalledWith("u1", 10, "生成口播稿");
+  });
+
+  it("storeId 不存在（非法）→ 404 且不消费、不计数", async () => {
+    repos.store.findById.mockResolvedValue(null);
+
+    const res = await postDraft();
+
+    expect(res.status).toBe(404);
+    expect(countRecentMock).not.toHaveBeenCalled();
+    expect(consumeMock).not.toHaveBeenCalled();
   });
 });

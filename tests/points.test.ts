@@ -15,6 +15,8 @@ function makeFakePrisma(initialBalance: number) {
   const created: { table: string; data: Record<string, unknown> }[] = [];
   const rcState = { status: "unused" };
   const rcCreated: { id: string; code: string; points: number }[] = [];
+  // 口播稿 24h 窗口计数桩：预设值透传，供 countRecentScriptDrafts 断言 where 口径
+  const sdState = { recent: 0 };
   const tx = {
     user: {
       updateMany: vi.fn(({ where, data }) => {
@@ -63,12 +65,18 @@ function makeFakePrisma(initialBalance: number) {
       }),
       findMany: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
     },
+    scriptDraft: {
+      count: vi.fn(
+        (_args: { where: { ownerId: string; storeId: string; createdAt: { gte: Date } } }) =>
+          Promise.resolve(sdState.recent),
+      ),
+    },
   };
   const prisma = {
     $transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
     ...tx,
   };
-  return { prisma, state, created, tx, rcCreated };
+  return { prisma, state, created, tx, rcCreated, sdState };
 }
 
 async function importPoints() {
@@ -297,5 +305,35 @@ describe("points service", () => {
     );
 
     await expect(getAdminLedgerByEmail("ghost@x.com", 50)).rejects.toBeInstanceOf(UserNotFoundError);
+  });
+});
+
+describe("countRecentScriptDrafts", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+  });
+
+  it("计数透传：where 口径 ownerId + storeId + createdAt>=since，返回 scriptDraft.count 结果", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://fake");
+    const { prisma, sdState } = makeFakePrisma(0);
+    sdState.recent = 3;
+    vi.doMock("@/lib/prisma", () => ({ getPrisma: () => prisma }));
+    const { countRecentScriptDrafts } = await importPoints();
+
+    const since = new Date("2026-10-01T00:00:00.000Z");
+    await expect(countRecentScriptDrafts("u1", "s1", since)).resolves.toBe(3);
+    expect(prisma.scriptDraft.count).toHaveBeenCalledWith({
+      where: { ownerId: "u1", storeId: "s1", createdAt: { gte: since } },
+    });
+  });
+
+  it("无数据库抛 PointsUnavailableError", async () => {
+    vi.stubEnv("DATABASE_URL", "");
+    const { countRecentScriptDrafts, PointsUnavailableError } = await importPoints();
+
+    await expect(
+      countRecentScriptDrafts("u1", "s1", new Date("2026-10-01T00:00:00.000Z")),
+    ).rejects.toBeInstanceOf(PointsUnavailableError);
   });
 });

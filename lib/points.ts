@@ -88,6 +88,20 @@ export async function consumePoints(
 }
 
 /**
+ * 同一门店 24h 窗口内已生成的口播稿数（重写收费规则的计数依据）。无库抛 PointsUnavailableError。
+ */
+export async function countRecentScriptDrafts(
+  ownerId: string,
+  storeId: string,
+  since: Date,
+): Promise<number> {
+  if (!hasDatabase()) throw new PointsUnavailableError();
+  return getPrisma()!.scriptDraft.count({
+    where: { ownerId, storeId, createdAt: { gte: since } },
+  });
+}
+
+/**
  * 兑换充值码：码标记已使用 + 余额增加 + 写流水，同一事务。
  * 一码一次 —— status 守卫在事务内，并发兑换只有一个成功。
  */
