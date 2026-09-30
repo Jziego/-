@@ -1,10 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { estimateRenderCost } from "@/lib/cost-estimate";
 import { findHighlightRanges } from "@/lib/highlight-ranges";
-import { renderPointsCost } from "@/lib/points-pricing";
-import { deriveSegmentsFromVoiceover } from "@/lib/services/scene-derive";
 import { SPEECH_CHARS_PER_SECOND } from "@/lib/speech-rate";
 import type { AvatarProfile, ScriptDraft } from "@/lib/types";
 
@@ -83,20 +80,6 @@ export function ScriptConfirm({ draft, avatars, librarySelectedAssetIds, onConfi
   const charCount = Array.from(voiceover).length;
   // 预估时长：语速取全局唯一来源 lib/speech-rate.ts
   const estimatedSec = Math.round(charCount / SPEECH_CHARS_PER_SECOND);
-  // 数字人成本预估（spec §6.4）：跟随编辑中的口播稿实时重切 segments
-  // （prev 命中保留出镜标记，与服务端 PATCH 重切同源）。计价币种随所选形象的
-  // provider：全对口型 → ¥（MediaKit ¥1/分钟）；含 HeyGen → $（保守高估）。
-  const selectedAvatars = avatars.filter((a) => avatarIds.includes(a.id));
-  const pricing =
-    selectedAvatars.length > 0 && selectedAvatars.every((a) => a.provider === "volcengine-lipsync")
-      ? ("lipsync" as const)
-      : ("heygen" as const);
-  const costEstimate = useMemo(
-    () => estimateRenderCost(deriveSegmentsFromVoiceover(voiceover, { prev: draft.segments }), avatarIds.length, pricing),
-    [voiceover, draft.segments, avatarIds.length, pricing],
-  );
-  // 积分消耗预告：与服务端 render-projects 扣费口径一致（30 + 250×形象数）
-  const pointsCost = renderPointsCost(avatarIds.length);
   const canConfirm = voiceover.trim().length > 0 && !pending && !changingAngle;
 
   async function handleConfirm() {
@@ -168,17 +151,6 @@ export function ScriptConfirm({ draft, avatars, librarySelectedAssetIds, onConfi
         })}
         {avatars.length === 0 ? <span>暂无可用形象，将生成纯素材成片。</span> : null}
       </fieldset>
-
-      {avatarIds.length > 0 ? (
-        <p className="costHint" aria-label="成本预估">
-          {pricing === "lipsync"
-            ? `预计数字人成本约 ¥${costEstimate.totalCny.toFixed(2)}（对口型 ¥1/分钟 · 出镜 ${costEstimate.onCameraSec}s + 画外音 ${costEstimate.voiceoverSec}s）`
-            : `预计数字人成本约 $${costEstimate.totalUsd.toFixed(2)}（出镜 ${costEstimate.onCameraSec}s + 画外音 ${costEstimate.voiceoverSec}s）`}
-        </p>
-      ) : null}
-      <p className="costHint" aria-label="消耗积分">
-        本次生成将消耗 {pointsCost} 积分（10 积分 = 1 元）
-      </p>
 
       <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <label>

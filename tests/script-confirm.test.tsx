@@ -108,42 +108,34 @@ describe("ScriptConfirm", () => {
     });
   });
 
-  it("shows the estimated cost line when at least one avatar is checked", async () => {
+  it("不再渲染数字人成本预估行（含默认勾选与全不勾两种状态）", async () => {
     const user = userEvent.setup();
     renderConfirm();
-    // 草稿两段出镜：19 字 → 4s、14 字 → 3s（4.5 字/s，下限 3s），共 7s × $0.0667 ≈ $0.47
-    const costLine = screen.getByLabelText("成本预估");
-    expect(costLine).toHaveTextContent(/预计数字人成本约 \$0\.47（出镜 7s \+ 画外音 0s/);
-    // 取消全部勾选 → 纯素材成片，无数字人成本，成本行消失
+    // 默认勾选 1 个 ready 形象 → 也无成本行
+    expect(screen.queryByLabelText("成本预估")).not.toBeInTheDocument();
+    expect(screen.queryByText(/预计数字人成本/)).not.toBeInTheDocument();
+    // 取消全部勾选 → 依然无成本行
     await user.click(screen.getByLabelText(/店长形象/));
     expect(screen.queryByText(/预计数字人成本/)).not.toBeInTheDocument();
   });
 
-  it("shows the points cost notice matching server billing (30 + 250 × avatar count)", async () => {
+  it("不再渲染积分消耗预告（本次生成将消耗 N 积分文案移除）", async () => {
     const user = userEvent.setup();
     renderConfirm();
-    // 默认勾选 1 个 ready 形象 → 30 + 250 × 1 = 280
-    expect(screen.getByLabelText("消耗积分")).toHaveTextContent(
-      "本次生成将消耗 280 积分（10 积分 = 1 元）",
-    );
-    // 取消全部勾选 → 纯素材成片基础价 30
+    expect(screen.queryByLabelText("消耗积分")).not.toBeInTheDocument();
+    expect(screen.queryByText(/消耗.*积分/)).not.toBeInTheDocument();
     await user.click(screen.getByLabelText(/店长形象/));
-    expect(screen.getByLabelText("消耗积分")).toHaveTextContent(
-      "本次生成将消耗 30 积分（10 积分 = 1 元）",
-    );
+    expect(screen.queryByText(/消耗.*积分/)).not.toBeInTheDocument();
   });
 
-  it("re-estimates the cost from the live edited voiceover, not the stale draft segments", async () => {
+  it("编辑口播稿后也不出现成本预估 UI", async () => {
     const user = userEvent.setup();
     renderConfirm();
-    expect(screen.getByLabelText("成本预估")).toHaveTextContent(/\$0\.47/);
     const editor = screen.getByLabelText("口播稿编辑");
     await user.clear(editor);
-    // 45 字单句（无 AI 出镜选择时首/末句默认出镜）→ 10s × $0.0667 ≈ $0.67
     fireEvent.change(editor, { target: { value: "一".repeat(45) } });
-    const costLine = screen.getByLabelText("成本预估");
-    expect(costLine).toHaveTextContent(/\$0\.67/);
-    expect(costLine).toHaveTextContent(/出镜 10s/);
+    expect(screen.queryByText(/预计数字人成本/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("成本预估")).not.toBeInTheDocument();
   });
 
   it("platform avatar label renders its name once, without a duplicated suffix", () => {

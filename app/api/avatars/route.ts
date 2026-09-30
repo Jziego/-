@@ -4,18 +4,15 @@ import { applyRateLimit } from "@/lib/rate-limit";
 import { getAssetRepository, getAvatarRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
 import { createDigitalTwinProfile, createProviderFromEnv, AvatarProviderNotConfiguredError } from "@/lib/services/avatar-provider";
-import { buildPlatformAvatar } from "@/lib/services/platform-avatar";
 import { createPresignedGetUrl } from "@/lib/storage";
 
 export async function GET(request: Request) {
   const ownerId = await getOwnerId();
   const limited = await applyRateLimit(request, ownerId);
   if (limited) return limited;
+  // 只返回用户自己的形象列表：不再注入「平台公共形象」兜底卡片（HeyGen 线残留，
+  // 数字人已迁 MediaKit 对口型；服务端 render/talking-head 仍兼容 platform id 入参）。
   const avatars = await getAvatarRepository().listByOwner(ownerId);
-  // 平台公共形象兜底：用户没有任何可用形象时提供开箱即用的数字人（demo/新用户）。
-  if (!avatars.some((a) => a.trainingStatus === "ready")) {
-    avatars.push(buildPlatformAvatar(ownerId));
-  }
   return jsonOk({ avatars });
 }
 

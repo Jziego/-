@@ -196,20 +196,20 @@ describe("POST /api/avatars (digital twin)", () => {
   });
 });
 
-describe("GET /api/avatars (platform fallback)", () => {
+describe("GET /api/avatars (不再注入平台公共形象)", () => {
   beforeEach(() => {
     delete process.env.DATABASE_URL;
     resetRuntimeStateForTests();
   });
   afterEach(() => { if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl; });
 
-  it("GET appends the platform avatar only when the owner has no ready avatar", async () => {
-    // 无形象 → 列表含平台兜底
+  it("GET 不注入平台公共形象：无 ready 形象时返回空列表，只返回用户自己的形象", async () => {
+    // 无形象 → 空列表（不再有平台兜底卡片）
     let res = await GET(new Request("http://localhost/api/avatars"));
     let json = await res.json();
-    expect(json.avatars.some((a: { id: string }) => a.id === "avatar_platform")).toBe(true);
+    expect(json.avatars).toEqual([]);
 
-    // 创建一个 ready 形象后 → 平台兜底消失
+    // 创建一个 ready 形象后 → 只返回用户自己的形象
     const now = new Date().toISOString();
     await getAvatarRepository().create({
       id: "avatar_ready", ownerId: "demo_user", storeId: "store_1", name: "店主",
@@ -219,6 +219,7 @@ describe("GET /api/avatars (platform fallback)", () => {
     });
     res = await GET(new Request("http://localhost/api/avatars"));
     json = await res.json();
-    expect(json.avatars.some((a: { id: string }) => a.id === "avatar_platform")).toBe(false);
+    expect(json.avatars.map((a: { id: string }) => a.id)).toEqual(["avatar_ready"]);
+    expect(json.avatars.some((a: { id: string; name: string }) => a.name === "平台公共形象")).toBe(false);
   });
 });
