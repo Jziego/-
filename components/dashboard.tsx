@@ -293,6 +293,13 @@ export function Dashboard() {
   const [localScript, setLocalScript] = useState<ScriptDraft | null>(null);
   const [localJobs, setLocalJobs] = useState<Job[] | null>(null);
   const [message, setMessage] = useState("准备开始：先完成门店档案。");
+  // 积分耗尽等强提示：屏幕居中 toast，3s 自动消失；每次触发都传新对象以重启计时。
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
   const [storeFormStep, setStoreFormStep] = useState(0);
   const [draftReady, setDraftReady] = useState(false);
   const [storeHydrationResolved, setStoreHydrationResolved] = useState(false);
@@ -1083,7 +1090,7 @@ export function Dashboard() {
       setMessage("脚本已生成：确认口播稿与出镜形象后，点「确认生成」出片。");
     } catch (error) {
       if (error instanceof ApiError && error.status === 402) {
-        setMessage(POINTS_EXHAUSTED_MESSAGE);
+        setToast({ id: Date.now(), text: POINTS_EXHAUSTED_MESSAGE });
       } else {
         const detail = error instanceof Error ? error.message : "请稍后重试";
         setMessage(`脚本生成失败：${detail}`);
@@ -1113,7 +1120,7 @@ export function Dashboard() {
       setMessage(`已换「${draft.angle ?? "新角度"}」重新生成，看看这版。`);
     } catch (error) {
       if (error instanceof ApiError && error.status === 402) {
-        setMessage(POINTS_EXHAUSTED_MESSAGE);
+        setToast({ id: Date.now(), text: POINTS_EXHAUSTED_MESSAGE });
       } else {
         const detail = error instanceof Error ? error.message : "请稍后重试";
         setMessage(`换方向生成失败：${detail}`);
@@ -1160,7 +1167,7 @@ export function Dashboard() {
     } catch (error) {
       // 失败时确认卡片保留（confirmDraft 不清空），用户改稿后可重试。
       if (error instanceof ApiError && error.status === 402) {
-        setMessage(POINTS_EXHAUSTED_MESSAGE);
+        setToast({ id: Date.now(), text: POINTS_EXHAUSTED_MESSAGE });
       } else {
         const detail = error instanceof Error ? error.message : "请稍后重试";
         setMessage(`确认生成失败：${detail}`);
@@ -1195,6 +1202,26 @@ export function Dashboard() {
         <span className="toastBar" aria-hidden="true" />
         {message}
       </div>
+      {toast && (
+        <div
+          role="alert"
+          style={{
+            position: "fixed",
+            left: "50%",
+            top: "40%",
+            transform: "translate(-50%,-50%)",
+            background: "rgba(17,24,39,0.95)",
+            color: "#fff",
+            padding: "16px 28px",
+            borderRadius: "12px",
+            fontSize: "15px",
+            zIndex: 1000,
+            boxShadow: "0 8px 30px rgba(0,0,0,0.35)"
+          }}
+        >
+          {toast.text}
+        </div>
+      )}
 
       <section className="hero">
         <p className="eyebrow">AI 视频工作台</p>

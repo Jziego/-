@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Dashboard } from "@/components/dashboard";
@@ -2656,12 +2656,102 @@ describe("AI video assistant dashboard", () => {
     await user.type(editor, "改后的口播稿。");
     await user.click(screen.getByRole("button", { name: /确认生成/ }));
 
-    // 402 优先映射为充值提示（而非「确认生成失败：…」house style 前缀）
-    const toast = screen.getByRole("status");
-    expect(await within(toast).findByText("积分已用完，请联系客服充值")).toBeInTheDocument();
+    // 402 优先映射为居中 toast（而非「确认生成失败：…」house style 前缀、也非顶部横幅）
+    const toast = await screen.findByRole("alert");
+    expect(toast).toHaveTextContent("积分已用完，请联系客服充值");
     expect(toast).not.toHaveTextContent("确认生成失败");
+    // 顶部横幅（role=status）不再承载积分提示
+    expect(
+      within(screen.getByRole("status")).queryByText("积分已用完，请联系客服充值")
+    ).not.toBeInTheDocument();
     // 确认卡片保留、可改稿重试；渲染项目未创建
     expect(screen.getByLabelText("口播稿编辑")).toBeInTheDocument();
     expect(fetchedBodies["POST /api/render-projects"]).toBeUndefined();
+  });
+
+  it("points toast re-triggers on a repeat 402 and auto-dismisses after 3s", async () => {
+    // RTL waitFor 驱动 fake timers 依赖全局 jest 引用（jestFakeTimersAreEnabled 检测）
+    vi.stubGlobal("jest", vi);
+    vi.useFakeTimers();
+    try {
+      const user = userEvent.setup({ advanceTimers: (ms: number) => vi.advanceTimersByTime(ms) });
+      const savedStore = {
+        id: "store_402b",
+        ownerId: "demo_user",
+        name: "积分耗尽店",
+        industry: "餐饮",
+        location: "上海",
+        mainProducts: ["牛肉面"],
+        targetCustomers: ["上班族"],
+        sellingPoints: ["现熬牛骨汤"],
+        promotions: [],
+        brandTone: "亲切接地气",
+        forbiddenWords: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z"
+      };
+      const savedAssets = [
+        { id: "asset_p1b", ownerId: "demo_user", storeId: "store_402b", type: "video", originalFilename: "p1.mp4", storageKey: "k1", mimeType: "video/mp4", sizeBytes: 1000, tags: [], businessTags: [], status: "uploaded", createdAt: "2026-01-01T00:00:00.000Z" }
+      ];
+      const savedAnalyses = [
+        { id: "analysis_p1b", assetId: "asset_p1b", visualTags: ["food"], businessTags: ["招牌菜"], keywords: [], confidence: 0.9, recommendedUses: [], analysisStatus: "succeeded", createdAt: "2026-01-01T00:00:00.000Z" }
+      ];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          const method = init?.method ?? "GET";
+          // 积分耗尽：写稿 → 402 points_exhausted
+          if (url === "/api/script-drafts" && method === "POST") {
+            return {
+              ok: false,
+              status: 402,
+              json: async () => ({ error: "points_exhausted", message: "积分已用完，请联系客服充值" })
+            };
+          }
+          return {
+            ok: true,
+            json: async () => {
+              if (url === "/api/store-profiles") return { stores: [savedStore] };
+              if (url === "/api/assets") return { assets: savedAssets };
+              if (url === "/api/asset-analyses") return { analyses: savedAnalyses };
+              if (url === "/api/avatars") return { avatars: [] };
+              if (url === "/api/jobs") return { jobs: [] };
+              if (url === "/api/script-drafts") return { scripts: [] };
+              return {};
+            }
+          };
+        })
+      );
+
+      renderDashboard();
+      await screen.findByText("已选 1 / 共 1");
+
+      // 第一次 402 → 屏幕居中 toast（点击后的 fetch 微任务链在 act 内 flush，
+      // 避免 waitFor 轮询抢在 React 宏任务渲染前断言）
+      await act(async () => {
+        await user.click(screen.getByRole("button", { name: "生成脚本" }));
+      });
+      expect(screen.getByRole("alert")).toHaveTextContent("积分已用完，请联系客服充值");
+
+      // 快进 2.9s：3s 未到，toast 仍在
+      act(() => vi.advanceTimersByTime(2900));
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+
+      // 再次点击再次 402：新 toast 对象重置 3s 计时——
+      // 距第一次触发已超 3s，若未重置计时 toast 应已消失，仍在即证明重置
+      await act(async () => {
+        await user.click(screen.getByRole("button", { name: "生成脚本" }));
+      });
+      expect(screen.getByRole("alert")).toHaveTextContent("积分已用完，请联系客服充值");
+      act(() => vi.advanceTimersByTime(200));
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+
+      // 满 3s 自动消失
+      act(() => vi.advanceTimersByTime(3000));
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 });
