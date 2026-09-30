@@ -384,7 +384,9 @@ export function createVolcEngineLipSyncProvider(deps?: Partial<LipSyncProviderDe
           providerVoiceId: voiceId,
         };
       } catch (error) {
-        console.error(`[lipsync] 声音复刻失败 footage=${storageKey}:`, error);
+        // cause 携带底层网络错误（DNS errno/ECONNREFUSED/超时等），Zeabur 日志默认吞掉非枚举属性，必须显式打出
+        const cause = error instanceof Error ? (error.cause ?? "") : "";
+        console.error(`[lipsync] 声音复刻失败 footage=${storageKey}:`, error, cause);
         return {
           consentStatus: "approved",
           trainingStatus: "failed",
