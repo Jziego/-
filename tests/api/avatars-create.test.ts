@@ -7,8 +7,15 @@ import type { Asset, StoreProfile } from "@/lib/types";
 
 // 用可控 mock provider 替换 env 工厂；必须 importOriginal 展开真实导出——
 // 路由里的 instanceof AvatarProviderNotConfiguredError 需要拿到真实错误类。
-const { factoryMode } = vi.hoisted(() => ({
+const { factoryMode, consumeMock, createDigitalTwinSpy } = vi.hoisted(() => ({
   factoryMode: { value: "mock" as "mock" | "unconfigured" | "lipsync" },
+  // 扣费 spy：默认放行（等价无库豁免），余额不足用例自行 reject。
+  consumeMock: vi.fn(),
+  // 下游 provider 创建 spy：402 用例断言未触达；行为对齐 mock provider（返回授权链接）。
+  createDigitalTwinSpy: vi.fn(async (input: { name: string }) => {
+    const groupId = "avatar_group_test";
+    return { groupId, consentUrl: `https://consent.example.com/${groupId}?name=${encodeURIComponent(input.name)}` };
+  }),
 }));
 vi.mock("@/lib/services/providers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/services/providers")>();
@@ -28,9 +35,14 @@ vi.mock("@/lib/services/providers", async (importOriginal) => {
           },
         };
       }
-      return createMockProvider();
+      return { ...createMockProvider(), createDigitalTwin: createDigitalTwinSpy };
     },
   };
+});
+// 扣费模块：importOriginal 展开真实导出——路由 instanceof PointsExhaustedError 需要真实错误类。
+vi.mock("@/lib/points", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/points")>();
+  return { ...actual, consumePoints: consumeMock };
 });
 // 不触真 S3：presign 直接返回假 URL
 vi.mock("@/lib/storage", async (importOriginal) => {
@@ -69,6 +81,8 @@ describe("POST /api/avatars (digital twin)", () => {
     delete process.env.DATABASE_URL;
     resetRuntimeStateForTests();
     factoryMode.value = "mock";
+    consumeMock.mockReset();
+    createDigitalTwinSpy.mockClear();
     const { store, footage } = seedStoreAndFootage("avatar_footage");
     await getStoreRepository().upsert(store);
     await getAssetRepository().create(footage);
@@ -100,6 +114,26 @@ describe("POST /api/avatars (digital twin)", () => {
     expect(json.avatar.providerGroupId).toBeTruthy();
     // providerAvatarId 此刻必须为空——ready 前不得有可合成 id
     expect(json.avatar.providerAvatarId).toBeUndefined();
+  });
+
+  it("创建形象：IDOR 校验通过后扣 10 积分（生成形象），成功 201", async () => {
+    consumeMock.mockResolvedValue({ balance: 90 });
+    const res = await post({ storeId: "store_1", footageAssetId: "asset_footage_1", name: "店主本人", consentAccepted: true });
+    expect(res.status).toBe(201);
+    expect(consumeMock).toHaveBeenCalledWith("demo_user", 10, "生成形象");
+  });
+
+  it("余额不足 402：points_exhausted + 精确文案，provider 创建与落库均未执行", async () => {
+    const { PointsExhaustedError } = await import("@/lib/points");
+    consumeMock.mockRejectedValue(new PointsExhaustedError());
+    const res = await post({ storeId: "store_1", footageAssetId: "asset_footage_1", name: "店主本人", consentAccepted: true });
+    expect(res.status).toBe(402);
+    const json = await res.json();
+    expect(json.error).toBe("points_exhausted");
+    expect(json.message).toBe("积分已用完，请联系客服充值");
+    // 扣费失败 → 下游 provider 创建未调用、不落库
+    expect(createDigitalTwinSpy).not.toHaveBeenCalled();
+    expect(await getAvatarRepository().listByOwner("demo_user")).toHaveLength(0);
   });
 
   it("rejects when consent not accepted", async () => {

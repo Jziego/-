@@ -984,6 +984,7 @@ export function Dashboard() {
       });
       setLocalAvatar(profile);
       await queryClient.invalidateQueries({ queryKey: ["avatars"] });
+      notifyPointsChanged();
       if (!consentUrl) {
         // 对口型形象：无外部授权流，首轮状态轮询（~10s）即就绪。
         popup?.close();
@@ -997,8 +998,13 @@ export function Dashboard() {
       }
     } catch (error) {
       popup?.close();
-      const detail = error instanceof Error ? error.message : "请稍后重试";
-      setMessage(`创建出镜形象失败：${detail}`);
+      // 402 积分耗尽：与写稿/渲染同口径——居中 toast，表单状态保留可重试。
+      if (error instanceof ApiError && error.status === 402) {
+        setToast({ id: Date.now(), text: POINTS_EXHAUSTED_MESSAGE });
+      } else {
+        const detail = error instanceof Error ? error.message : "请稍后重试";
+        setMessage(`创建出镜形象失败：${detail}`);
+      }
     } finally {
       setPendingAction(null);
     }

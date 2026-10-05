@@ -7,6 +7,8 @@ export const POINTS_PER_YUAN = 10;
 
 /** 生成口播稿 */
 export const SCRIPT_DRAFT_POINTS = 10;
+/** 生成数字人形象：名义防滥用费——后端成本为 0（CosyVoice 创建音色免费），纯拦截反复上传 */
+export const AVATAR_CREATE_POINTS = 10;
 /** 渲染视频基础（TTS + 合成，无数字人） */
 export const RENDER_BASE_POINTS = 30;
 /** 每个出镜数字人（火山对口型按分钟计费的大头） */

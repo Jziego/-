@@ -1,8 +1,10 @@
-import { jsonError, jsonOk } from "@/lib/api-response";
+import { jsonError, jsonOk, jsonPointsError } from "@/lib/api-response";
 import { MAX_FOOTAGE_BYTES, LIPSYNC_MAX_FOOTAGE_BYTES } from "@/lib/avatar-footage";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { getAssetRepository, getAvatarRepository, getStoreRepository } from "@/lib/repositories";
 import { getOwnerId } from "@/lib/auth-helpers";
+import { PointsExhaustedError, consumePoints } from "@/lib/points";
+import { AVATAR_CREATE_POINTS } from "@/lib/points-pricing";
 import { createDigitalTwinProfile, createProviderFromEnv, AvatarProviderNotConfiguredError } from "@/lib/services/avatar-provider";
 import { createPresignedGetUrl } from "@/lib/storage";
 
@@ -54,6 +56,15 @@ export async function POST(request: Request) {
   const store = await getStoreRepository().findById(String(body.storeId));
   if (!store || store.ownerId !== ownerId) {
     return jsonError("Store not found", 404);
+  }
+
+  // 名义防滥用费：IDOR 校验通过后、创建前扣 10 积分；余额不足 402。
+  // PointsUnavailableError 不需 catch——consumePoints 内部对无库/demo 已豁免，直接放行。
+  try {
+    await consumePoints(ownerId, AVATAR_CREATE_POINTS, "生成形象");
+  } catch (error) {
+    if (error instanceof PointsExhaustedError) return jsonPointsError();
+    throw error;
   }
 
   try {

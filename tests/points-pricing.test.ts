@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AVATAR_APPEARANCE_POINTS,
+  AVATAR_CREATE_POINTS,
   POINTS_PER_YUAN,
   RENDER_BASE_POINTS,
   SCRIPT_DRAFT_POINTS,
@@ -16,6 +17,10 @@ describe("points pricing", () => {
     expect(SCRIPT_DRAFT_POINTS).toBe(10);
     expect(RENDER_BASE_POINTS).toBe(30);
     expect(AVATAR_APPEARANCE_POINTS).toBe(250);
+  });
+
+  it("生成数字人形象：名义防滥用费 10 积分（后端成本为 0，纯拦截反复上传）", () => {
+    expect(AVATAR_CREATE_POINTS).toBe(10);
   });
 
   it("renderPointsCost：无数字人 = 基础价；负数形象按 0 计", () => {

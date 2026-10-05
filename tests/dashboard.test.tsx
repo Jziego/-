@@ -1115,6 +1115,88 @@ describe("AI video assistant dashboard", () => {
     expect(popup.location.href).toBe("");
   });
 
+  it("avatar creation 402: shows the centered points toast and keeps the form state", async () => {
+    // 积分耗尽 → 与写稿/渲染同口径：居中 toast（role=alert），不走「创建出镜形象失败」文案；
+    // 表单状态保留（名字/勾选不清空），占位窗关闭，用户可直接重试。
+    const user = userEvent.setup();
+    const popup = { location: { href: "" }, close: vi.fn() };
+    vi.spyOn(window, "open").mockImplementation(() => popup as unknown as Window);
+    const savedStore = {
+      id: "store_402av",
+      ownerId: "demo_user",
+      name: "积分耗尽店",
+      industry: "餐饮",
+      location: "上海",
+      mainProducts: ["牛肉面"],
+      targetCustomers: ["上班族"],
+      sellingPoints: ["现熬牛骨汤"],
+      promotions: [],
+      brandTone: "亲切接地气",
+      forbiddenWords: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const existingFootage = {
+      id: "asset_402av",
+      ownerId: "demo_user",
+      storeId: "store_402av",
+      type: "video",
+      originalFilename: "me.mp4",
+      storageKey: "stores/store_402av/assets/asset_402av-me.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 3000,
+      tags: [],
+      businessTags: [],
+      status: "uploaded",
+      category: "avatar_footage",
+      createdAt: "2026-01-01T00:00:00.000Z"
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (url === "/api/avatars" && method === "POST") {
+          return {
+            ok: false,
+            status: 402,
+            json: async () => ({ error: "points_exhausted", message: "积分已用完，请联系客服充值" })
+          };
+        }
+        return {
+          ok: true,
+          json: async () => {
+            if (url === "/api/store-profiles") return { stores: [savedStore] };
+            if (url === "/api/assets") return { assets: [existingFootage] };
+            if (url === "/api/asset-analyses") return { analyses: [] };
+            if (url === "/api/avatars") return { avatars: [] };
+            if (url === "/api/jobs") return { jobs: [] };
+            if (url === "/api/script-drafts") return { scripts: [] };
+            return {};
+          }
+        };
+      })
+    );
+
+    renderDashboard();
+    await user.click(await screen.findByLabelText("选择人像视频 me.mp4"));
+    await user.type(screen.getByLabelText("形象名字"), "店主");
+    await user.click(screen.getByRole("checkbox", { name: /我是视频中的本人/ }));
+    await user.click(screen.getByRole("button", { name: "创建出镜形象" }));
+
+    // 402 → 居中 toast（非 house style 失败前缀、非顶部横幅）
+    const toast = await screen.findByRole("alert");
+    expect(toast).toHaveTextContent("积分已用完，请联系客服充值");
+    expect(toast).not.toHaveTextContent("创建出镜形象失败");
+    expect(
+      within(screen.getByRole("status")).queryByText("积分已用完，请联系客服充值")
+    ).not.toBeInTheDocument();
+    // 占位窗关闭；表单状态保留
+    expect(popup.close).toHaveBeenCalled();
+    expect(popup.location.href).toBe("");
+    expect(screen.getByLabelText("形象名字")).toHaveValue("店主");
+    expect(screen.getByRole("checkbox", { name: /我是视频中的本人/ })).toBeChecked();
+  });
+
   it("lipsync avatar creation: empty consentUrl closes the placeholder popup and shows a ready-soon message", async () => {
     const user = userEvent.setup();
     const popup = { location: { href: "" }, close: vi.fn() };
