@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/env", () => ({
@@ -10,11 +11,11 @@ const mockPipeline = {
   exec: vi.fn().mockResolvedValue([]),
 };
 
-const mockRedis = {
+const mockRedis = Object.assign(new EventEmitter(), {
   set: vi.fn().mockResolvedValue("OK"),
   exists: vi.fn().mockResolvedValue(0),
   pipeline: vi.fn(() => mockPipeline),
-};
+});
 
 vi.mock("ioredis", () => ({
   Redis: vi.fn().mockImplementation(function () {
@@ -29,6 +30,7 @@ import { hasRedis, getRedisUrl } from "@/lib/env";
 describe("session-blacklist", () => {
   beforeEach(() => {
     _resetRedis();
+    mockRedis.removeAllListeners();
     vi.clearAllMocks();
   });
 
@@ -87,5 +89,21 @@ describe("session-blacklist", () => {
       | undefined;
     expect(opts?.lazyConnect).not.toBe(true);
     expect(opts?.enableOfflineQueue).not.toBe(false);
+  });
+
+  // Zeabur 托管 Redis 空闲掐线（ECONNRESET）时 ioredis 会自动重连、功能无损，
+  // 但无 error 监听的实例会打印 "[ioredis] Unhandled error event" 噪音。
+  it("共享 Redis 实例挂了 error 监听器：emit error 不抛出", async () => {
+    vi.mocked(hasRedis).mockReturnValue(true);
+    vi.mocked(getRedisUrl).mockReturnValue("redis://localhost:6379");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await isSessionRevoked("noise-jti"); // 触发 getSharedRedis() 建连
+
+    expect(mockRedis.listenerCount("error")).toBeGreaterThan(0);
+    expect(() =>
+      mockRedis.emit("error", new Error("read ECONNRESET")),
+    ).not.toThrow();
+    warn.mockRestore();
   });
 });

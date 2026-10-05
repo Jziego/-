@@ -1,6 +1,7 @@
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-interface FakeRedis {
+interface FakeRedis extends EventEmitter {
   configCalls: string[][];
   disconnected: boolean;
 }
@@ -10,24 +11,28 @@ const { instances, flags } = vi.hoisted(() => ({
   flags: { failConnect: false },
 }));
 
-vi.mock("ioredis", () => ({
-  Redis: class {
-    configCalls: string[][] = [];
-    disconnected = false;
-    constructor(..._args: unknown[]) {
-      instances.push(this);
-    }
-    async connect() {
-      if (flags.failConnect) throw new Error("connect ETIMEDOUT");
-    }
-    async config(...args: string[]) {
-      this.configCalls.push(args);
-    }
-    disconnect() {
-      this.disconnected = true;
-    }
-  },
-}));
+vi.mock("ioredis", async () => {
+  const { EventEmitter } = await import("node:events");
+  return {
+    Redis: class extends EventEmitter {
+      configCalls: string[][] = [];
+      disconnected = false;
+      constructor(..._args: unknown[]) {
+        super();
+        instances.push(this as FakeRedis);
+      }
+      async connect() {
+        if (flags.failConnect) throw new Error("connect ETIMEDOUT");
+      }
+      async config(...args: string[]) {
+        this.configCalls.push(args);
+      }
+      disconnect() {
+        this.disconnected = true;
+      }
+    },
+  };
+});
 
 import { applyRedisGuardrails } from "@/lib/queue";
 
@@ -59,6 +64,17 @@ describe("applyRedisGuardrails", () => {
     await applyRedisGuardrails();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("[redis] 护栏应用失败"));
     expect(instances[0].disconnected).toBe(true);
+    warn.mockRestore();
+  });
+
+  // Zeabur 托管 Redis 空闲掐线（ECONNRESET）时 ioredis 会自动重连、功能无损，
+  // 但无 error 监听的实例会打印 "[ioredis] Unhandled error event" 噪音。
+  it("临时 client 挂了 error 监听器：emit error 不抛出", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await applyRedisGuardrails();
+    const r = instances[0];
+    expect(r.listenerCount("error")).toBeGreaterThan(0);
+    expect(() => r.emit("error", new Error("read ECONNRESET"))).not.toThrow();
     warn.mockRestore();
   });
 });

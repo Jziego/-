@@ -1,5 +1,6 @@
 import { Queue, FlowProducer } from "bullmq";
 import { Redis } from "ioredis";
+import { attachRedisErrorLogging } from "@/lib/redis-error-logging";
 import type { Job, JobType } from "@/lib/types";
 
 export const queueNames: Record<JobType, string> = {
@@ -35,6 +36,8 @@ export async function applyRedisGuardrails(): Promise<void> {
   const client = redisUrl
     ? new Redis(redisUrl, { lazyConnect: true })
     : new Redis({ host: "127.0.0.1", port: 6379, lazyConnect: true });
+  // 先挂监听再 connect：连接期间的 error（如 ECONNRESET）不再 unhandled。
+  attachRedisErrorLogging(client, "guardrails");
   try {
     await client.connect();
     const maxmemory = process.env.REDIS_MAXMEMORY_BYTES ?? "536870912";

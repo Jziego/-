@@ -1,5 +1,6 @@
 import { Redis } from "ioredis";
 import { getRedisUrl, hasRedis } from "@/lib/env";
+import { attachRedisErrorLogging } from "@/lib/redis-error-logging";
 
 let _redis: Redis | null = null;
 
@@ -24,6 +25,8 @@ export function getSharedRedis(): Redis | null {
       maxRetriesPerRequest: 1,
       connectTimeout: 3000,
     });
+    // 空闲掐线（ECONNRESET）自动重连、功能无损，挂节流监听消除 unhandled 噪音。
+    attachRedisErrorLogging(_redis, "shared");
   }
   return _redis;
 }

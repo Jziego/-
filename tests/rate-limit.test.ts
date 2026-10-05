@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 // ioredis mock：记录命令序列，用于断言 needReset=false 时 middleware 免 ttl。
@@ -9,7 +10,9 @@ const mockPipeline = {
   exec: vi.fn().mockResolvedValue([]),
 };
 
-const mockRedis = {
+// EventEmitter 基座：生产代码会给实例挂 error 监听（attachRedisErrorLogging）；
+// setMaxListeners(0) 允许多用例重复建连累积监听而不告警。
+const mockRedis = Object.assign(new EventEmitter().setMaxListeners(0), {
   incr: vi.fn((key: string) => {
     redisCommandLog.push("incr");
     const next = (incrCounts.get(key) ?? 0) + 1;
@@ -27,7 +30,7 @@ const mockRedis = {
   exists: vi.fn((_key: string) => Promise.resolve(0)),
   set: vi.fn(() => Promise.resolve("OK")),
   pipeline: vi.fn(() => mockPipeline),
-};
+});
 
 vi.mock("ioredis", () => ({
   Redis: vi.fn().mockImplementation(function () {
