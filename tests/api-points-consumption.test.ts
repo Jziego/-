@@ -57,7 +57,6 @@ vi.mock("@/lib/services/render-pipeline", () => ({
 
 import { POST as scriptPOST } from "@/app/api/script-drafts/route";
 import { POST as renderPOST } from "@/app/api/render-projects/route";
-import { POST as talkingHeadPOST } from "@/app/api/avatars/talking-head/route";
 
 describe("扣费接入", () => {
   beforeEach(() => {
@@ -106,7 +105,7 @@ describe("扣费接入", () => {
     expect(scriptEngine.createTemplateScriptDraft).not.toHaveBeenCalled();
   });
 
-  it("渲染：2 个形象扣 530（30+250×2），余额不足 402", async () => {
+  it("渲染：带数字人扣 50（一口价，不再按数量加价），余额不足 402", async () => {
     getOwnerIdMock.mockResolvedValue("u1");
     const { PointsExhaustedError } = await import("@/lib/points");
     consumeMock.mockRejectedValue(new PointsExhaustedError());
@@ -125,7 +124,7 @@ describe("扣费接入", () => {
       }),
     );
     expect(res.status).toBe(402);
-    expect(consumeMock).toHaveBeenCalledWith("u1", 530, "渲染视频（数字人×2）");
+    expect(consumeMock).toHaveBeenCalledWith("u1", 50, "渲染视频");
     // 扣费之后的建项目/入队未被触达
     expect(renderPipeline.createRenderProject).not.toHaveBeenCalled();
     expect(renderPipeline.planRenderJobs).not.toHaveBeenCalled();
@@ -133,7 +132,7 @@ describe("扣费接入", () => {
     expect(repos.job.createMany).not.toHaveBeenCalled();
   });
 
-  it("渲染：无数字人扣 30，reason 为「渲染视频」", async () => {
+  it("渲染：无数字人同价 50，reason 同为「渲染视频」", async () => {
     getOwnerIdMock.mockResolvedValue("u1");
     const { PointsExhaustedError } = await import("@/lib/points");
     consumeMock.mockRejectedValue(new PointsExhaustedError());
@@ -146,26 +145,7 @@ describe("扣费接入", () => {
       }),
     );
     expect(res.status).toBe(402);
-    expect(consumeMock).toHaveBeenCalledWith("u1", 30, "渲染视频");
-  });
-
-  it("talking-head：扣 250（数字人出镜），余额不足 402", async () => {
-    getOwnerIdMock.mockResolvedValue("u1");
-    const { PointsExhaustedError } = await import("@/lib/points");
-    consumeMock.mockRejectedValue(new PointsExhaustedError());
-    // platform avatar 免查库；草稿属主匹配
-    repos.script.findById.mockResolvedValue({ id: "d1", ownerId: "u1", storeId: "s1" });
-
-    const res = await talkingHeadPOST(
-      new Request("http://localhost/api/avatars/talking-head", {
-        method: "POST",
-        body: JSON.stringify({ avatarProfileId: "avatar_platform", scriptDraftId: "d1" }),
-      }),
-    );
-    expect(res.status).toBe(402);
-    expect(consumeMock).toHaveBeenCalledWith("u1", 250, "数字人出镜");
-    // 扣费之后的建 job/入队未被触达
-    expect(repos.job.createMany).not.toHaveBeenCalled();
+    expect(consumeMock).toHaveBeenCalledWith("u1", 50, "渲染视频");
   });
 });
 

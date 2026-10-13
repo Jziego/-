@@ -250,16 +250,6 @@ export async function deleteAvatarApi(avatarId: string): Promise<{ deleted: bool
   });
 }
 
-export async function requestTalkingHeadApi(input: {
-  avatarProfileId: string;
-  scriptDraftId: string;
-}): Promise<{ jobId: string; status: string }> {
-  return api<{ jobId: string; status: string }>("/api/avatars/talking-head", {
-    method: "POST",
-    body: JSON.stringify(input)
-  });
-}
-
 export async function createScriptDraftApi(input: {
   storeId: string;
   assetAnalysisIds: string[];

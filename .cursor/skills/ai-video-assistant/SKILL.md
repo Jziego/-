@@ -24,7 +24,6 @@ Dashboard 单页按 `#store-profile` → `#media-upload` → `#avatar-clone` →
 | `POST /api/assets/analyze` | 触发素材 AI 分析 |
 | `GET /api/asset-analyses` | 分析结果列表 |
 | `GET/POST /api/avatars` | AI 分身档案 |
-| `POST /api/avatars/talking-head` | 口播视频请求 |
 | `GET/POST /api/script-drafts` | 营销脚本草稿 |
 | `GET/POST /api/render-projects` | 渲染项目 |
 | `GET /api/jobs` | 后台任务状态 |

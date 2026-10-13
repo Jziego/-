@@ -1,7 +1,8 @@
 /**
- * 积分定价（10 积分 = ¥1）。服务端扣减点与前端 script-confirm 展示共用此唯一来源。
- * 调价只改这里。成本依据（2026-09 与需求方确认）：
- * 写稿 ≈¥0.02/次 · 渲染基础 ≈¥0.15/次（豆包TTS+ffmpeg）· 数字人 ≈¥1.1/60s（火山对口型 ¥1/分钟 + TTS）
+ * 积分定价（10 积分 = ¥1）。服务端扣减点与前端展示共用此唯一来源。调价只改这里。
+ * 成本依据（2026-10-13 与需求方确认）：
+ * 写稿 ≈¥0.02/次 · 建形象 ≈0（CosyVoice 创建音色免费）·
+ * 渲染 60s 带数字人 ≈¥1.3（火山对口型 ¥1/分钟 + TTS ≈¥0.05/300字 + ffmpeg 自服）
  */
 export const POINTS_PER_YUAN = 10;
 
@@ -9,12 +10,9 @@ export const POINTS_PER_YUAN = 10;
 export const SCRIPT_DRAFT_POINTS = 10;
 /** 生成数字人形象：名义防滥用费——后端成本为 0（CosyVoice 创建音色免费），纯拦截反复上传 */
 export const AVATAR_CREATE_POINTS = 10;
-/** 渲染视频基础（TTS + 合成，无数字人） */
-export const RENDER_BASE_POINTS = 30;
-/** 每个出镜数字人（火山对口型按分钟计费的大头） */
-export const AVATAR_APPEARANCE_POINTS = 250;
-
-/** 渲染总价 = 基础 + 250 × 出镜形象数。形象数取渲染请求校验后的数量（0~3）。 */
-export function renderPointsCost(avatarCount: number): number {
-  return RENDER_BASE_POINTS + AVATAR_APPEARANCE_POINTS * Math.max(0, avatarCount);
-}
+/**
+ * 渲染视频：一口价。带不带数字人同价（成本差 ≤¥1，不值得区分计价）。
+ * 50 积分 = ¥5，对 60s 典型视频毛利 ~74%；出镜时长 >5 分钟时成本才逼近售价。
+ * 原「30 基础 + 250×数字人」分级计价（2026-09 版）成本口径失真（毛利 ~20 倍），已废除。
+ */
+export const RENDER_VIDEO_POINTS = 50;

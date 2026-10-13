@@ -184,7 +184,7 @@ Zeabur 新版 UI 无独立 Build Type / Dockerfile Path 字段，worker 用 Sett
 
 | 项 | 现状 | 后续 |
 |----|------|------|
-| **积分体系** | 核心功能扣积分（写稿 10/渲染 30+250×数字人/预览 250），兑换码充值，余额不足 402 | 配 `ADMIN_KEY` 后在 `/admin` 生成兑换码分发；线下收款用「手动调整」充值 |
+| **积分体系** | 核心功能扣积分（写稿 10/建形象 10/渲染一口价 50），兑换码充值，余额不足 402 | 配 `ADMIN_KEY` 后在 `/admin` 生成兑换码分发；线下收款用「手动调整」充值 |
 | **HeyGen 数字人** | 需付费 key；production 未配则分身接口 503（不再静默 mock） | web + worker 均配 `AVATAR_PROVIDER=heygen` + `AVATAR_PROVIDER_API_KEY` |
 | **Resend 邮件** | 生产未配 `RESEND_API_KEY` 则 magic-link 无法发送 | 上线前必须配真实 key + 验证发件域名 |
 | **多实例** | 外层 IP 限流 + JWT 黑名单均走 Redis 后端，**多实例安全**；内层 userId 限流亦 Redis 共享 | 可水平扩展 web 实例 |

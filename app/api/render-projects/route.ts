@@ -2,7 +2,7 @@ import { jsonError, jsonOk, jsonPointsError } from "@/lib/api-response";
 import { applyRateLimit } from "@/lib/rate-limit";
 import { hasRedis } from "@/lib/env";
 import { PointsExhaustedError, consumePoints } from "@/lib/points";
-import { renderPointsCost } from "@/lib/points-pricing";
+import { RENDER_VIDEO_POINTS } from "@/lib/points-pricing";
 import { createFlowProducer, toFlowJobs } from "@/lib/queue";
 import {
   getAvatarRepository,
@@ -90,14 +90,10 @@ export async function POST(request: Request) {
     avatarProfiles.push(profile);
   }
 
-  // 积分扣减 —— 30 基础 + 250/出镜形象（替换旧 quota）；余额不足 402。
+  // 积分扣减 —— 渲染一口价 50（2026-10-13 起，不再 30+250×出镜数）；余额不足 402。
   // 位置不变：全部校验通过后、createRenderProject 之前。
   try {
-    await consumePoints(
-      ownerId,
-      renderPointsCost(avatarProfiles.length),
-      avatarProfiles.length > 0 ? `渲染视频（数字人×${avatarProfiles.length}）` : "渲染视频",
-    );
+    await consumePoints(ownerId, RENDER_VIDEO_POINTS, "渲染视频");
   } catch (error) {
     if (error instanceof PointsExhaustedError) return jsonPointsError();
     throw error;
