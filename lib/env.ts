@@ -183,3 +183,10 @@ export function getWorkerConcurrency(jobType: string): number {
 export function getAdminKey(): string | undefined {
   return process.env.ADMIN_KEY?.trim() || undefined;
 }
+
+// ── Altcha 人机验证 ────────────────────────────────────────────────────────
+
+/** ALTCHA_SECRET：PoW 挑战 HMAC 签名密钥；不配置则人机验证整体停用（fail-open）。 */
+export function getAltchaSecret(): string | undefined {
+  return process.env.ALTCHA_SECRET?.trim() || undefined;
+}

@@ -48,6 +48,8 @@
     "@prisma/client": "^7.8.0",
     "@sentry/nextjs": "^10.62.0",
     "@tanstack/react-query": "^5.101.0",
+    "altcha": "^3.3.0",
+    "altcha-lib": "^2.6.0",
     "bullmq": "^5.78.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

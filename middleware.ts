@@ -40,6 +40,7 @@ export default auth(async (req) => {
   }
   if (
     pathname === "/api/health" ||
+    pathname.startsWith("/api/altcha") ||  // 人机验证挑战须登录前可取；限流在路由内（demo 模式中间件短路时口径一致）
     pathname.startsWith("/login") ||
     pathname.startsWith("/admin") ||       // 后台自带 x-admin-key 鉴权（页面与 API）
     pathname.startsWith("/api/admin") ||   // 同上；路由内部另有 admin IP 限流

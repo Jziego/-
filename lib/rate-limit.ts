@@ -215,6 +215,18 @@ export async function rateLimitAdminIp(ip: string): Promise<boolean> {
   return result.allowed;
 }
 
+const ALTCHA_CHALLENGE_IP_PER_MINUTE: RateLimitConfig = { windowSeconds: 60, maxRequests: 30 };
+
+/**
+ * Altcha 挑战领取限流（每 IP 30/min）：挑战本身零成本可批量预囤，
+ * 不封顶等于给人机验证开了后门。与现有限流同口径：只消费 .allowed，
+ * 无 Redis 时 demo 走 memory / production fail-open。
+ */
+export async function rateLimitAltchaChallenge(ip: string): Promise<boolean> {
+  const result = await checkLimit(`altcha:ip:${ip}`, ALTCHA_CHALLENGE_IP_PER_MINUTE, false);
+  return result.allowed;
+}
+
 /**
  * Resolve the rate-limit bucket (key + config) for an API request.
  *

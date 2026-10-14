@@ -1,14 +1,22 @@
 "use server";
 
 import { rateLimitLogin, getClientIp } from "@/lib/rate-limit";
+import { isAltchaEnabled, verifyAltchaPayload } from "@/lib/altcha";
 import { auth, signIn, signOut, SESSION_MAX_AGE_SECONDS } from "@/auth";
 import { revokeSession } from "@/lib/session-blacklist";
 import { headers } from "next/headers";
 
-export async function sendMagicLink(email: string) {
+export async function sendMagicLink(email: string, altchaPayload?: string) {
   // Basic server-side format check — always same message to prevent enumeration
   if (!email || !email.includes("@")) {
     return { success: true, message: "若邮箱存在，我们会发送邮件" };
+  }
+
+  // Altcha 人机验证（邮箱校验之后、L1 限流之前）：启用时必须先通过 PoW 校验，
+  // 挡脚本刷发信。失败文案是用户可操作提示（refresh 重试），与邮箱是否存在无关，
+  // 不破坏防枚举契约。
+  if (isAltchaEnabled() && !(await verifyAltchaPayload(altchaPayload))) {
+    return { success: false, message: "人机验证未通过，请刷新后重试" };
   }
 
   const headersList = await headers();
