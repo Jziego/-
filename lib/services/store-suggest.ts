@@ -1,4 +1,4 @@
-import { chatCompletionJSON, sanitizePromptField } from "@/lib/services/ai-client";
+import { chatCompletionJSON, sanitizePromptField, type ChatCompletionOptions } from "@/lib/services/ai-client";
 
 export interface StoreSuggestionInput {
   name: string;
@@ -81,7 +81,13 @@ export async function suggestStoreProfile(input: StoreSuggestionInput): Promise<
   const result = await chatCompletionJSON<RawSuggestion>(SUGGEST_SYSTEM_PROMPT, userPrompt, {
     schemaDescription: SUGGEST_SCHEMA,
     temperature: 0.6,
-    maxTokens: 800
+    maxTokens: 2000, // none 档正文约 200-400 token，5x 余量防截断
+    // Ark deepseek-v4.1：low/minimal 会被忽略、思考 token 吃光小预算返回空；显式 none
+    // 关闭推理（实测 ~1.5s）。收紧超时让故障快速可见，不再转圈 3 分钟。
+    reasoningEffort: "none",
+    timeout: 20_000,
+    maxAttempts: 2,
+    maxRetries: 0,
   });
 
   if (!result) {
@@ -105,7 +111,7 @@ export interface FieldCandidateDeps {
   chatJsonFn?: (
     systemPrompt: string,
     userPrompt: string,
-    options: { schemaDescription: string; temperature: number; maxTokens: number },
+    options: ChatCompletionOptions,
   ) => Promise<{ candidates?: unknown } | null>;
 }
 
@@ -149,7 +155,12 @@ export async function suggestFieldCandidates(
   const result = await chatJson(FIELD_CANDIDATE_PROMPTS[input.field], userPrompt, {
     schemaDescription: FIELD_CANDIDATE_SCHEMA,
     temperature: 0.7,
-    maxTokens: 800,
+    maxTokens: 2000, // 8 条候选 JSON 约 150-250 token，余量充足
+    // 与 suggestStoreProfile 同因同参：none 关推理 + 快速失败。
+    reasoningEffort: "none",
+    timeout: 20_000,
+    maxAttempts: 2,
+    maxRetries: 0,
   });
   if (!result) {
     throw new StoreSuggestionError("AI returned empty candidates");

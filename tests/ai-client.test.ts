@@ -76,6 +76,16 @@ describe("ai-client", () => {
     expect(params.reasoning_effort).toBeUndefined();
   });
 
+  it("per-call maxRetries forwards to the SDK request options", async () => {
+    const mod = await importFreshClient();
+    mocks.create.mockResolvedValue(completion("hello"));
+
+    await mod.chatCompletion("sys", "user", { maxRetries: 0 });
+
+    const reqOptions = mocks.create.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(reqOptions.maxRetries).toBe(0);
+  });
+
   it("per-call reasoningEffort option overrides the env default", async () => {
     const mod = await importFreshClient();
     mocks.create.mockResolvedValue(completion("hello"));

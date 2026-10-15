@@ -198,7 +198,7 @@ describe("script engine (voiceover-centric)", () => {
     }
   });
 
-  it("AI path tries high reasoning effort first with raised budget/timeout (deepseek reasoning eats max_tokens)", async () => {
+  it("AI path tries high reasoning effort first with bounded wait (Ark v4.1 measured 12-44s)", async () => {
     const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
     const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
       title: "t",
@@ -213,7 +213,13 @@ describe("script engine (voiceover-centric)", () => {
       expect(aiSpy).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(String),
-        expect.objectContaining({ reasoningEffort: "high", maxTokens: 16000, timeout: 150_000, maxAttempts: 1 }),
+        expect.objectContaining({
+          reasoningEffort: "high",
+          maxTokens: 32000, // 实测峰值 ~7.4k（含思考），4x 余量；失控由 60s 超时掐断
+          timeout: 60_000,
+          maxAttempts: 1,
+          maxRetries: 0, // SDK 默认重试 1 次会把超时等待悄悄翻倍，交互路径关掉
+        }),
       );
     } finally {
       hasAISpy.mockRestore();
@@ -221,7 +227,7 @@ describe("script engine (voiceover-centric)", () => {
     }
   });
 
-  it("falls back to a low-effort call when the high-effort attempt returns null", async () => {
+  it("falls back to a no-reasoning call when the high-effort attempt returns null", async () => {
     const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
     const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON")
       .mockResolvedValueOnce(null) // high-effort attempt: empty/truncated
@@ -237,13 +243,60 @@ describe("script engine (voiceover-centric)", () => {
       });
       expect(draft.generationMode).toBe("ai");
       expect(aiSpy).toHaveBeenCalledTimes(2);
-      // Second call: default (low) effort, moderate budget — no high-effort overrides.
+      // Second call: explicit no-reasoning fast path (Ark v4.1 ignores low/minimal
+      // and burns the whole budget on thinking → empty content; only "none" works).
       const secondCallOptions = aiSpy.mock.calls[1]?.[2] as Record<string, unknown>;
-      expect(secondCallOptions.reasoningEffort).toBeUndefined();
-      expect(secondCallOptions.maxTokens).toBe(4096);
+      expect(secondCallOptions.reasoningEffort).toBe("none");
+      expect(secondCallOptions.maxTokens).toBe(8192);
+      expect(secondCallOptions.timeout).toBe(20_000);
+      expect(secondCallOptions.maxAttempts).toBe(2);
+      expect(secondCallOptions.maxRetries).toBe(0);
     } finally {
       hasAISpy.mockRestore();
       aiSpy.mockRestore();
+    }
+  });
+
+  it("high-effort attempt throwing (timeout) still falls back to the fast attempt, not the template", async () => {
+    const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON")
+      .mockRejectedValueOnce(new Error("Request timed out")) // high-effort: provider slow
+      .mockResolvedValueOnce({
+        title: "t",
+        hook: "h",
+        voiceover: "开场一句。中间一句。结尾一句。",
+        cta: "到店",
+      });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const draft = await createScriptDraft({
+        store, assetAnalyses: analysis, purpose: "store_traffic", platform: "douyin",
+      });
+      expect(draft.generationMode).toBe("ai");
+      expect(aiSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      hasAISpy.mockRestore();
+      aiSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("uses the template fallback only when both AI attempts fail", async () => {
+    const hasAISpy = vi.spyOn(aiClient, "hasAI").mockReturnValue(true);
+    const aiSpy = vi.spyOn(aiClient, "chatCompletionJSON")
+      .mockRejectedValueOnce(new Error("Request timed out"))
+      .mockResolvedValueOnce(null); // fast attempt also unusable
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const draft = await createScriptDraft({
+        store, assetAnalyses: analysis, purpose: "store_traffic", platform: "douyin",
+      });
+      expect(draft.generationMode).toBe("template_fallback");
+      expect(aiSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      hasAISpy.mockRestore();
+      aiSpy.mockRestore();
+      warnSpy.mockRestore();
     }
   });
 

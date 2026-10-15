@@ -170,7 +170,15 @@ export async function classifyAssetWithAI(
   const result = await chatCompletionJSON<AIClassifyResponse>(
     CLASSIFY_SYSTEM_PROMPT,
     userPrompt,
-    { schemaDescription: CLASSIFY_SCHEMA, temperature: 0.3, maxTokens: 800 },
+    {
+      schemaDescription: CLASSIFY_SCHEMA,
+      temperature: 0.3,
+      maxTokens: 2000, // none 档分类 JSON 约 100-300 token，余量充足
+      // Ark deepseek-v4.1：low 被忽略、思考吃光小预算返回空；显式 none 关推理。
+      reasoningEffort: "none",
+      timeout: 30_000,
+      maxRetries: 0,
+    },
   );
 
   if (!result) {

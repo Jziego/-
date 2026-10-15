@@ -222,28 +222,47 @@ export async function createScriptDraftWithAI(
   input: ScriptDraftInput,
 ): Promise<ScriptDraft> {
   const userPrompt = buildUserPrompt(input);
-  // 阶梯策略：先试 high 推理（字数/标黄质量更好：实测 222-300 字、标黄 5-6 个，
-  // 优于 low 的 198-234 字/0-6 个）。high 推理长度不可控且计入 max_tokens（实测峰值
-  // ~6.6k tokens/48s，8000 预算约 1/3 概率耗尽→空响应）→ 大预算 16000 + 超时 150s +
-  // 单次尝试；失败立即回退默认 low 档（~4s，实测 7/7 稳定），避免用户等数分钟后只拿到模板。
-  let aiResponse = await chatCompletionJSON<AIScriptResponse>(
-    SYSTEM_PROMPT,
-    userPrompt,
-    {
-      schemaDescription: SCHEMA_DESCRIPTION,
-      temperature: 0.8,
-      maxTokens: 16000,
-      timeout: 150_000,
-      reasoningEffort: "high",
-      maxAttempts: 1,
-    },
-  );
-  if (!aiResponse) {
-    console.warn("[script-engine] high-effort generation unusable, retrying with default (low) effort");
+  // 阶梯策略（2026-10 切换火山方舟 deepseek-v4-1-flash 后按实测数据重定）：
+  // 第 1 档 high 推理质量最好，但推理 token 波动大（实测 reasoning 1.1k-7k、总耗时
+  // 12-44s）→ 预算 32000（峰值 ~4x 余量，防思考链超长截断出空）+ 超时 60s + 单次尝试
+  // + maxRetries 0（SDK 默认重试 1 次会把超时等待悄悄翻倍）。预算只设上限不按上限
+  // 计费，失控生成由 60s 超时掐断，话费有顶。抛错（超时/网络）不再直接掉模板，
+  // catch 后走第 2 档。
+  // 第 2 档显式 "none" 关推理：该模型 low/minimal 会被忽略、思考吃光预算返回空，
+  // 只有 none 真正生效（实测 2.8-3.9s、字数达标）；2 次尝试兜瞬时抖动。
+  let aiResponse: AIScriptResponse | null = null;
+  try {
     aiResponse = await chatCompletionJSON<AIScriptResponse>(
       SYSTEM_PROMPT,
       userPrompt,
-      { schemaDescription: SCHEMA_DESCRIPTION, temperature: 0.8, maxTokens: 4096 }, // +约 1k 容纳 analysis 三段文本
+      {
+        schemaDescription: SCHEMA_DESCRIPTION,
+        temperature: 0.8,
+        maxTokens: 32000,
+        timeout: 60_000,
+        reasoningEffort: "high",
+        maxAttempts: 1,
+        maxRetries: 0,
+      },
+    );
+  } catch (error) {
+    console.warn(
+      `[script-engine] high-effort generation failed (${error instanceof Error ? error.message : String(error)}), falling back to no-reasoning attempt`,
+    );
+  }
+  if (!aiResponse) {
+    aiResponse = await chatCompletionJSON<AIScriptResponse>(
+      SYSTEM_PROMPT,
+      userPrompt,
+      {
+        schemaDescription: SCHEMA_DESCRIPTION,
+        temperature: 0.8,
+        maxTokens: 8192, // 无推理余量充足：正文 + 约 1k analysis 三段文本
+        timeout: 20_000,
+        reasoningEffort: "none",
+        maxAttempts: 2,
+        maxRetries: 0,
+      },
     );
   }
 

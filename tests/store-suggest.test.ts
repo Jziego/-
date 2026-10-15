@@ -45,6 +45,28 @@ describe("suggestStoreProfile", () => {
     vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue(null);
     await expect(suggestStoreProfile({ name: "x", industry: "零售" })).rejects.toBeInstanceOf(StoreSuggestionError);
   });
+
+  it("显式关闭推理 + 收紧超时（Ark deepseek-v4.1 上 low 被忽略，思考会吃光 800 token 预算）", async () => {
+    const spy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      mainProducts: ["牛肉面"],
+      sellingPoints: ["现熬牛骨汤"],
+      targetCustomers: ["上班族"],
+      promotions: [],
+      brandTone: "亲切接地气",
+    });
+    await suggestStoreProfile({ name: "阿姨面馆", industry: "餐饮" });
+    expect(spy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({
+        reasoningEffort: "none",
+        maxTokens: 2000,
+        timeout: 20_000,
+        maxAttempts: 2,
+        maxRetries: 0,
+      }),
+    );
+  });
 });
 
 const fakeChat = (payload: unknown) => async () => payload;
@@ -100,6 +122,25 @@ describe("suggestFieldCandidates 候选池模式", () => {
         { chatJsonFn: (async () => null) as never },
       ),
     ).rejects.toThrow(StoreSuggestionError);
+  });
+
+  it("候选池真实路径：显式 none 推理 + 20s 超时 + 2 次尝试（防 low 档位思考吃光预算）", async () => {
+    const spy = vi.spyOn(aiClient, "chatCompletionJSON").mockResolvedValue({
+      candidates: ["短视频代运营", "团购套餐设计"],
+    });
+    const out = await suggestFieldCandidates({ name: "华荧慧", industry: "商业服务", field: "mainProducts" });
+    expect(out).toEqual(["短视频代运营", "团购套餐设计"]);
+    expect(spy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({
+        reasoningEffort: "none",
+        maxTokens: 2000,
+        timeout: 20_000,
+        maxAttempts: 2,
+        maxRetries: 0,
+      }),
+    );
   });
 });
 

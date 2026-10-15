@@ -95,6 +95,9 @@ export interface ChatCompletionOptions {
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
   /** Per-call cap on business-level retry attempts (default 3). Use 1 to disable retry. */
   maxAttempts?: number;
+  /** Per-call SDK request retries (client default 1). Use 0 on interactive paths so a
+   *  timeout never silently doubles the user's wait. */
+  maxRetries?: number;
 }
 
 // ── Chat completion ────────────────────────────────────────────────────────
@@ -128,7 +131,7 @@ export async function chatCompletion(
           max_tokens: options.maxTokens ?? 2000,
           reasoning_effort: options.reasoningEffort ?? getAIReasoningEffort(),
         },
-        { timeout: options.timeout ?? 30_000 },
+        { timeout: options.timeout ?? 30_000, maxRetries: options.maxRetries },
       );
 
       const content = completion.choices[0]?.message?.content?.trim();
@@ -185,7 +188,7 @@ export async function chatCompletionJSON<T>(
           response_format: { type: "json_object" },
           reasoning_effort: options.reasoningEffort ?? getAIReasoningEffort(),
         },
-        { timeout: options.timeout ?? 30_000 },
+        { timeout: options.timeout ?? 30_000, maxRetries: options.maxRetries },
       );
 
       const raw = completion.choices[0]?.message?.content?.trim();
