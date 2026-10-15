@@ -13,6 +13,11 @@ import { nowIso } from "@/lib/ids";
 import { sweepStaleTmpDirs } from "@/lib/tmp-sweep";
 import type { JobType } from "@/lib/types";
 
+// 与 web 端 instrumentation.ts 同因：Zeabur 容器 IPv6 出网不通，Ark 域名带 AAAA
+// 记录，Node 20 的 dns.lookup 默认优先 IPv6 → connect 失败。强制 IPv4 优先。
+import { setDefaultResultOrder } from "node:dns";
+setDefaultResultOrder("ipv4first");
+
 // Register processors
 registerProcessor("asset_analysis", assetAnalysisProcessor);
 registerProcessor("avatar_generation", avatarGenerationProcessor);
